@@ -7,9 +7,10 @@ set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 
-include_directories(lib/tinygltf)
-add_subdirectory(lib/tinygltf)
-include_directories(Jungle PRIVATE lib/imgui lib/imgui/backends lib/imgui/misc/cpp/)
+find_package(PkgConfig)
+find_package(Vulkan REQUIRED)
+find_package(glfw3 REQUIRED)
+pkg_check_modules(ShaderC REQUIRED shaderc)
 
 add_executable(Jungle src/main.cpp
         src/JungleApp.cpp
@@ -37,4 +38,10 @@ add_executable(Jungle src/main.cpp
         src/VulkanHelper.cpp
 )
 
-target_link_libraries(Jungle glfw vulkan shaderc_combined tinygltf)
+target_include_directories(Jungle PRIVATE lib/imgui lib/imgui/backends lib/imgui/misc/cpp/)
+target_link_libraries(Jungle ${ShaderC_LIBRARIES} glfw Vulkan::Vulkan tinygltf)
+target_include_directories(Jungle PUBLIC ${ShaderC_INCLUDE_DIRS})
+target_compile_options(Jungle PUBLIC ${ShaderC_CFLAGS_OTHER})
+
+add_subdirectory(lib/tinygltf)
+include_directories(lib/tinygltf)
