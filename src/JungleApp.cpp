@@ -7,6 +7,9 @@
 #include <algorithm>
 #include <chrono>
 #include "JungleApp.h"
+#include "imgui.h"
+#include "imgui_impl_glfw.h"
+#include "imgui_impl_vulkan.h"
 
 void JungleApp::initVulkan() {
     createInstance();
@@ -54,6 +57,11 @@ void JungleApp::drawFrame() {
     }
 
     vkResetFences(device, 1, &inFlightFences[currentFrame]);
+
+    ImGui_ImplVulkan_NewFrame();
+    ImGui_ImplGlfw_NewFrame();
+    ImGui::NewFrame();
+    ImGui::ShowDemoWindow();
 
     updateUniformBuffer(currentFrame);
 
@@ -134,6 +142,57 @@ void JungleApp::initWindow() {
     window = glfwCreateWindow(WIDTH, HEIGHT, "Bioluminescent Jungle", nullptr, nullptr);
     glfwSetWindowUserPointer(window, this);
     glfwSetFramebufferSizeCallback(window, framebufferResizeCallback);
+}
+
+void JungleApp::initImGui() {
+    // Setup Dear ImGui context
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGuiIO &io = ImGui::GetIO(); (void)io;
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
+
+    ImGui::StyleColorsDark();
+
+    // Setup Platform/Renderer backends
+    ImGui_ImplGlfw_InitForVulkan(window, true);
+    ImGui_ImplVulkan_InitInfo init_info = {};
+    init_info.Instance = instance;
+    init_info.PhysicalDevice = physicalDevice;
+    init_info.Device = device;
+    QueueFamilyIndices indices = findQueueFamilies(physicalDevice);
+    init_info.QueueFamily = indices.graphicsFamily.value();
+    init_info.Queue = graphicsQueue;
+    //init_info.PipelineCache = YOUR_PIPELINE_CACHE;
+    init_info.DescriptorPool = descriptorPool;
+    init_info.Subpass = 0;
+    init_info.MinImageCount = 2;
+    init_info.ImageCount = 2;
+    init_info.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
+    // init_info.Allocator = YOUR_ALLOCATOR;
+    // init_info.CheckVkResultFn = check_vk_result;
+    ImGui_ImplVulkan_Init(&init_info, renderPass);
+
+    VkCommandPool command_pool = commandPool;
+    VkCommandBuffer command_buffer = commandBuffers[0];
+
+    VK_CHECK_RESULT(vkResetCommandPool(device, command_pool, 0))
+    VkCommandBufferBeginInfo begin_info = {};
+    begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    begin_info.flags |= VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    VK_CHECK_RESULT(vkBeginCommandBuffer(command_buffer, &begin_info))
+
+    ImGui_ImplVulkan_CreateFontsTexture(command_buffer);
+
+    VkSubmitInfo end_info = {};
+    end_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    end_info.commandBufferCount = 1;
+    end_info.pCommandBuffers = &command_buffer;
+    VK_CHECK_RESULT(vkEndCommandBuffer(command_buffer))
+    VK_CHECK_RESULT(vkQueueSubmit(graphicsQueue, 1, &end_info, VK_NULL_HANDLE))
+
+    VK_CHECK_RESULT(vkDeviceWaitIdle(device))
+    ImGui_ImplVulkan_DestroyFontUploadObjects();
 }
 
 void JungleApp::createInstance() {
@@ -732,6 +791,9 @@ void JungleApp::recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imag
 
     vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
 
+    ImGui::Render();
+    ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), commandBuffer);
+
     vkCmdEndRenderPass(commandBuffer);
 
     VK_CHECK_RESULT(vkEndCommandBuffer(commandBuffer))
@@ -926,6 +988,7 @@ void JungleApp::createDescriptorPool() {
     VkDescriptorPoolSize poolSize{};
     poolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     poolSize.descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+    poolSize.descriptorCount += 1; // for ImGui
 
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -933,6 +996,7 @@ void JungleApp::createDescriptorPool() {
     poolInfo.pPoolSizes = &poolSize;
 
     poolInfo.maxSets = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+    poolInfo.maxSets += 1; // for ImGui
 
     VK_CHECK_RESULT(vkCreateDescriptorPool(device, &poolInfo, nullptr, &descriptorPool))
 }
@@ -971,6 +1035,10 @@ void JungleApp::createDescriptorSets() {
 }
 
 void JungleApp::cleanup() {
+    ImGui_ImplVulkan_Shutdown();
+    ImGui_ImplGlfw_Shutdown();
+    ImGui::DestroyContext();
+
     cleanupSwapChain();
 
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {

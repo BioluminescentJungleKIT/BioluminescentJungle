@@ -213,6 +213,7 @@ public:
     void run() {
         initWindow();
         initVulkan();
+        initImGui();
         mainLoop();
         cleanup();
     }
@@ -221,6 +222,8 @@ private:
     void initWindow();
 
     void initVulkan();
+
+    void initImGui();
 
     void mainLoop();
 
