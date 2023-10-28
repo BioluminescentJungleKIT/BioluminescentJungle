@@ -81,6 +81,8 @@ const uint32_t HEIGHT = 600;
 
 const int MAX_FRAMES_IN_FLIGHT = 2;
 
+const bool ENABLE_VSYNC = false;
+
 const std::vector<const char *> validationLayers = {
         "VK_LAYER_KHRONOS_validation"
 };

@@ -400,7 +400,8 @@ JungleApp::SwapChainSupportDetails JungleApp::querySwapChainSupport(VkPhysicalDe
 
 VkPresentModeKHR JungleApp::chooseSwapPresentMode(const std::vector<VkPresentModeKHR> &availablePresentModes) {
     for (const auto &availablePresentMode: availablePresentModes) {
-        if (availablePresentMode == VK_PRESENT_MODE_MAILBOX_KHR) {
+        if ((availablePresentMode == VK_PRESENT_MODE_MAILBOX_KHR && ENABLE_VSYNC) ||
+        (availablePresentMode == VK_PRESENT_MODE_IMMEDIATE_KHR && !ENABLE_VSYNC)) {
             return availablePresentMode;
         }
     }
