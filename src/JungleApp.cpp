@@ -955,7 +955,7 @@ void JungleApp::cleanup() {
 }
 
 void JungleApp::setupScene() {
-    scene = Scene("scenes/testdodecahedron.gltf");
+    scene = Scene("scenes/testmulti.gltf");
     scene.setupBuffers(device, physicalDevice, commandPool, graphicsQueue);
 }
 

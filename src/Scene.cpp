@@ -19,22 +19,42 @@ Scene::Scene(std::string filename) {
 }
 
 void Scene::render(VkCommandBuffer commandBuffer) {
-    std::vector<VkBuffer> vertex_buffers = {buffers[model.bufferViews[0].buffer], buffers[model.bufferViews[1].buffer]};
-    std::vector<VkDeviceSize> offsets = {model.bufferViews[0].byteOffset, model.bufferViews[1].byteOffset};
+    renderNode(model.defaultScene, commandBuffer, 32);
+}
 
-    vkCmdBindVertexBuffers(commandBuffer, 0, vertex_buffers.size(), vertex_buffers.data(), offsets.data());
+void Scene::renderNode(int node, VkCommandBuffer commandBuffer, int maxRecursion) {
+    if (maxRecursion <= 0) return;
+    if (model.nodes[node].mesh >= 0) {
+        auto mesh = model.meshes[model.nodes[node].mesh];
+        for (auto primitive: mesh.primitives) {
+            std::vector<VkBuffer> vertex_buffers = {buffers[model.bufferViews[model.accessors[primitive.attributes["COLOR_0"]].bufferView].buffer],
+                                                    buffers[model.bufferViews[model.accessors[primitive.attributes["POSITION"]].bufferView].buffer]};
+            std::vector<VkDeviceSize> offsets = {model.bufferViews[model.accessors[primitive.attributes["COLOR_0"]].bufferView].byteOffset, model.bufferViews[model.accessors[primitive.attributes["POSITION"]].bufferView].byteOffset};
 
-    auto indexAccessorIndex = model.meshes[0].primitives[0].indices;
-    auto indexBufferViewIndex = model.accessors[indexAccessorIndex].bufferView;
-    auto indexBufferIndex = model.bufferViews[indexBufferViewIndex].buffer;
-    auto indexBuffer = buffers[indexBufferIndex];
-    auto indexBufferOffset = model.bufferViews[indexBufferViewIndex].byteOffset;
-    uint32_t numIndices = model.accessors[indexAccessorIndex].count;
-    auto indexBufferType = VulkanHelper::gltfTypeToVkIndexType(model.accessors[indexAccessorIndex].componentType);
-    assert(model.accessors[indexAccessorIndex].type == TINYGLTF_TYPE_SCALAR);
-    vkCmdBindIndexBuffer(commandBuffer, indexBuffer, indexBufferOffset, indexBufferType);
+            // todo upload and bind transformations
 
-    vkCmdDrawIndexed(commandBuffer, numIndices, 1, 0, 0, 0);
+            vkCmdBindVertexBuffers(commandBuffer, 0, vertex_buffers.size(), vertex_buffers.data(), offsets.data());
+
+            if (primitive.indices >= 0) {
+                auto indexAccessorIndex = primitive.indices;
+                auto indexBufferViewIndex = model.accessors[indexAccessorIndex].bufferView;
+                auto indexBufferIndex = model.bufferViews[indexBufferViewIndex].buffer;
+                auto indexBuffer = buffers[indexBufferIndex];
+                auto indexBufferOffset = model.bufferViews[indexBufferViewIndex].byteOffset;
+                uint32_t numIndices = model.accessors[indexAccessorIndex].count;
+                auto indexBufferType = VulkanHelper::gltfTypeToVkIndexType(
+                        model.accessors[indexAccessorIndex].componentType);
+                vkCmdBindIndexBuffer(commandBuffer, indexBuffer, indexBufferOffset, indexBufferType);
+
+                vkCmdDrawIndexed(commandBuffer, numIndices, 1, 0, 0, 0);
+            } else {
+                throw std::runtime_error("Non-indexed geometry is currently not supported.");
+            }
+        }
+    }
+    for (int child: model.nodes[node].children) {
+        renderNode(child, commandBuffer, maxRecursion - 1);
+    }
 }
 
 void Scene::setupDescriptorSets() {
@@ -70,6 +90,7 @@ std::tuple<std::vector<VkVertexInputAttributeDescription>, std::vector<VkVertexI
     std::vector<VkVertexInputAttributeDescription> attributeDescriptions;
     std::vector<VkVertexInputBindingDescription> bindingDescriptions;
 
+    // TODO default color if not set
     int colorAccessor = model.meshes[0].primitives[0].attributes["COLOR_0"];
     VkVertexInputAttributeDescription colorAttributeDescription{};
     colorAttributeDescription.binding = colorAccessor;
@@ -97,6 +118,10 @@ std::tuple<std::vector<VkVertexInputAttributeDescription>, std::vector<VkVertexI
 }
 
 VkVertexInputBindingDescription Scene::getVertexBindingDescription(int accessor) {
+    if (vertexBindingDescriptions.contains(accessor)) {
+        return vertexBindingDescriptions[accessor];
+    }
+
     VkVertexInputBindingDescription bindingDescription;
 
     bindingDescription.binding = accessor;
@@ -105,6 +130,8 @@ VkVertexInputBindingDescription Scene::getVertexBindingDescription(int accessor)
                 model.accessors[accessor].componentType,
                 model.bufferViews[model.accessors[accessor].bufferView].byteStride);
     bindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+    vertexBindingDescriptions[accessor] = bindingDescription;
 
     return bindingDescription;
 }

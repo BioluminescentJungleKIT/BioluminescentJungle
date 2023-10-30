@@ -33,6 +33,9 @@ private:
     std::vector<VkBuffer> buffers;
     std::vector<VkDeviceMemory> bufferMemories;
 
+    std::map<int, VkVertexInputBindingDescription> vertexBindingDescriptions;
+
+    void renderNode(int node, VkCommandBuffer commandBuffer, int maxRecursion);
 };
 
 
