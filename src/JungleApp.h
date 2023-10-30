@@ -17,6 +17,7 @@
 #include <fstream>
 #include <shaderc/shaderc.hpp>
 #include <glm/glm.hpp>
+#include "Scene.h"
 
 static std::string errorString(VkResult errorCode) {
     switch (errorCode) {
@@ -89,56 +90,6 @@ const std::vector<const char *> validationLayers = {
 
 const std::vector<const char *> deviceExtensions = {
         VK_KHR_SWAPCHAIN_EXTENSION_NAME
-};
-
-struct Vertex {
-    glm::vec3 pos;
-    glm::vec3 color;
-
-    static VkVertexInputBindingDescription getBindingDescription() {
-        VkVertexInputBindingDescription bindingDescription{};
-        bindingDescription.binding = 0;
-        bindingDescription.stride = sizeof(Vertex);
-        bindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-        return bindingDescription;
-    }
-
-    static std::array<VkVertexInputAttributeDescription, 2> getAttributeDescriptions() {
-        std::array<VkVertexInputAttributeDescription, 2> attributeDescriptions{};
-        attributeDescriptions[0].binding = 0;
-        attributeDescriptions[0].location = 0;
-        attributeDescriptions[0].format = VK_FORMAT_R32G32B32_SFLOAT;
-        attributeDescriptions[0].offset = offsetof(Vertex, pos);
-        attributeDescriptions[1].binding = 0;
-        attributeDescriptions[1].location = 1;
-        attributeDescriptions[1].format = VK_FORMAT_R32G32B32_SFLOAT;
-        attributeDescriptions[1].offset = offsetof(Vertex, color);
-        return attributeDescriptions;
-    }
-};
-
-const float t = (1.0f + sqrtf(5.0f)) / 2.0f;
-
-const std::vector<Vertex> vertices = {
-        {{-1.0f, t,     0.0f},  {1.0f, 0.0f, 0.0f}},
-        {{1.0f,  t,     0.0f},  {0.0f, 1.0f, 0.0f}},
-        {{-1.0f, -t,    0.0f},  {0.0f, 0.0f, 1.0f}},
-        {{1.0f,  -t,    0.0f},  {1.0f, 1.0f, 0.0f}},
-        {{0.0f,  -1.0f, t},     {0.0f, 1.0f, 1.0f}},
-        {{0.0f,  1.0f,  t},     {1.0f, 0.0f, 1.0f}},
-        {{0.0f,  -1.0f, -t},    {1.0f, 1.0f, 1.0f}},
-        {{0.0f,  1.0f,  -t},    {1.0f, 0.0f, 0.0f}},
-        {{t,     0.0f,  -1.0f}, {0.0f, 1.0f, 0.0f}},
-        {{t,     0.0f,  1.0f},  {0.0f, 0.0f, 1.0f}},
-        {{-t,    0.0f,  -1.0f}, {1.0f, 1.0f, 1.0f}},
-        {{-t,    0.0f,  1.0f},  {0.0f, 0.0f, 0.0f}}
-};
-
-const std::vector<uint16_t> vertex_indices = {
-        0, 11, 5, 0, 5, 1, 0, 1, 7, 0, 7, 10, 0, 10, 11,
-        1, 5, 9, 5, 11, 4, 11, 10, 2, 10, 7, 6, 7, 1, 8,
-        3, 9, 4, 3, 4, 2, 3, 2, 6, 3, 6, 8, 3, 8, 9,
-        4, 9, 5, 2, 4, 11, 6, 2, 10, 8, 6, 7, 9, 8, 1
 };
 
 struct UniformBufferObject {
@@ -417,24 +368,6 @@ private:
         app->framebufferResized = true;
     }
 
-    void createVertexBuffer();
-
-    VkBuffer vertexBuffer;
-
-    uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
-
-    VkDeviceMemory vertexBufferMemory;
-
-    void createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer &buffer,
-                      VkDeviceMemory &bufferMemory);
-
-    void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size);
-
-    VkBuffer indexBuffer;
-    VkDeviceMemory indexBufferMemory;
-
-    void createIndexBuffer();
-
     void createDescriptorSetLayout();
 
     VkDescriptorSetLayout descriptorSetLayout;
@@ -454,6 +387,10 @@ private:
     void createDescriptorSets();
 
     std::vector<VkDescriptorSet> descriptorSets;
+
+    void setupScene();
+
+    Scene scene;
 };
 
 
