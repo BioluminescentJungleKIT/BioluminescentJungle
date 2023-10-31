@@ -1,6 +1,6 @@
 [submodule "lib/imgui"]
 	path = lib/imgui
 	url = https://github.com/ocornut/imgui.git
-[submodule "lib/loader"]
-	path = lib/loader
-	url = https://github.com/syoyo/loader.git
+[submodule "lib/tinygltf"]
+	path = lib/tinygltf
+	url = https://github.com/syoyo/tinygltf.git
