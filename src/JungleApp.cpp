@@ -1,4 +1,5 @@
 #define GLM_FORCE_RADIANS
+#define GLM_FORCE_DEPTH_ZERO_TO_ONE
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -148,7 +149,8 @@ void JungleApp::initImGui() {
     // Setup Dear ImGui context
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
-    ImGuiIO &io = ImGui::GetIO(); (void)io;
+    ImGuiIO &io = ImGui::GetIO();
+    (void) io;
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
 
@@ -401,7 +403,7 @@ JungleApp::SwapChainSupportDetails JungleApp::querySwapChainSupport(VkPhysicalDe
 VkPresentModeKHR JungleApp::chooseSwapPresentMode(const std::vector<VkPresentModeKHR> &availablePresentModes) {
     for (const auto &availablePresentMode: availablePresentModes) {
         if ((availablePresentMode == VK_PRESENT_MODE_MAILBOX_KHR && ENABLE_VSYNC) ||
-        (availablePresentMode == VK_PRESENT_MODE_IMMEDIATE_KHR && !ENABLE_VSYNC)) {
+            (availablePresentMode == VK_PRESENT_MODE_IMMEDIATE_KHR && !ENABLE_VSYNC)) {
             return availablePresentMode;
         }
     }
@@ -615,10 +617,13 @@ void JungleApp::createGraphicsPipeline() {
     colorBlending.blendConstants[2] = 0.0f; // Optional
     colorBlending.blendConstants[3] = 0.0f; // Optional
 
+
+    std::vector<VkDescriptorSetLayout> descriptorSetLayoutsForPipeline{descriptorSetLayout,
+                                                                       scene.getDescriptorSetLayout(device)};
     VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
     pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    pipelineLayoutInfo.setLayoutCount = 1;
-    pipelineLayoutInfo.pSetLayouts = &descriptorSetLayout;
+    pipelineLayoutInfo.setLayoutCount = descriptorSetLayoutsForPipeline.size();
+    pipelineLayoutInfo.pSetLayouts = descriptorSetLayoutsForPipeline.data();
     pipelineLayoutInfo.pushConstantRangeCount = 0; // Optional
     pipelineLayoutInfo.pPushConstantRanges = nullptr; // Optional
 
@@ -779,10 +784,10 @@ void JungleApp::recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imag
     scissor.extent = swapChainExtent;
     vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1,
-                            &descriptorSets[currentFrame], 0, nullptr);
+    //vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1,
+    //                        &descriptorSets[currentFrame], 0, nullptr);
 
-    scene.render(commandBuffer);
+    scene.render(commandBuffer, pipelineLayout, descriptorSets[currentFrame]);
 
     ImGui::Render();
     ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), commandBuffer);
@@ -836,7 +841,8 @@ void JungleApp::createUniformBuffers() {
 
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
         VulkanHelper::createBuffer(device, physicalDevice, bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-                     VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, uniformBuffers[i],
+                                   VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                                   uniformBuffers[i],
                                    uniformBuffersMemory[i]);
 
         vkMapMemory(device, uniformBuffersMemory[i], 0, bufferSize, 0, &uniformBuffersMapped[i]);
@@ -853,7 +859,7 @@ void JungleApp::updateUniformBuffer(uint32_t currentImage) {
     ubo.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
     ubo.view = glm::lookAt(glm::vec3(5.0f, 5.0f, 5.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
     ubo.proj = glm::perspective(glm::radians(45.0f), (float) swapChainExtent.width / (float) swapChainExtent.height,
-                                0.1f, 10.0f);
+                                0.1f, 1000.0f);
     ubo.proj[1][1] *= -1;  // because GLM generates OpenGL projections
 
     memcpy(uniformBuffersMapped[currentImage], &ubo, sizeof(ubo));
@@ -862,7 +868,8 @@ void JungleApp::updateUniformBuffer(uint32_t currentImage) {
 void JungleApp::createDescriptorPool() {
     VkDescriptorPoolSize poolSize{};
     poolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    poolSize.descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT) * 1;
+    poolSize.descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+    poolSize.descriptorCount += scene.getNumDescriptorSets();
     poolSize.descriptorCount += 1; // for ImGui
 
     VkDescriptorPoolCreateInfo poolInfo{};
@@ -870,7 +877,8 @@ void JungleApp::createDescriptorPool() {
     poolInfo.poolSizeCount = 1;
     poolInfo.pPoolSizes = &poolSize;
 
-    poolInfo.maxSets = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT) * 1;
+    poolInfo.maxSets = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+    poolInfo.maxSets += scene.getNumDescriptorSets();
     poolInfo.maxSets += 1; // for ImGui
 
     VK_CHECK_RESULT(vkCreateDescriptorPool(device, &poolInfo, nullptr, &descriptorPool))
@@ -907,6 +915,8 @@ void JungleApp::createDescriptorSets() {
 
         vkUpdateDescriptorSets(device, 1, &descriptorWrite, 0, nullptr);
     }
+
+    scene.setupDescriptorSets(device, descriptorPool, descriptorSetLayout);
 }
 
 void JungleApp::cleanup() {
@@ -925,6 +935,7 @@ void JungleApp::cleanup() {
 
     vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
 
+    scene.destroyDescriptorSetLayout(device);
     scene.destroyBuffers(device);
 
     vkDestroyPipeline(device, graphicsPipeline, nullptr);
@@ -958,5 +969,3 @@ void JungleApp::setupScene() {
     scene = Scene("scenes/testmulti.gltf");
     scene.setupBuffers(device, physicalDevice, commandPool, graphicsQueue);
 }
-
-

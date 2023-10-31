@@ -2,6 +2,7 @@
 // Created by lars on 30.10.23.
 //
 
+#include <glm/gtc/quaternion.hpp>
 #include "Scene.h"
 #include <iostream>
 #include "imgui_impl_vulkan.h"
@@ -13,6 +14,7 @@
 #include <limits>
 #include <set>
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/type_ptr.hpp>
 #include <glm/glm.hpp>
 #include "VulkanHelper.h"
 
@@ -284,5 +286,31 @@ VkIndexType VulkanHelper::gltfTypeToVkIndexType(int componentType) {
             return VK_INDEX_TYPE_UINT32;
         default:
             throw std::runtime_error("index type not implemented");
+    }
+}
+
+glm::mat4 VulkanHelper::transformFromMatrixOrComponents(std::vector<double> matrix, std::vector<double> scale,
+                                                        std::vector<double> rotation, std::vector<double> translation) {
+    if (matrix.empty()) {
+        glm::mat4 transform = glm::mat4(1.f);
+
+        if (!scale.empty()) {
+            glm::vec3 scaleVec = glm::make_vec3(scale.data());
+            transform = glm::scale(transform, scaleVec);
+        }
+
+        if (!rotation.empty()) {
+            glm::quat rotationQuat = glm::make_quat(rotation.data());
+            transform *= glm::mat4_cast(rotationQuat);
+        }
+
+        if (!translation.empty()) {
+            glm::vec3 translationVec = glm::make_vec3(translation.data());
+            transform = glm::translate(transform, translationVec);
+        }
+
+        return transform;
+    } else {
+        return glm::make_mat4(matrix.data());
     }
 }
