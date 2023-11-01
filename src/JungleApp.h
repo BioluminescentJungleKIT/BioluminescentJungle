@@ -291,6 +291,7 @@ private:
     glm::vec3 cameraPosition = glm::vec3(5.0f, 5.0f, 5.0f);
     glm::vec3 cameraUpVector = glm::vec3(0.0f, 0.0f, 1.0f);
     bool spinScene = true;
+    float fixedRotation = 0.0;
 
     void cleanupGraphicsPipeline();
 

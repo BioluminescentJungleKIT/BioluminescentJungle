@@ -82,6 +82,7 @@ void JungleApp::drawFrame() {
         }
         if (ImGui::CollapsingHeader("Scene Settings")) {
             ImGui::Checkbox("Spin", &spinScene);
+            ImGui::SliderFloat("Fixed spin", &fixedRotation, 0.0f, 360.0f);
         }
     }
     ImGui::End();
@@ -910,9 +911,10 @@ void JungleApp::updateUniformBuffer(uint32_t currentImage) {
 
     auto currentTime = std::chrono::high_resolution_clock::now();
     float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
+    float rotation = spinScene ? time * glm::radians(90.0f) : glm::radians(fixedRotation);
 
     UniformBufferObject ubo{};
-    ubo.model = spinScene ? glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f)) : glm::mat4(1.f);
+    ubo.model = glm::rotate(glm::mat4(1.0f), rotation, glm::vec3(0.0f, 0.0f, 1.0f));
     ubo.view = glm::lookAt(cameraPosition, cameraLookAt, cameraUpVector);
     ubo.proj = glm::perspective(glm::radians(cameraFOVY), (float) swapChainExtent.width / (float) swapChainExtent.height,
                                 nearPlane, farPlane);
