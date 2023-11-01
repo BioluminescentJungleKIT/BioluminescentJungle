@@ -48,9 +48,9 @@ const bool enableValidationLayers = true;
 
 class JungleApp {
 public:
-    void run() {
+    void run(const std::string& sceneName) {
         initWindow();
-        initVulkan();
+        initVulkan(sceneName);
         initImGui();
         mainLoop();
         cleanup();
@@ -59,7 +59,7 @@ public:
 private:
     void initWindow();
 
-    void initVulkan();
+    void initVulkan(const std::string& sceneName);
 
     void initImGui();
 
@@ -273,7 +273,7 @@ private:
 
     std::vector<VkDescriptorSet> descriptorSets;
 
-    void setupScene();
+    void setupScene(const std::string& sceneName);
 
     Scene scene;
 

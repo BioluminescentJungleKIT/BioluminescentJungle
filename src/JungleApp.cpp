@@ -13,7 +13,7 @@
 #include "imgui_impl_vulkan.h"
 #include "VulkanHelper.h"
 
-void JungleApp::initVulkan() {
+void JungleApp::initVulkan(const std::string& sceneName) {
     createInstance();
     setupDebugMessenger();
     createSurface();
@@ -23,7 +23,7 @@ void JungleApp::initVulkan() {
     createImageViews();
     createRenderPass();
     createCommandPool();
-    setupScene();
+    setupScene(sceneName);
     createDescriptorSetLayout();
     createGraphicsPipeline(false);
     createFramebuffers();
@@ -1020,7 +1020,7 @@ void JungleApp::cleanup() {
     glfwTerminate();
 }
 
-void JungleApp::setupScene() {
-    scene = Scene("scenes/testmulti.gltf");
+void JungleApp::setupScene(const std::string& sceneName) {
+    scene = Scene(sceneName);
     scene.setupBuffers(device, physicalDevice, commandPool, graphicsQueue);
 }
