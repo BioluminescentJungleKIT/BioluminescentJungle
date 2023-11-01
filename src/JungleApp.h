@@ -24,8 +24,6 @@ const uint32_t HEIGHT = 1200;
 
 const int MAX_FRAMES_IN_FLIGHT = 2;
 
-const bool ENABLE_VSYNC = false;
-
 const std::vector<const char *> validationLayers = {
         "VK_LAYER_KHRONOS_validation"
 };
@@ -45,62 +43,6 @@ const bool enableValidationLayers = false;
 #else
 const bool enableValidationLayers = true;
 #endif
-
-static std::vector<char> readFile(const std::string &filename) {
-    std::ifstream file(filename, std::ios::ate | std::ios::binary);
-
-    if (!file.is_open()) {
-        throw std::runtime_error("failed to open file!");
-    }
-
-    auto fileSize = file.tellg();
-    std::vector<char> buffer(fileSize);
-    file.seekg(0);
-    file.read(buffer.data(), fileSize);
-    file.close();
-    return buffer;
-}
-
-static void writeFile(const std::string &filename, const std::vector<char> &buffer) {
-    std::ofstream file(filename, std::ios::binary);
-
-    if (!file.is_open()) {
-        throw std::runtime_error("failed to open file!");
-    }
-
-    file.write(buffer.data(), (std::streamsize) buffer.size());
-    file.close();
-}
-
-static bool fileExists(const std::string &filename) {
-    std::ifstream file(filename);
-    return file.good();
-}
-
-static auto getShaderCode(const std::string &filename, shaderc_shader_kind kind, bool recompile) {
-    auto sourceName = filename.substr(filename.find_last_of("/\\") + 1, filename.find_last_of('.'));
-    auto spvFilename = filename + ".spv";
-    if (recompile || !fileExists(spvFilename)) {
-        shaderc::Compiler compiler;
-        shaderc::CompileOptions options;
-
-        auto file_content = readFile(filename);
-        file_content.push_back('\0');
-        std::string source = file_content.data();
-        shaderc::SpvCompilationResult result = compiler.CompileGlslToSpv(
-                source, kind, sourceName.c_str(), options);
-
-        if (result.GetCompilationStatus() != shaderc_compilation_status_success) {
-            throw std::runtime_error("Shader compilation failed:\n" + result.GetErrorMessage());
-        }
-
-        std::vector<char> spirv = {reinterpret_cast<const char *>(result.cbegin()),
-                                   reinterpret_cast<const char *>(result.cend())};
-
-        writeFile(spvFilename, spirv);
-    }
-    return readFile(spvFilename);
-}
 
 
 class JungleApp {
@@ -265,7 +207,7 @@ private:
 
     void createImageViews();
 
-    void createGraphicsPipeline();
+    void createGraphicsPipeline(bool recompileShaders);
 
     VkShaderModule createShaderModule(std::vector<char> code);
 
@@ -333,6 +275,20 @@ private:
     void setupScene();
 
     Scene scene;
+
+    bool enableVSync = false;
+    bool showMetricsWindow;
+    bool forceRecreateSwapchain;
+    bool forceReloadShaders;
+    bool showDemoWindow;
+    std::string lastVertMessage;
+    std::string lastFragMessage;
+    float nearPlane = .1f;
+    float farPlane = 1000.f;
+
+    void cleanupGraphicsPipeline();
+
+    void recreateGraphicsPipeline();
 };
 
 

@@ -66,6 +66,63 @@ static std::string errorString(VkResult errorCode) {
     }
 }
 
+static std::vector<char> readFile(const std::string &filename) {
+    std::ifstream file(filename, std::ios::ate | std::ios::binary);
+
+    if (!file.is_open()) {
+        throw std::runtime_error("failed to open file!");
+    }
+
+    auto fileSize = file.tellg();
+    std::vector<char> buffer(fileSize);
+    file.seekg(0);
+    file.read(buffer.data(), fileSize);
+    file.close();
+    return buffer;
+}
+
+static void writeFile(const std::string &filename, const std::vector<char> &buffer) {
+    std::ofstream file(filename, std::ios::binary);
+
+    if (!file.is_open()) {
+        throw std::runtime_error("failed to open file!");
+    }
+
+    file.write(buffer.data(), (std::streamsize) buffer.size());
+    file.close();
+}
+
+static bool fileExists(const std::string &filename) {
+    std::ifstream file(filename);
+    return file.good();
+}
+
+static std::tuple<std::vector<char>, std::string> getShaderCode(const std::string &filename, shaderc_shader_kind kind, bool recompile) {
+    std::string message;
+    auto sourceName = filename.substr(filename.find_last_of("/\\") + 1, filename.find_last_of('.'));
+    auto spvFilename = filename + ".spv";
+    if (recompile || !fileExists(spvFilename)) {
+        shaderc::Compiler compiler;
+        shaderc::CompileOptions options;
+
+        auto file_content = readFile(filename);
+        file_content.push_back('\0');
+        std::string source = file_content.data();
+        shaderc::SpvCompilationResult result = compiler.CompileGlslToSpv(
+                source, kind, sourceName.c_str(), options);
+
+        if (result.GetCompilationStatus() != shaderc_compilation_status_success) {
+            message = "Shader compilation failed:\n" + result.GetErrorMessage();
+        } else {
+            std::vector<char> spirv = {reinterpret_cast<const char *>(result.cbegin()),
+                                       reinterpret_cast<const char *>(result.cend())};
+
+            writeFile(spvFilename, spirv);
+        }
+    }
+    return {readFile(spvFilename), message};
+}
+
 #define VK_CHECK_RESULT(f)                                                                                \
 {                                                                                                         \
     VkResult res = (f);                                                                                   \
