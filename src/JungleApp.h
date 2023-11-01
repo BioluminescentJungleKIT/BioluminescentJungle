@@ -15,6 +15,7 @@
 #include <cstring>
 #include <optional>
 #include <fstream>
+#include <array>
 #include <shaderc/shaderc.hpp>
 #include <glm/glm.hpp>
 #include "Scene.h"

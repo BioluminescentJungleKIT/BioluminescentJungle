@@ -326,8 +326,7 @@ bool JungleApp::isDeviceSuitable(VkPhysicalDevice const &device) {
         swapChainAdequate = !swapChainSupport.formats.empty() && !swapChainSupport.presentModes.empty();
     }
 
-    return deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU &&
-           deviceFeatures.geometryShader &&
+    return deviceFeatures.geometryShader &&
            indices.isComplete() &&
            extensionsSupported &&
            swapChainAdequate;
