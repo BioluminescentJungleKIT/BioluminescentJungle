@@ -25,7 +25,7 @@ void JungleApp::initVulkan() {
     createCommandPool();
     setupScene();
     createDescriptorSetLayout();
-    createGraphicsPipeline();
+    createGraphicsPipeline(false);
     createFramebuffers();
     createUniformBuffers();
     createDescriptorPool();
@@ -57,12 +57,53 @@ void JungleApp::drawFrame() {
         VK_CHECK_RESULT(result)
     }
 
+    if (forceReloadShaders) {
+        recreateGraphicsPipeline();
+    }
+
     vkResetFences(device, 1, &inFlightFences[currentFrame]);
 
     ImGui_ImplVulkan_NewFrame();
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
-    ImGui::ShowDemoWindow();
+    if (ImGui::Begin("Settings")) {
+        forceReloadShaders = ImGui::Button("Reload Shaders");
+        ImGui::Checkbox("Show Dear ImGui Demo", &showDemoWindow);
+        ImGui::Checkbox("Show Metrics", &showMetricsWindow);
+        if (ImGui::CollapsingHeader("Video Settings")) {
+            forceRecreateSwapchain = ImGui::Checkbox("VSync", &enableVSync);
+        }
+        if (ImGui::CollapsingHeader("Camera Settings")) {
+            ImGui::DragFloatRange2("Clipping Planes", &nearPlane, &farPlane, 0.07f, .01f, 100000.f);
+            ImGui::SliderFloat("Camera FOV", &cameraFOVY, 1.f, 179.f);
+            ImGui::DragFloat3("Camera PoI", &cameraLookAt.x, 0.01f);
+            ImGui::DragFloat3("Camera PoV", &cameraPosition.x, 0.01f);
+            ImGui::DragFloat3("Camera Up", &cameraUpVector.x, 0.01f);
+        }
+        if (ImGui::CollapsingHeader("Scene Settings")) {
+            ImGui::Checkbox("Spin", &spinScene);
+        }
+    }
+    ImGui::End();
+
+    if (showMetricsWindow) {
+        ImGui::ShowMetricsWindow(&showMetricsWindow);
+    }
+    if (showDemoWindow) {
+        ImGui::ShowDemoWindow(&showDemoWindow);
+    }
+    if (!lastVertMessage.empty()) {
+        if (ImGui::Begin("Vertex Shader Compile Error")) {
+            ImGui::Text("%s", lastVertMessage.data());
+        }
+        ImGui::End();
+    }
+    if (!lastFragMessage.empty()) {
+        if (ImGui::Begin("Fragment Shader Compile Error")) {
+            ImGui::Text("%s", lastFragMessage.data());
+        }
+        ImGui::End();
+    }
 
     updateUniformBuffer(currentFrame);
 
@@ -95,8 +136,9 @@ void JungleApp::drawFrame() {
 
     result = vkQueuePresentKHR(presentQueue, &presentInfo);
 
-    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || framebufferResized) {
+    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || framebufferResized || forceRecreateSwapchain) {
         framebufferResized = false;
+        forceRecreateSwapchain = false;
         recreateSwapChain();
     } else {
         VK_CHECK_RESULT(result)
@@ -402,8 +444,8 @@ JungleApp::SwapChainSupportDetails JungleApp::querySwapChainSupport(VkPhysicalDe
 
 VkPresentModeKHR JungleApp::chooseSwapPresentMode(const std::vector<VkPresentModeKHR> &availablePresentModes) {
     for (const auto &availablePresentMode: availablePresentModes) {
-        if ((availablePresentMode == VK_PRESENT_MODE_MAILBOX_KHR && ENABLE_VSYNC) ||
-            (availablePresentMode == VK_PRESENT_MODE_IMMEDIATE_KHR && !ENABLE_VSYNC)) {
+        if ((availablePresentMode == VK_PRESENT_MODE_MAILBOX_KHR && enableVSync) ||
+            (availablePresentMode == VK_PRESENT_MODE_IMMEDIATE_KHR && !enableVSync)) {
             return availablePresentMode;
         }
     }
@@ -511,9 +553,12 @@ void JungleApp::createImageViews() {
     }
 }
 
-void JungleApp::createGraphicsPipeline() {
-    auto vertShaderCode = getShaderCode("shaders/shader.vert", shaderc_glsl_vertex_shader, true);
-    auto fragShaderCode = getShaderCode("shaders/shader.frag", shaderc_glsl_fragment_shader, true);
+void JungleApp::createGraphicsPipeline(bool recompileShaders) {
+    auto [vertShaderCode, vertMessage] = getShaderCode("shaders/shader.vert", shaderc_glsl_vertex_shader, recompileShaders);
+    auto [fragShaderCode, fragMessage] = getShaderCode("shaders/shader.frag", shaderc_glsl_fragment_shader, recompileShaders);
+
+    lastVertMessage = vertMessage;
+    lastFragMessage = fragMessage;
 
     VkShaderModule vertShaderModule = createShaderModule(vertShaderCode);
     VkShaderModule fragShaderModule = createShaderModule(fragShaderCode);
@@ -651,6 +696,18 @@ void JungleApp::createGraphicsPipeline() {
 
     vkDestroyShaderModule(device, fragShaderModule, nullptr);
     vkDestroyShaderModule(device, vertShaderModule, nullptr);
+}
+
+void JungleApp::cleanupGraphicsPipeline() {
+    vkDestroyPipeline(device, graphicsPipeline, nullptr);
+    vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
+}
+
+void JungleApp::recreateGraphicsPipeline() {
+    vkDeviceWaitIdle(device);
+
+    cleanupGraphicsPipeline();
+    createGraphicsPipeline(true);
 }
 
 VkShaderModule JungleApp::createShaderModule(std::vector<char> code) {
@@ -856,10 +913,10 @@ void JungleApp::updateUniformBuffer(uint32_t currentImage) {
     float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
 
     UniformBufferObject ubo{};
-    ubo.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-    ubo.view = glm::lookAt(glm::vec3(5.0f, 5.0f, 5.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-    ubo.proj = glm::perspective(glm::radians(45.0f), (float) swapChainExtent.width / (float) swapChainExtent.height,
-                                0.1f, 1000.0f);
+    ubo.model = spinScene ? glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f)) : glm::mat4(1.f);
+    ubo.view = glm::lookAt(cameraPosition, cameraLookAt, cameraUpVector);
+    ubo.proj = glm::perspective(glm::radians(cameraFOVY), (float) swapChainExtent.width / (float) swapChainExtent.height,
+                                nearPlane, farPlane);
     ubo.proj[1][1] *= -1;  // because GLM generates OpenGL projections
 
     memcpy(uniformBuffersMapped[currentImage], &ubo, sizeof(ubo));
@@ -938,8 +995,7 @@ void JungleApp::cleanup() {
     scene.destroyDescriptorSetLayout(device);
     scene.destroyBuffers(device);
 
-    vkDestroyPipeline(device, graphicsPipeline, nullptr);
-    vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
+    cleanupGraphicsPipeline();
 
     vkDestroyRenderPass(device, renderPass, nullptr);
 
