@@ -75,6 +75,13 @@ void JungleApp::drawFrame() {
         }
         if (ImGui::CollapsingHeader("Camera Settings")) {
             ImGui::DragFloatRange2("Clipping Planes", &nearPlane, &farPlane, 0.07f, .01f, 100000.f);
+            ImGui::SliderFloat("Camera FOV", &cameraFOVY, 1.f, 179.f);
+            ImGui::DragFloat3("Camera PoI", &cameraLookAt.x, 0.01f);
+            ImGui::DragFloat3("Camera PoV", &cameraPosition.x, 0.01f);
+            ImGui::DragFloat3("Camera Up", &cameraUpVector.x, 0.01f);
+        }
+        if (ImGui::CollapsingHeader("Scene Settings")) {
+            ImGui::Checkbox("Spin", &spinScene);
         }
     }
     ImGui::End();
@@ -906,9 +913,9 @@ void JungleApp::updateUniformBuffer(uint32_t currentImage) {
     float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
 
     UniformBufferObject ubo{};
-    ubo.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-    ubo.view = glm::lookAt(glm::vec3(5.0f, 5.0f, 5.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-    ubo.proj = glm::perspective(glm::radians(45.0f), (float) swapChainExtent.width / (float) swapChainExtent.height,
+    ubo.model = spinScene ? glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f)) : glm::mat4(1.f);
+    ubo.view = glm::lookAt(cameraPosition, cameraLookAt, cameraUpVector);
+    ubo.proj = glm::perspective(glm::radians(cameraFOVY), (float) swapChainExtent.width / (float) swapChainExtent.height,
                                 nearPlane, farPlane);
     ubo.proj[1][1] *= -1;  // because GLM generates OpenGL projections
 
