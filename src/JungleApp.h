@@ -13,11 +13,13 @@
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <memory>
 #include <array>
 #include <shaderc/shaderc.hpp>
 #include <glm/glm.hpp>
 #include "Scene.h"
 #include "PhysicalDevice.h"
+#include "Swapchain.h"
 
 const uint32_t WIDTH = 1800;
 const uint32_t HEIGHT = 1200;
@@ -52,28 +54,12 @@ private:
     void cleanup();
 
     VulkanDevice device;
+    std::unique_ptr<Swapchain> swapchain;
+
     GLFWwindow *window;
     VkSurfaceKHR surface;
 
     void createSurface();
-
-    VkSurfaceFormatKHR chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR> &availableFormats);
-
-    VkPresentModeKHR chooseSwapPresentMode(const std::vector<VkPresentModeKHR> &availablePresentModes);
-
-    VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR &capabilities);
-
-    VkSwapchainKHR swapChain;
-
-    void createSwapChain();
-
-    std::vector<VkImage> swapChainImages;
-    VkFormat swapChainImageFormat;
-    VkExtent2D swapChainExtent;
-
-    std::vector<VkImageView> swapChainImageViews;
-
-    void createImageViews();
 
     void createGraphicsPipeline(bool recompileShaders);
 
@@ -84,10 +70,6 @@ private:
     VkPipeline graphicsPipeline;
 
     void createRenderPass();
-
-    std::vector<VkFramebuffer> swapChainFramebuffers;
-
-    void createFramebuffers();
 
     VkCommandPool commandPool;
 
@@ -110,10 +92,6 @@ private:
     void drawFrame();
 
     void createSyncObjects();
-
-    void cleanupSwapChain();
-
-    void recreateSwapChain();
 
     static void framebufferResizeCallback(GLFWwindow *window, int width, int height) {
         auto app = reinterpret_cast<JungleApp *>(glfwGetWindowUserPointer(window));
@@ -145,7 +123,6 @@ private:
 
     Scene scene;
 
-    bool enableVSync = false;
     bool showMetricsWindow;
     bool forceRecreateSwapchain;
     bool forceReloadShaders;
