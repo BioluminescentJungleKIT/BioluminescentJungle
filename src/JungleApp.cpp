@@ -199,6 +199,24 @@ void JungleApp::initImGui() {
 
     ImGui::StyleColorsDark();
 
+    // Create a separate descriptor pool for ImGui.
+    // Ours is sized big enough to hold the descriptor sets for the scene itself.
+    // ImGui might need more. Even though most Vulkan implementations try to allocate nonetheless, my
+    // AMD iGPU does not. Source:
+    // https://github.com/ocornut/imgui/blob/master/examples/example_glfw_vulkan/main.cpp
+    VkDescriptorPoolSize poolSizes[] =
+    {
+        { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1 },
+    };
+
+    VkDescriptorPoolCreateInfo poolInfo = {};
+    poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
+    poolInfo.maxSets = 1;
+    poolInfo.poolSizeCount = (uint32_t)IM_ARRAYSIZE(poolSizes);
+    poolInfo.pPoolSizes = poolSizes;
+    VK_CHECK_RESULT(vkCreateDescriptorPool(device, &poolInfo, nullptr, &imguiDescriptorPool));
+
     // Setup Platform/Renderer backends
     ImGui_ImplGlfw_InitForVulkan(window, true);
     ImGui_ImplVulkan_InitInfo init_info = {};
@@ -209,7 +227,7 @@ void JungleApp::initImGui() {
     init_info.QueueFamily = indices.graphicsFamily.value();
     init_info.Queue = graphicsQueue;
     //init_info.PipelineCache = YOUR_PIPELINE_CACHE;
-    init_info.DescriptorPool = descriptorPool;
+    init_info.DescriptorPool = imguiDescriptorPool;
     init_info.Subpass = 0;
     init_info.MinImageCount = 2;
     init_info.ImageCount = 2;

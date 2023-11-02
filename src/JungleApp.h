@@ -268,6 +268,7 @@ private:
     void createDescriptorPool();
 
     VkDescriptorPool descriptorPool;
+    VkDescriptorPool imguiDescriptorPool;
 
     void createDescriptorSets();
 
