@@ -747,7 +747,6 @@ void JungleApp::createDescriptorPool() {
     poolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     poolSize.descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
     poolSize.descriptorCount += scene.getNumDescriptorSets();
-    poolSize.descriptorCount += 1; // for ImGui
 
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -756,7 +755,6 @@ void JungleApp::createDescriptorPool() {
 
     poolInfo.maxSets = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
     poolInfo.maxSets += scene.getNumDescriptorSets();
-    poolInfo.maxSets += 1; // for ImGui
 
     VK_CHECK_RESULT(vkCreateDescriptorPool(device, &poolInfo, nullptr, &descriptorPool))
 }
@@ -809,6 +807,7 @@ void JungleApp::cleanup() {
     }
 
     vkDestroyDescriptorPool(device, descriptorPool, nullptr);
+    vkDestroyDescriptorPool(device, imguiDescriptorPool, nullptr);
 
     vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
 
