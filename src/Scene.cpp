@@ -149,7 +149,7 @@ void Scene::setupUniformBuffers(int nodeIndex, glm::mat4 oldTransform, VkDevice 
     auto node = model.nodes[nodeIndex];
     auto transform = VulkanHelper::transformFromMatrixOrComponents(node.matrix,
                                                                    node.scale, node.rotation, node.translation);
-    auto newTransform = transform * oldTransform;
+    auto newTransform = oldTransform * transform;
 
     // create buffers and
     VkBuffer buffer;
