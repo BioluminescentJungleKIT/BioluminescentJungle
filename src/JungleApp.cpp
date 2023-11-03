@@ -1021,6 +1021,6 @@ void JungleApp::cleanup() {
 }
 
 void JungleApp::setupScene() {
-    scene = Scene("scenes/testmulti.gltf");
+    scene = Scene("scenes/recursion_test.gltf");
     scene.setupBuffers(device, physicalDevice, commandPool, graphicsQueue);
 }

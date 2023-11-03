@@ -294,9 +294,9 @@ glm::mat4 VulkanHelper::transformFromMatrixOrComponents(std::vector<double> matr
     if (matrix.empty()) {
         glm::mat4 transform = glm::mat4(1.f);
 
-        if (!scale.empty()) {
-            glm::vec3 scaleVec = glm::make_vec3(scale.data());
-            transform = glm::scale(transform, scaleVec);
+        if (!translation.empty()) {
+            glm::vec3 translationVec = glm::make_vec3(translation.data());
+            transform = glm::translate(transform, translationVec);
         }
 
         if (!rotation.empty()) {
@@ -304,9 +304,9 @@ glm::mat4 VulkanHelper::transformFromMatrixOrComponents(std::vector<double> matr
             transform *= glm::mat4_cast(rotationQuat);
         }
 
-        if (!translation.empty()) {
-            glm::vec3 translationVec = glm::make_vec3(translation.data());
-            transform = glm::translate(transform, translationVec);
+        if (!scale.empty()) {
+            glm::vec3 scaleVec = glm::make_vec3(scale.data());
+            transform = glm::scale(transform, scaleVec);
         }
 
         return transform;
