@@ -7,7 +7,7 @@
 #include "VulkanHelper.h"
 #include <glm/gtc/matrix_transform.hpp>
 
-const int MAX_RECURSION = 32;
+const int MAX_RECURSION = 10;
 
 Scene::Scene(std::string filename) {
     std::string err, warn;
@@ -23,101 +23,95 @@ Scene::Scene(std::string filename) {
 
 void
 Scene::render(VkCommandBuffer commandBuffer, VkPipelineLayout pipelineLayout, VkDescriptorSet globalDescriptorSet) {
-    for (auto node: model.scenes[model.defaultScene].nodes) {
-        renderNode(node, std::vector<int>{}, commandBuffer, pipelineLayout, MAX_RECURSION, globalDescriptorSet);
+    for (int mesh = 0; mesh < model.meshes.size(); ++mesh) {
+        renderInstances(mesh, commandBuffer, pipelineLayout, globalDescriptorSet);
     }
 }
 
-void Scene::renderNode(int nodeIndex, std::vector<int> recursionPath, VkCommandBuffer commandBuffer,
-                       VkPipelineLayout pipelineLayout, int maxRecursion, VkDescriptorSet globalDescriptorSet) {
-    if (maxRecursion <= 0) return;
 
-    auto node = model.nodes[nodeIndex];
-    recursionPath.push_back(nodeIndex);
+void Scene::renderInstances(int mesh, VkCommandBuffer commandBuffer, VkPipelineLayout pipelineLayout,
+                            VkDescriptorSet globalDescriptorSet) {
+    if (meshTransforms.find(mesh) == meshTransforms.end()) return; // 0 instances. skip.
 
-    if (model.nodes[nodeIndex].mesh >= 0) {
-        auto mesh = model.meshes[node.mesh];
-        for (auto primitive: mesh.primitives) {
-            std::vector<VkBuffer> vertex_buffers = {
-                    buffers[model.bufferViews[model.accessors[primitive.attributes["COLOR_0"]].bufferView].buffer],
-                    buffers[model.bufferViews[model.accessors[primitive.attributes["POSITION"]].bufferView].buffer]};
-            std::vector<VkDeviceSize> offsets = {
-                    model.bufferViews[model.accessors[primitive.attributes["COLOR_0"]].bufferView].byteOffset,
-                    model.bufferViews[model.accessors[primitive.attributes["POSITION"]].bufferView].byteOffset};
+    // bind transformations
+    bindingDescriptorSets.clear();
+    bindingDescriptorSets.push_back(globalDescriptorSet);
+    bindingDescriptorSets.push_back(descriptorSets[descriptorSetsMap[mesh]]);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0,
+                            bindingDescriptorSets.size(), bindingDescriptorSets.data(), 0, nullptr);
 
-            // bind transformations
-            bindingDescriptorSets.clear();
-            bindingDescriptorSets.push_back(globalDescriptorSet);
-            bindingDescriptorSets.push_back(descriptorSets[descriptorSetsMap[recursionPath]]);
-            vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0,
-                                    bindingDescriptorSets.size(), bindingDescriptorSets.data(), 0, nullptr);
+    for (auto primitive: model.meshes[mesh].primitives) {
 
-            vkCmdBindVertexBuffers(commandBuffer, 0, vertex_buffers.size(), vertex_buffers.data(), offsets.data());
+        std::vector<VkBuffer> vertex_buffers = {
+                buffers[model.bufferViews[model.accessors[primitive.attributes["COLOR_0"]].bufferView].buffer],
+                buffers[model.bufferViews[model.accessors[primitive.attributes["POSITION"]].bufferView].buffer]};
+        std::vector<VkDeviceSize> offsets = {
+                model.bufferViews[model.accessors[primitive.attributes["COLOR_0"]].bufferView].byteOffset,
+                model.bufferViews[model.accessors[primitive.attributes["POSITION"]].bufferView].byteOffset};
 
-            if (primitive.indices >= 0) {
-                auto indexAccessorIndex = primitive.indices;
-                auto indexBufferViewIndex = model.accessors[indexAccessorIndex].bufferView;
-                auto indexBufferIndex = model.bufferViews[indexBufferViewIndex].buffer;
-                auto indexBuffer = buffers[indexBufferIndex];
-                auto indexBufferOffset = model.bufferViews[indexBufferViewIndex].byteOffset;
-                uint32_t numIndices = model.accessors[indexAccessorIndex].count;
-                auto indexBufferType = VulkanHelper::gltfTypeToVkIndexType(
-                        model.accessors[indexAccessorIndex].componentType);
-                vkCmdBindIndexBuffer(commandBuffer, indexBuffer, indexBufferOffset, indexBufferType);
 
-                vkCmdDrawIndexed(commandBuffer, numIndices, 1, 0, 0, 0);
-            } else {
-                throw std::runtime_error("Non-indexed geometry is currently not supported.");
-            }
+        vkCmdBindVertexBuffers(commandBuffer, 0, vertex_buffers.size(), vertex_buffers.data(), offsets.data());
+
+        if (primitive.indices >= 0) {
+            auto indexAccessorIndex = primitive.indices;
+            auto indexBufferViewIndex = model.accessors[indexAccessorIndex].bufferView;
+            auto indexBufferIndex = model.bufferViews[indexBufferViewIndex].buffer;
+            auto indexBuffer = buffers[indexBufferIndex];
+            auto indexBufferOffset = model.bufferViews[indexBufferViewIndex].byteOffset;
+            uint32_t numIndices = model.accessors[indexAccessorIndex].count;
+            auto indexBufferType = VulkanHelper::gltfTypeToVkIndexType(
+                    model.accessors[indexAccessorIndex].componentType);
+            vkCmdBindIndexBuffer(commandBuffer, indexBuffer, indexBufferOffset, indexBufferType);
+
+            vkCmdDrawIndexed(commandBuffer, numIndices, meshTransforms[mesh].size(), 0, 0, 0);
+        } else {
+            throw std::runtime_error("Non-indexed geometry is currently not supported.");
         }
     }
-    for (int child: node.children) {
-        renderNode(child, recursionPath, commandBuffer, nullptr, maxRecursion - 1, nullptr);
-    }
+
 }
 
 void Scene::setupDescriptorSets(VkDevice device, VkDescriptorPool descriptorPool,
                                 VkDescriptorSetLayout descriptorSetLayout) {
-    std::vector<VkDescriptorSetLayout> layouts(numModelTransforms, sceneDescriptorSetLayout);
+    std::vector<VkDescriptorSetLayout> layouts(meshTransforms.size(), sceneDescriptorSetLayout);
     VkDescriptorSetAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
     allocInfo.descriptorPool = descriptorPool;
-    allocInfo.descriptorSetCount = numModelTransforms;
+    allocInfo.descriptorSetCount = meshTransforms.size();
     allocInfo.pSetLayouts = layouts.data();
 
-    descriptorSets.resize(numModelTransforms);
+    descriptorSets.resize(meshTransforms.size());
 
     VK_CHECK_RESULT(vkAllocateDescriptorSets(device, &allocInfo, descriptorSets.data()))
 
     int i = 0;
-    for (const auto &transformBuffer: transformBuffers) {
-        auto recursionPath = transformBuffer.first;
-        auto bufferIndex = transformBuffer.second;
+    for (int mesh = 0; mesh < model.meshes.size(); mesh++) {
+        if (meshTransforms.find(mesh) == meshTransforms.end()) continue; // 0 instances. skip.
+
+        auto meshTransformsBufferIndex = buffersMap[mesh];
         VkDescriptorBufferInfo bufferInfo{};
-        bufferInfo.buffer = buffers[bufferIndex];
+        bufferInfo.buffer = buffers[meshTransformsBufferIndex];
         bufferInfo.offset = 0;
-        bufferInfo.range = sizeof(ModelTransform);
+        bufferInfo.range = sizeof(ModelTransform) * meshTransforms[mesh].size();
 
         VkWriteDescriptorSet descriptorWrite{};
         descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrite.dstSet = descriptorSets[i];
+        descriptorSetsMap[mesh] = i++;
+        descriptorWrite.dstSet = descriptorSets[descriptorSetsMap[mesh]];
         descriptorWrite.dstBinding = 0;
         descriptorWrite.dstArrayElement = 0;
-        descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         descriptorWrite.descriptorCount = 1;
         descriptorWrite.pBufferInfo = &bufferInfo;
         descriptorWrite.pImageInfo = nullptr; // Optional
         descriptorWrite.pTexelBufferView = nullptr; // Optional
 
         vkUpdateDescriptorSets(device, 1, &descriptorWrite, 0, nullptr);
-
-        descriptorSetsMap[recursionPath] = i;
-        ++i;
     }
 }
 
 uint32_t Scene::getNumDescriptorSets() {
-    return numModelTransforms;
+    return meshTransforms.size();
 }
 
 void Scene::setupBuffers(VkDevice device, VkPhysicalDevice physicalDevice, VkCommandPool commandPool, VkQueue queue) {
@@ -135,45 +129,43 @@ void Scene::setupBuffers(VkDevice device, VkPhysicalDevice physicalDevice, VkCom
                                    queue);
     }
     for (auto node: model.scenes[model.defaultScene].nodes) {
-        setupUniformBuffers(node, glm::mat4(1.f), device, physicalDevice, commandPool, queue,
-                            MAX_RECURSION, std::vector<int>{});
+        generateTransforms(node, glm::mat4(1.f), MAX_RECURSION);
+        setupUniformBuffers(device, physicalDevice, commandPool, queue);
     }
 }
 
-void Scene::setupUniformBuffers(int nodeIndex, glm::mat4 oldTransform, VkDevice device, VkPhysicalDevice physicalDevice,
-                                VkCommandPool commandPool, VkQueue queue, int maxRecursion,
-                                std::vector<int> recursionPath) {
+void Scene::generateTransforms(int nodeIndex, glm::mat4 oldTransform, int maxRecursion) {
     if (maxRecursion <= 0) return;
 
-    recursionPath.push_back(nodeIndex);
     auto node = model.nodes[nodeIndex];
     auto transform = VulkanHelper::transformFromMatrixOrComponents(node.matrix,
                                                                    node.scale, node.rotation, node.translation);
-    auto newTransform = transform * oldTransform;
+    auto newTransform = oldTransform * transform;
 
-    // create buffers and
-    VkBuffer buffer;
-    VkDeviceMemory bufferMemory;
-    VkDeviceSize bufferSize = sizeof(ModelTransform);
-    ModelTransform transformData{newTransform};
-    VulkanHelper::createBuffer(device, physicalDevice, bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-                               VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                               buffer, bufferMemory);
-
-    // upload newTransform
-    void *bufferMappedMemory;
-    vkMapMemory(device, bufferMemory, 0, bufferSize, 0, &bufferMappedMemory);
-    memcpy(bufferMappedMemory, &transformData, sizeof(ModelTransform));
-    vkUnmapMemory(device, bufferMemory);
-
-    transformBuffers[recursionPath] = buffers.size();
-    ++numModelTransforms;
-    buffers.push_back(buffer);
-    bufferMemories.push_back(bufferMemory);
+    if (node.mesh >= 0) {
+        meshTransforms[node.mesh].push_back(ModelTransform{newTransform});
+    }
 
     for (int child: node.children) {
-        setupUniformBuffers(child, newTransform, device, physicalDevice, commandPool, queue, maxRecursion - 1,
-                            recursionPath);
+        generateTransforms(child, newTransform, maxRecursion - 1);
+    }
+}
+
+void Scene::setupUniformBuffers(VkDevice device, VkPhysicalDevice physicalDevice, VkCommandPool commandPool,
+                                VkQueue queue) {
+    for (auto [mesh, transforms]: meshTransforms) {
+        VkBuffer buffer;
+        VkDeviceMemory bufferMemory;
+        VkDeviceSize bufferSize = sizeof(ModelTransform) * transforms.size();
+        VulkanHelper::createBuffer(device, physicalDevice, bufferSize,
+                                   VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                                   VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, buffer, bufferMemory);
+
+        VulkanHelper::uploadBuffer(device, physicalDevice, bufferSize, buffer, transforms.data(), commandPool, queue);
+
+        buffersMap[mesh] = buffers.size();
+        buffers.push_back(buffer);
+        bufferMemories.push_back(bufferMemory);
     }
 }
 
@@ -236,7 +228,7 @@ VkVertexInputBindingDescription Scene::getVertexBindingDescription(int accessor)
 VkDescriptorSetLayout Scene::getDescriptorSetLayout(VkDevice device) {
     VkDescriptorSetLayoutBinding uboLayoutBinding{};
     uboLayoutBinding.binding = 0;
-    uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     uboLayoutBinding.descriptorCount = 1;
     uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
     uboLayoutBinding.pImmutableSamplers = nullptr; // Optional

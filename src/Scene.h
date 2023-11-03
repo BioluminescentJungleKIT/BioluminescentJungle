@@ -19,12 +19,16 @@ struct ModelTransform {
 class Scene {
 public:
     explicit Scene() = default;
+
     explicit Scene(std::string filename);
 
     void setupBuffers(VkDevice device, VkPhysicalDevice physicalDevice, VkCommandPool commandPool, VkQueue queue);
+
     void
     setupDescriptorSets(VkDevice device, VkDescriptorPool descriptorPool, VkDescriptorSetLayout descriptorSetLayout);
+
     void render(VkCommandBuffer commandBuffer, VkPipelineLayout pipelineLayout, VkDescriptorSet globalDescriptorSet);
+
     void destroyBuffers(VkDevice device);
 
     std::tuple<std::vector<VkVertexInputAttributeDescription>, std::vector<VkVertexInputBindingDescription>>
@@ -47,18 +51,20 @@ private:
 
     std::map<int, VkVertexInputBindingDescription> vertexBindingDescriptions;
 
-    void renderNode(int nodeIndex, std::vector<int> recursionPath, VkCommandBuffer commandBuffer,
-                    VkPipelineLayout pipelineLayout, int maxRecursion, VkDescriptorSet globalDescriptorSet);
+    void renderInstances(int mesh, VkCommandBuffer commandBuffer,
+                         VkPipelineLayout pipelineLayout, VkDescriptorSet globalDescriptorSet);
 
-    void setupUniformBuffers(int nodeIndex, glm::mat4 oldTransform, VkDevice device, VkPhysicalDevice physicalDevice,
-                             VkCommandPool commandPool, VkQueue queue, int maxRecursion,
-                             std::vector<int> recursionPath);
+    void generateTransforms(int nodeIndex, glm::mat4 oldTransform, int maxRecursion);
+
+    void
+    setupUniformBuffers(VkDevice device, VkPhysicalDevice physicalDevice, VkCommandPool commandPool, VkQueue queue);
 
     std::map<std::vector<int>, int> transformBuffers;
-    uint32_t numModelTransforms = 0;
     VkDescriptorSetLayout sceneDescriptorSetLayout;
     std::vector<VkDescriptorSet> descriptorSets;
-    std::map<std::vector<int>, int> descriptorSetsMap;
+    std::map<int, int> buffersMap;
+    std::map<int, int> descriptorSetsMap;
+    std::map<int, std::vector<ModelTransform>> meshTransforms;
     std::vector<VkDescriptorSet> bindingDescriptorSets;
 
 };
