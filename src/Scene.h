@@ -41,8 +41,9 @@ public:
     VkDescriptorSetLayout getDescriptorSetLayout(VkDevice device);
 
     void destroyDescriptorSetLayout(VkDevice device);
+    void computeCameraPos(glm::vec3& lookAt, glm::vec3& cameraPos, float& fov);
 
-private:
+  private:
     tinygltf::TinyGLTF loader;
     tinygltf::Model model;
 

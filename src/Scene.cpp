@@ -6,6 +6,7 @@
 #include "Scene.h"
 #include "VulkanHelper.h"
 #include <glm/gtc/matrix_transform.hpp>
+#include <iomanip>
 
 const int MAX_RECURSION = 10;
 
@@ -247,3 +248,50 @@ void Scene::destroyDescriptorSetLayout(VkDevice device) {
     vkDestroyDescriptorSetLayout(device, sceneDescriptorSetLayout, nullptr);
 }
 
+void calculateBoundingBox(const tinygltf::Model& model, glm::vec3& minBounds, glm::vec3& maxBounds) {
+    minBounds = glm::vec3(std::numeric_limits<float>::max());
+    maxBounds = glm::vec3(-std::numeric_limits<float>::max());
+
+    for (const auto& mesh : model.meshes) {
+        for (const auto& primitive : mesh.primitives) {
+            const auto& attributes = primitive.attributes;
+
+            if (attributes.find("POSITION") != attributes.end()) {
+                const int accessorIdx = attributes.at("POSITION");
+                const auto& accessor = model.accessors[accessorIdx];
+                const auto& bufferView = model.bufferViews[accessor.bufferView];
+                const auto& buffer = model.buffers[bufferView.buffer];
+                const size_t byteStride = accessor.ByteStride(bufferView);
+
+                for (size_t i = 0; i < accessor.count; ++i) {
+                    const int pos = bufferView.byteOffset + accessor.byteOffset + i * byteStride;
+                    const float* ptr = reinterpret_cast<const float*>(&buffer.data[pos]);
+                    for (int j = 0; j < 3; ++j) {
+                        minBounds[j] = std::min(minBounds[j], ptr[j]);
+                        maxBounds[j] = std::max(maxBounds[j], ptr[j]);
+                    }
+                }
+            }
+        }
+    }
+}
+
+std::ostream& operator << (std::ostream& out, const glm::vec3& value) {
+    out << std::setprecision(4) << "(" << value.x << "," << value.y << "," << value.z << ")";
+    return out;
+}
+
+void Scene::computeCameraPos(glm::vec3& lookAt, glm::vec3& cameraPos, float& fov) {
+    // TODO: if the scene has a camera, we ought to load the data from it
+
+    // Compute bbox of the meshes
+    glm::vec3 min, max;
+    calculateBoundingBox(model, min, max);
+
+    fov = 45.0f;
+    lookAt = (min + max) / 2.0f;
+    float R = glm::length(max - min);
+    R /= std::tan(fov * M_PI / 360);
+    R *= 0.6;
+    cameraPos = glm::vec3(lookAt.x, lookAt.y + R, lookAt.z + R);
+}

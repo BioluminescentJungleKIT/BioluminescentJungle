@@ -700,4 +700,5 @@ void JungleApp::cleanup() {
 void JungleApp::setupScene(const std::string& sceneName) {
     scene = Scene(sceneName);
     scene.setupBuffers(device, device.physicalDevice, commandPool, device.graphicsQueue);
+    scene.computeCameraPos(cameraLookAt, cameraPosition, cameraFOVY);
 }
