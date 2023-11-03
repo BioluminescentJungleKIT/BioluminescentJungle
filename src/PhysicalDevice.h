@@ -50,6 +50,11 @@ class VulkanDevice
 
     SwapChainSupportDetails querySwapChainSupport(VkPhysicalDevice device, VkSurfaceKHR surface);
 
+    void createImage(uint32_t width, uint32_t height, VkFormat format,
+        VkImageTiling tiling, VkImageUsageFlags usage,
+        VkMemoryPropertyFlags properties, VkImage& image,
+        VkDeviceMemory& imageMemory);
+
   private:
     static bool checkValidationLayerSupport();
     VkResult CreateDebugUtilsMessengerEXT(VkInstance instance,
@@ -70,7 +75,6 @@ class VulkanDevice
     void pickPhysicalDevice(VkSurfaceKHR surface);
     bool isDeviceSuitable(VkPhysicalDevice const& device, VkSurfaceKHR surface);
     void createLogicalDevice(VkSurfaceKHR surface);
-
 };
 
 
