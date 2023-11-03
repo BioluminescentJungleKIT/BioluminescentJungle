@@ -55,6 +55,14 @@ class VulkanDevice
         VkMemoryPropertyFlags properties, VkImage& image,
         VkDeviceMemory& imageMemory);
 
+    VkImageView createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspectFlags);
+
+    VkCommandBuffer beginSingleTimeCommands(VkCommandPool commandPool);
+    void endSingleTimeCommands(VkCommandPool commandPool, VkCommandBuffer commandBuffer);
+
+    void transitionImageLayout(VkCommandPool pool, VkImage image, VkFormat format,
+        VkImageLayout oldLayout, VkImageLayout newLayout);
+
   private:
     static bool checkValidationLayerSupport();
     VkResult CreateDebugUtilsMessengerEXT(VkInstance instance,
