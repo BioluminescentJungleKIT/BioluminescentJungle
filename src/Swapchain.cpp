@@ -173,4 +173,5 @@ Swapchain::Swapchain(GLFWwindow* window, VkSurfaceKHR surface, VulkanDevice* dev
 }
 
 Swapchain::~Swapchain() {
+    cleanupSwapChain();
 }
