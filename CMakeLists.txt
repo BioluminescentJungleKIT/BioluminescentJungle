@@ -14,6 +14,8 @@ pkg_check_modules(ShaderC REQUIRED shaderc)
 
 add_executable(Jungle src/main.cpp
         src/JungleApp.cpp
+        src/PhysicalDevice.cpp
+        src/Swapchain.cpp
         src/JungleApp.h
         lib/imgui/imconfig.h
         lib/imgui/imgui.cpp
