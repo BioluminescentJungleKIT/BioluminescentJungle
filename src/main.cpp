@@ -4,7 +4,7 @@
 int main(int argc, char **argv) {
     JungleApp app{};
 
-    std::string scenePath = "scenes/testmulti.gltf";
+    std::string scenePath = "scenes/recursion_test.gltf";
     if (argc > 1) {
         scenePath = argv[1];
     }
