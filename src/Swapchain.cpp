@@ -7,6 +7,10 @@ void Swapchain::cleanupSwapChain() {
         vkDestroyFramebuffer(*device, swapChainFramebuffers[i], nullptr);
     }
 
+    vkDestroyImageView(*device, depth.view, nullptr);
+    vkDestroyImage(*device, depth.image, nullptr);
+    vkFreeMemory(*device, depth.memory, nullptr);
+
     for (size_t i = 0; i < swapChainImageViews.size(); i++) {
         vkDestroyImageView(*device, swapChainImageViews[i], nullptr);
     }
@@ -131,24 +135,52 @@ void Swapchain::createImageViews() {
 }
 
 void Swapchain::createFramebuffersForRender(VkRenderPass renderPass) {
+    createDepthResources();
     swapChainFramebuffers.resize(swapChainImageViews.size());
 
     for (size_t i = 0; i < swapChainImageViews.size(); i++) {
-        VkImageView attachments[] = {
-                swapChainImageViews[i]
+        std::array<VkImageView, 2> attachments = {
+            swapChainImageViews[i],
+            depth.view,
         };
 
         VkFramebufferCreateInfo framebufferInfo{};
         framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
         framebufferInfo.renderPass = renderPass;
-        framebufferInfo.attachmentCount = 1;
-        framebufferInfo.pAttachments = attachments;
+        framebufferInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
+        framebufferInfo.pAttachments = attachments.data();
         framebufferInfo.width = swapChainExtent.width;
         framebufferInfo.height = swapChainExtent.height;
         framebufferInfo.layers = 1;
-
         VK_CHECK_RESULT(vkCreateFramebuffer(*device, &framebufferInfo, nullptr, &swapChainFramebuffers[i]))
     }
+}
+
+static VkFormat findSupportedFormat(VkPhysicalDevice device, const std::vector<VkFormat>& candidates) {
+    const auto features = VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT;
+    for (VkFormat format : candidates) {
+        VkFormatProperties props;
+        vkGetPhysicalDeviceFormatProperties(device, format, &props);
+        if ((props.optimalTilingFeatures & features) == features) {
+            return format;
+        }
+    }
+
+    throw std::runtime_error("failed to find supported format!");
+}
+
+VkFormat Swapchain::chooseDepthFormat() {
+    return findSupportedFormat(device->physicalDevice,
+        {VK_FORMAT_D32_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT});
+}
+
+void Swapchain::createDepthResources() {
+    VkFormat depthFormat = chooseDepthFormat();
+    device->createImage(swapChainExtent.width, swapChainExtent.height, depthFormat,
+        VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, depth.image, depth.memory);
+
+    depth.view = device->createImageView(depth.image, depthFormat, VK_IMAGE_ASPECT_DEPTH_BIT);
 }
 
 Swapchain::Swapchain(GLFWwindow* window, VkSurfaceKHR surface, VulkanDevice* device) {

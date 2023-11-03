@@ -24,6 +24,14 @@ class Swapchain
     VkSwapchainKHR swapChain;
     std::vector<VkFramebuffer> swapChainFramebuffers;
 
+    struct {
+        VkImage image;
+        VkDeviceMemory memory;
+        VkImageView view;
+    } depth;
+
+    VkFormat chooseDepthFormat();
+
   private:
     GLFWwindow *window;
     VulkanDevice *device;
@@ -44,6 +52,7 @@ class Swapchain
 
     void createSwapChain();
     void createImageViews();
+    void createDepthResources();
 };
 
 #endif /* end of include guard: JUNGLE_SWAPCHAIN */
