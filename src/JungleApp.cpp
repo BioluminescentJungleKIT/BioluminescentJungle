@@ -21,7 +21,6 @@ void JungleApp::initVulkan(const std::string& sceneName) {
 
     swapchain = std::make_unique<Swapchain>(window, surface, &device);
     createRenderPass();
-    createCommandPool();
     setupScene(sceneName);
     createDescriptorSetLayout();
     createGraphicsPipeline(false);
@@ -193,8 +192,7 @@ void JungleApp::initImGui() {
     init_info.Instance = device.instance;
     init_info.PhysicalDevice = device.physicalDevice;
     init_info.Device = device;
-    auto indices = device.findQueueFamilies(device.physicalDevice, surface);
-    init_info.QueueFamily = indices.graphicsFamily.value();
+    init_info.QueueFamily = device.chosenQueues.graphicsFamily.value();
     init_info.Queue = device.graphicsQueue;
     //init_info.PipelineCache = YOUR_PIPELINE_CACHE;
     init_info.DescriptorPool = imguiDescriptorPool;
@@ -206,7 +204,7 @@ void JungleApp::initImGui() {
     // init_info.CheckVkResultFn = check_vk_result;
     ImGui_ImplVulkan_Init(&init_info, renderPass);
 
-    VkCommandPool command_pool = commandPool;
+    VkCommandPool command_pool = device.commandPool;
     VkCommandBuffer command_buffer = commandBuffers[0];
 
     VK_CHECK_RESULT(vkResetCommandPool(device, command_pool, 0))
@@ -465,23 +463,12 @@ void JungleApp::createRenderPass() {
     VK_CHECK_RESULT(vkCreateRenderPass(device, &renderPassInfo, nullptr, &renderPass))
 }
 
-void JungleApp::createCommandPool() {
-    auto queueFamilyIndices = device.findQueueFamilies(device.physicalDevice, surface);
-
-    VkCommandPoolCreateInfo poolInfo{};
-    poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-    poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-    poolInfo.queueFamilyIndex = queueFamilyIndices.graphicsFamily.value();
-
-    VK_CHECK_RESULT(vkCreateCommandPool(device, &poolInfo, nullptr, &commandPool))
-}
-
 void JungleApp::createCommandBuffer() {
     commandBuffers.resize(MAX_FRAMES_IN_FLIGHT);
 
     VkCommandBufferAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-    allocInfo.commandPool = commandPool;
+    allocInfo.commandPool = device.commandPool;
     allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
     allocInfo.commandBufferCount = (uint32_t) commandBuffers.size();
 
@@ -690,7 +677,6 @@ void JungleApp::cleanup() {
         vkDestroyFence(device, inFlightFences[i], nullptr);
     }
 
-    vkDestroyCommandPool(device, commandPool, nullptr);
     vkDestroySurfaceKHR(device.instance, surface, nullptr);
     device.destroy();
     glfwDestroyWindow(window);
@@ -699,6 +685,6 @@ void JungleApp::cleanup() {
 
 void JungleApp::setupScene(const std::string& sceneName) {
     scene = Scene(sceneName);
-    scene.setupBuffers(device, device.physicalDevice, commandPool, device.graphicsQueue);
+    scene.setupBuffers(&device);
     scene.computeCameraPos(cameraLookAt, cameraPosition, cameraFOVY);
 }

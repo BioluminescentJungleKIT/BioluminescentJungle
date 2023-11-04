@@ -9,6 +9,7 @@
 #include <vector>
 #include <glm/glm.hpp>
 #include "tiny_gltf.h"
+#include "PhysicalDevice.h"
 
 
 struct ModelTransform {
@@ -22,7 +23,7 @@ public:
 
     explicit Scene(std::string filename);
 
-    void setupBuffers(VkDevice device, VkPhysicalDevice physicalDevice, VkCommandPool commandPool, VkQueue queue);
+    void setupBuffers(VulkanDevice *device);
 
     void
     setupDescriptorSets(VkDevice device, VkDescriptorPool descriptorPool, VkDescriptorSetLayout descriptorSetLayout);
@@ -57,8 +58,7 @@ public:
 
     void generateTransforms(int nodeIndex, glm::mat4 oldTransform, int maxRecursion);
 
-    void
-    setupUniformBuffers(VkDevice device, VkPhysicalDevice physicalDevice, VkCommandPool commandPool, VkQueue queue);
+    void setupUniformBuffers(VulkanDevice *device);
 
     std::map<std::vector<int>, int> transformBuffers;
     VkDescriptorSetLayout sceneDescriptorSetLayout;

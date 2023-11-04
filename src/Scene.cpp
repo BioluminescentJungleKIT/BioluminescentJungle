@@ -115,23 +115,23 @@ uint32_t Scene::getNumDescriptorSets() {
     return meshTransforms.size();
 }
 
-void Scene::setupBuffers(VkDevice device, VkPhysicalDevice physicalDevice, VkCommandPool commandPool, VkQueue queue) {
+void Scene::setupBuffers(VulkanDevice *device) {
     unsigned long numBuffers = model.buffers.size();
     buffers.resize(model.buffers.size());
     bufferMemories.resize(model.buffers.size());
     for (unsigned long i = 0; i < numBuffers; ++i) {
         auto gltfBuffer = model.buffers[i];
         VkDeviceSize bufferSize = sizeof(gltfBuffer.data[0]) * gltfBuffer.data.size();
-        VulkanHelper::createBuffer(device, physicalDevice, bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT |
+        VulkanHelper::createBuffer(*device, device->physicalDevice, bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT |
                                                                        VK_BUFFER_USAGE_INDEX_BUFFER_BIT |
                                                                        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
                                    VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, buffers[i], bufferMemories[i]);
-        VulkanHelper::uploadBuffer(device, physicalDevice, bufferSize, buffers[i], gltfBuffer.data.data(), commandPool,
-                                   queue);
+        VulkanHelper::uploadBuffer(*device, device->physicalDevice, bufferSize, buffers[i],
+            gltfBuffer.data.data(), device->commandPool, device->graphicsQueue);
     }
     for (auto node: model.scenes[model.defaultScene].nodes) {
         generateTransforms(node, glm::mat4(1.f), MAX_RECURSION);
-        setupUniformBuffers(device, physicalDevice, commandPool, queue);
+        setupUniformBuffers(device);
     }
 }
 
@@ -152,17 +152,17 @@ void Scene::generateTransforms(int nodeIndex, glm::mat4 oldTransform, int maxRec
     }
 }
 
-void Scene::setupUniformBuffers(VkDevice device, VkPhysicalDevice physicalDevice, VkCommandPool commandPool,
-                                VkQueue queue) {
+void Scene::setupUniformBuffers(VulkanDevice *device) {
     for (auto [mesh, transforms]: meshTransforms) {
         VkBuffer buffer;
         VkDeviceMemory bufferMemory;
         VkDeviceSize bufferSize = sizeof(ModelTransform) * transforms.size();
-        VulkanHelper::createBuffer(device, physicalDevice, bufferSize,
+        VulkanHelper::createBuffer(*device, device->physicalDevice, bufferSize,
                                    VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                                    VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, buffer, bufferMemory);
 
-        VulkanHelper::uploadBuffer(device, physicalDevice, bufferSize, buffer, transforms.data(), commandPool, queue);
+        VulkanHelper::uploadBuffer(*device, device->physicalDevice, bufferSize, buffer, transforms.data(),
+            device->commandPool, device->graphicsQueue);
 
         buffersMap[mesh] = buffers.size();
         buffers.push_back(buffer);
