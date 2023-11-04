@@ -25,6 +25,9 @@ public:
 
     void setupBuffers(VulkanDevice *device);
 
+    void setupTextures(VulkanDevice* device);
+    void destroyTextures(VulkanDevice* device);
+
     void
     setupDescriptorSets(VkDevice device, VkDescriptorPool descriptorPool, VkDescriptorSetLayout descriptorSetLayout);
 
@@ -43,6 +46,12 @@ public:
 
     void destroyDescriptorSetLayout(VkDevice device);
     void computeCameraPos(glm::vec3& lookAt, glm::vec3& cameraPos, float& fov);
+
+    struct LoadedTexture
+    {
+        VkImage image;
+        VkDeviceMemory memory;
+    };
 
   private:
     tinygltf::TinyGLTF loader;
@@ -67,7 +76,7 @@ public:
     std::map<int, int> descriptorSetsMap;
     std::map<int, std::vector<ModelTransform>> meshTransforms;
     std::vector<VkDescriptorSet> bindingDescriptorSets;
-
+    std::map<int, LoadedTexture> textures;
 };
 
 

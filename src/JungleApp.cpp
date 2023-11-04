@@ -665,6 +665,7 @@ void JungleApp::cleanup() {
     vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
 
     scene.destroyDescriptorSetLayout(device);
+    scene.destroyTextures(&device);
     scene.destroyBuffers(device);
 
     cleanupGraphicsPipeline();
@@ -686,5 +687,6 @@ void JungleApp::cleanup() {
 void JungleApp::setupScene(const std::string& sceneName) {
     scene = Scene(sceneName);
     scene.setupBuffers(&device);
+    scene.setupTextures(&device);
     scene.computeCameraPos(cameraLookAt, cameraPosition, cameraFOVY);
 }

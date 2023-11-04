@@ -8,6 +8,9 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <iomanip>
 
+// Definitions of standard names in gltf
+#define BASE_COLOR_TEXTURE "baseColorTexture"
+
 const int MAX_RECURSION = 10;
 
 Scene::Scene(std::string filename) {
@@ -294,4 +297,81 @@ void Scene::computeCameraPos(glm::vec3& lookAt, glm::vec3& cameraPos, float& fov
     R /= std::tan(fov * M_PI / 360);
     R *= 0.6;
     cameraPos = glm::vec3(lookAt.x, lookAt.y + R, lookAt.z + R);
+}
+
+void copyBufferToImage(VulkanDevice *device, VkBuffer buffer, VkImage image, uint32_t width, uint32_t height) {
+    VkCommandBuffer commandBuffer = device->beginSingleTimeCommands();
+
+    VkBufferImageCopy region{};
+    region.bufferOffset = 0;
+    region.bufferRowLength = 0;
+    region.bufferImageHeight = 0;
+
+    region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    region.imageSubresource.mipLevel = 0;
+    region.imageSubresource.baseArrayLayer = 0;
+    region.imageSubresource.layerCount = 1;
+    region.imageOffset = {0, 0, 0};
+    region.imageExtent = { width, height, 1 };
+    vkCmdCopyBufferToImage(commandBuffer, buffer, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+    device->endSingleTimeCommands(commandBuffer);
+}
+
+Scene::LoadedTexture uploadGLTFImage(VulkanDevice *device, const tinygltf::Image& image)
+{
+    Scene::LoadedTexture loadedTex;
+    const uint32_t imageSize = image.width * image.height * image.component;
+    VkBuffer stagingBuffer;
+    VkDeviceMemory stagingBufferMemory;
+    VulkanHelper::createBuffer(device->device, device->physicalDevice,
+        imageSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+        stagingBuffer, stagingBufferMemory);
+
+    void* data;
+    vkMapMemory(*device, stagingBufferMemory, 0, imageSize, 0, &data);
+    memcpy(data, image.image.data(), static_cast<size_t>(imageSize));
+    vkUnmapMemory(*device, stagingBufferMemory);
+
+    device->createImage(image.width, image.height, VK_FORMAT_R8G8B8A8_SRGB,
+        VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, loadedTex.image, loadedTex.memory);
+
+    device->transitionImageLayout(loadedTex.image, VK_FORMAT_R8G8B8A8_SRGB,
+        VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+    copyBufferToImage(device, stagingBuffer, loadedTex.image, image.width, image.height);
+    device->transitionImageLayout(loadedTex.image, VK_FORMAT_R8G8B8A8_SRGB,
+        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+
+    vkDestroyBuffer(*device, stagingBuffer, nullptr);
+    vkFreeMemory(*device, stagingBufferMemory, nullptr);
+    return loadedTex;
+}
+
+void Scene::setupTextures(VulkanDevice* device) {
+    for (size_t i = 0; i < model.materials.size(); i++) {
+        const auto& material = model.materials[i];
+
+        auto it = material.values.find(BASE_COLOR_TEXTURE);
+        if (it == material.values.end()) {
+            continue;
+        }
+
+        // We have a texture here
+        const auto& textureIdx = it->second.TextureIndex();
+        const tinygltf::Texture& gTexture = model.textures[textureIdx];
+
+        if (textures.count(gTexture.source)) {
+            continue;
+        }
+
+        textures[gTexture.source] = uploadGLTFImage(device, model.images[gTexture.source]);
+    }
+}
+
+void Scene::destroyTextures(VulkanDevice* device) {
+    for (auto& [idx, tex] : textures) {
+        vkDestroyImage(*device, tex.image, nullptr);
+        vkFreeMemory(*device, tex.memory, nullptr);
+    }
 }
