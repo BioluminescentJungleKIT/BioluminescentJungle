@@ -10,8 +10,18 @@
 
 // Definitions of standard names in gltf
 #define BASE_COLOR_TEXTURE "baseColorTexture"
+#define FIXED_COLOR "COLOR_0"
+#define TEXCOORD0 "TEXCOORD_0"
 
 const int MAX_RECURSION = 10;
+
+static bool meshNeedsColor(const tinygltf::Mesh& mesh) {
+    return mesh.primitives[0].attributes.contains(FIXED_COLOR);
+}
+
+static bool meshNeedsTexcoords(const tinygltf::Mesh& mesh) {
+    return mesh.primitives[0].attributes.contains(TEXCOORD0);
+}
 
 Scene::Scene(std::string filename) {
     std::string err, warn;
@@ -44,18 +54,19 @@ void Scene::renderInstances(int mesh, VkCommandBuffer commandBuffer, VkPipelineL
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0,
                             bindingDescriptorSets.size(), bindingDescriptorSets.data(), 0, nullptr);
 
+    const char *colorAttr = meshNeedsColor(model.meshes[mesh]) ? FIXED_COLOR : TEXCOORD0;
     for (auto primitive: model.meshes[mesh].primitives) {
 
         std::vector<VkBuffer> vertex_buffers = {
-                buffers[model.bufferViews[model.accessors[primitive.attributes["COLOR_0"]].bufferView].buffer],
-                buffers[model.bufferViews[model.accessors[primitive.attributes["POSITION"]].bufferView].buffer]};
+                buffers[model.bufferViews[model.accessors[primitive.attributes["POSITION"]].bufferView].buffer],
+                buffers[model.bufferViews[model.accessors[primitive.attributes[colorAttr]].bufferView].buffer],
+        };
         std::vector<VkDeviceSize> offsets = {
-                model.bufferViews[model.accessors[primitive.attributes["COLOR_0"]].bufferView].byteOffset,
-                model.bufferViews[model.accessors[primitive.attributes["POSITION"]].bufferView].byteOffset};
-
+                model.bufferViews[model.accessors[primitive.attributes["POSITION"]].bufferView].byteOffset,
+                model.bufferViews[model.accessors[primitive.attributes[colorAttr]].bufferView].byteOffset,
+        };
 
         vkCmdBindVertexBuffers(commandBuffer, 0, vertex_buffers.size(), vertex_buffers.data(), offsets.data());
-
         if (primitive.indices >= 0) {
             auto indexAccessorIndex = primitive.indices;
             auto indexBufferViewIndex = model.accessors[indexAccessorIndex].bufferView;
@@ -184,40 +195,52 @@ Scene::getAttributeAndBindingDescriptions() {
     std::vector<VkVertexInputBindingDescription> bindingDescriptions;
 
     // TODO set default color (white) in case the attribute is not present
-    int colorAccessor = model.meshes[0].primitives[0].attributes["COLOR_0"];
-    VkVertexInputAttributeDescription colorAttributeDescription{};
-    colorAttributeDescription.binding = colorAccessor;
-    colorAttributeDescription.location = 1;
-    colorAttributeDescription.format = VulkanHelper::gltfTypeToVkFormat(model.accessors[colorAccessor].type,
-                                                                        model.accessors[colorAccessor].componentType,
-                                                                        model.accessors[colorAccessor].normalized);
-    colorAttributeDescription.offset = 0;
-    attributeDescriptions.push_back(colorAttributeDescription);
-    bindingDescriptions.push_back(getVertexBindingDescription(colorAccessor));
-
+    if (meshNeedsColor(model.meshes[0])) {
+        int colorAccessor = model.meshes[0].primitives[0].attributes[FIXED_COLOR];
+        VkVertexInputAttributeDescription colorAttributeDescription{};
+        colorAttributeDescription.binding = 1;
+        colorAttributeDescription.location = 1;
+        colorAttributeDescription.format =
+            VulkanHelper::gltfTypeToVkFormat(model.accessors[colorAccessor].type,
+            model.accessors[colorAccessor].componentType, model.accessors[colorAccessor].normalized);
+        colorAttributeDescription.offset = 0;
+        attributeDescriptions.push_back(colorAttributeDescription);
+        bindingDescriptions.push_back(getVertexBindingDescription(colorAccessor, 1));
+    } else if (meshNeedsTexcoords(model.meshes[0])) {
+        int texcoordAccessor = model.meshes[0].primitives[0].attributes[TEXCOORD0];
+        VkVertexInputAttributeDescription texcoordAttributeDescription{};
+        texcoordAttributeDescription.binding = 1;
+        texcoordAttributeDescription.location = 1;
+        texcoordAttributeDescription.format =
+            VulkanHelper::gltfTypeToVkFormat(model.accessors[texcoordAccessor].type,
+            model.accessors[texcoordAccessor].componentType, model.accessors[texcoordAccessor].normalized);
+        texcoordAttributeDescription.offset = 0;
+        attributeDescriptions.push_back(texcoordAttributeDescription);
+        bindingDescriptions.push_back(getVertexBindingDescription(texcoordAccessor, 1));
+    }
 
     int positionAccessor = model.meshes[0].primitives[0].attributes["POSITION"];
     VkVertexInputAttributeDescription positionAttributeDescription{};
-    positionAttributeDescription.binding = positionAccessor;
+    positionAttributeDescription.binding = 0;
     positionAttributeDescription.location = 0;
     positionAttributeDescription.format = VulkanHelper::gltfTypeToVkFormat(model.accessors[positionAccessor].type,
                                                                            model.accessors[positionAccessor].componentType,
                                                                            model.accessors[positionAccessor].normalized);
     positionAttributeDescription.offset = 0;
     attributeDescriptions.push_back(positionAttributeDescription);
-    bindingDescriptions.push_back(getVertexBindingDescription(positionAccessor));
+    bindingDescriptions.push_back(getVertexBindingDescription(positionAccessor, 0));
 
     return {attributeDescriptions, bindingDescriptions};
 }
 
-VkVertexInputBindingDescription Scene::getVertexBindingDescription(int accessor) {
+VkVertexInputBindingDescription Scene::getVertexBindingDescription(int accessor, int bindingId) {
     if (vertexBindingDescriptions.contains(accessor)) {
         return vertexBindingDescriptions[accessor];
     }
 
     VkVertexInputBindingDescription bindingDescription;
 
-    bindingDescription.binding = accessor;
+    bindingDescription.binding = bindingId;
     bindingDescription.stride = VulkanHelper::strideFromGltfType(
             model.accessors[accessor].type,
             model.accessors[accessor].componentType,
@@ -258,7 +281,6 @@ void calculateBoundingBox(const tinygltf::Model& model, glm::vec3& minBounds, gl
     for (const auto& mesh : model.meshes) {
         for (const auto& primitive : mesh.primitives) {
             const auto& attributes = primitive.attributes;
-
             if (attributes.find("POSITION") != attributes.end()) {
                 const int accessorIdx = attributes.at("POSITION");
                 const auto& accessor = model.accessors[accessorIdx];
@@ -374,4 +396,8 @@ void Scene::destroyTextures(VulkanDevice* device) {
         vkDestroyImage(*device, tex.image, nullptr);
         vkFreeMemory(*device, tex.memory, nullptr);
     }
+}
+
+std::string Scene::queryShaderName() {
+    return meshNeedsColor(model.meshes[0]) ? "shaders/shader" : "shaders/simple-texture";
 }

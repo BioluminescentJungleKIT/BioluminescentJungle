@@ -231,8 +231,12 @@ void JungleApp::createSurface() {
 }
 
 void JungleApp::createGraphicsPipeline(bool recompileShaders) {
-    auto [vertShaderCode, vertMessage] = getShaderCode("shaders/shader.vert", shaderc_glsl_vertex_shader, recompileShaders);
-    auto [fragShaderCode, fragMessage] = getShaderCode("shaders/shader.frag", shaderc_glsl_fragment_shader, recompileShaders);
+    std::string shaderNames = scene.queryShaderName();
+
+    auto [vertShaderCode, vertMessage] =
+        getShaderCode(shaderNames + ".vert", shaderc_glsl_vertex_shader, recompileShaders);
+    auto [fragShaderCode, fragMessage] =
+        getShaderCode(shaderNames + ".frag", shaderc_glsl_fragment_shader, recompileShaders);
 
     lastVertMessage = vertMessage;
     lastFragMessage = fragMessage;

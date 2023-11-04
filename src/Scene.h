@@ -27,6 +27,7 @@ public:
 
     void setupTextures(VulkanDevice* device);
     void destroyTextures(VulkanDevice* device);
+    std::string queryShaderName();
 
     void
     setupDescriptorSets(VkDevice device, VkDescriptorPool descriptorPool, VkDescriptorSetLayout descriptorSetLayout);
@@ -37,8 +38,6 @@ public:
 
     std::tuple<std::vector<VkVertexInputAttributeDescription>, std::vector<VkVertexInputBindingDescription>>
     getAttributeAndBindingDescriptions();
-
-    VkVertexInputBindingDescription getVertexBindingDescription(int accessor);
 
     uint32_t getNumDescriptorSets();
 
@@ -67,6 +66,7 @@ public:
 
     void generateTransforms(int nodeIndex, glm::mat4 oldTransform, int maxRecursion);
 
+    VkVertexInputBindingDescription getVertexBindingDescription(int accessor, int bindingId);
     void setupUniformBuffers(VulkanDevice *device);
 
     std::map<std::vector<int>, int> transformBuffers;
