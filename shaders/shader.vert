@@ -6,7 +6,7 @@ layout(set = 0, binding = 0) uniform UniformBufferObject {
     mat4 proj;
 } ubo;
 
-layout(set = 1, binding = 0) buffer ModelTransform {
+layout(set = 1, binding = 1) buffer ModelTransform {
     mat4 model[];
 } model;
 

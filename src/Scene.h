@@ -8,6 +8,7 @@
 #include <vulkan/vulkan.h>
 #include <vector>
 #include <glm/glm.hpp>
+#include <vulkan/vulkan_core.h>
 #include "tiny_gltf.h"
 #include "PhysicalDevice.h"
 
@@ -40,8 +41,9 @@ public:
     getAttributeAndBindingDescriptions();
 
     uint32_t getNumDescriptorSets();
+    uint32_t getNumTextures();
 
-    VkDescriptorSetLayout getDescriptorSetLayout(VkDevice device);
+    std::vector<VkDescriptorSetLayout> getDescriptorSetLayouts(VkDevice device);
 
     void destroyDescriptorSetLayout(VkDevice device);
     void computeCameraPos(glm::vec3& lookAt, glm::vec3& cameraPos, float& fov);
@@ -50,6 +52,9 @@ public:
     {
         VkImage image;
         VkDeviceMemory memory;
+        VkImageView imageView;
+        VkSampler sampler;
+        VkDescriptorSet dSet;
     };
 
   private:
@@ -70,8 +75,12 @@ public:
     void setupUniformBuffers(VulkanDevice *device);
 
     std::map<std::vector<int>, int> transformBuffers;
-    VkDescriptorSetLayout sceneDescriptorSetLayout;
-    std::vector<VkDescriptorSet> descriptorSets;
+
+    VkDescriptorSetLayout uboDescriptorSetLayout;
+    VkDescriptorSetLayout textureDescriptorSetLayout;
+
+    std::vector<VkDescriptorSet> uboDescriptorSets;
+
     std::map<int, int> buffersMap;
     std::map<int, int> descriptorSetsMap;
     std::map<int, std::vector<ModelTransform>> meshTransforms;

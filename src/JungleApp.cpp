@@ -351,12 +351,13 @@ void JungleApp::createGraphicsPipeline(bool recompileShaders) {
     depthStencil.depthBoundsTestEnable = VK_FALSE;
     depthStencil.stencilTestEnable = VK_FALSE;
 
-    std::vector<VkDescriptorSetLayout> descriptorSetLayoutsForPipeline{
-        descriptorSetLayout, scene.getDescriptorSetLayout(device)};
+    auto layoutsForPipeline = scene.getDescriptorSetLayouts(device);
+    layoutsForPipeline.insert(layoutsForPipeline.begin(), descriptorSetLayout);
+
     VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
     pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    pipelineLayoutInfo.setLayoutCount = descriptorSetLayoutsForPipeline.size();
-    pipelineLayoutInfo.pSetLayouts = descriptorSetLayoutsForPipeline.data();
+    pipelineLayoutInfo.setLayoutCount = layoutsForPipeline.size();
+    pipelineLayoutInfo.pSetLayouts = layoutsForPipeline.data();
     pipelineLayoutInfo.pushConstantRangeCount = 0; // Optional
     pipelineLayoutInfo.pPushConstantRanges = nullptr; // Optional
     VK_CHECK_RESULT(vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &pipelineLayout))
@@ -601,18 +602,23 @@ void JungleApp::updateUniformBuffer(uint32_t currentImage) {
 }
 
 void JungleApp::createDescriptorPool() {
-    VkDescriptorPoolSize poolSize{};
-    poolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    poolSize.descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
-    poolSize.descriptorCount += scene.getNumDescriptorSets();
+
+    std::array<VkDescriptorPoolSize, 2> poolSizes{};
+    poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    poolSizes[0].descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+    poolSizes[0].descriptorCount += scene.getNumDescriptorSets();
+
+    poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    poolSizes[1].descriptorCount = scene.getNumTextures();
 
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    poolInfo.poolSizeCount = 1;
-    poolInfo.pPoolSizes = &poolSize;
+    poolInfo.poolSizeCount = poolSizes.size();
+    poolInfo.pPoolSizes = &poolSizes[0];
 
     poolInfo.maxSets = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
     poolInfo.maxSets += scene.getNumDescriptorSets();
+    poolInfo.maxSets += scene.getNumTextures();
 
     VK_CHECK_RESULT(vkCreateDescriptorPool(device, &poolInfo, nullptr, &descriptorPool))
 }

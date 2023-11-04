@@ -3,10 +3,12 @@
 //
 
 #include <iostream>
+#include "PhysicalDevice.h"
 #include "Scene.h"
 #include "VulkanHelper.h"
 #include <glm/gtc/matrix_transform.hpp>
 #include <iomanip>
+#include <vulkan/vulkan_core.h>
 
 // Definitions of standard names in gltf
 #define BASE_COLOR_TEXTURE "baseColorTexture"
@@ -50,12 +52,28 @@ void Scene::renderInstances(int mesh, VkCommandBuffer commandBuffer, VkPipelineL
     // bind transformations
     bindingDescriptorSets.clear();
     bindingDescriptorSets.push_back(globalDescriptorSet);
-    bindingDescriptorSets.push_back(descriptorSets[descriptorSetsMap[mesh]]);
+    bindingDescriptorSets.push_back(uboDescriptorSets[descriptorSetsMap[mesh]]);
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0,
                             bindingDescriptorSets.size(), bindingDescriptorSets.data(), 0, nullptr);
 
     const char *colorAttr = meshNeedsColor(model.meshes[mesh]) ? FIXED_COLOR : TEXCOORD0;
     for (auto primitive: model.meshes[mesh].primitives) {
+        if (primitive.attributes.contains(TEXCOORD0)) {
+            auto& material = model.materials[primitive.material];
+            auto it = material.values.find(BASE_COLOR_TEXTURE);
+            if (it != material.values.end()) {
+                // We have a texture here
+                const auto& textureIdx = it->second.TextureIndex();
+                const tinygltf::Texture& gTexture = model.textures[textureIdx];
+
+                if (!textures.count(gTexture.source)) {
+                    throw "Texture not found at runtime??";
+                }
+
+                vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                    pipelineLayout, 2, 1, &textures[gTexture.source].dSet, 0, nullptr);
+            }
+        }
 
         std::vector<VkBuffer> vertex_buffers = {
                 buffers[model.bufferViews[model.accessors[primitive.attributes["POSITION"]].bufferView].buffer],
@@ -83,21 +101,20 @@ void Scene::renderInstances(int mesh, VkCommandBuffer commandBuffer, VkPipelineL
             throw std::runtime_error("Non-indexed geometry is currently not supported.");
         }
     }
-
 }
 
 void Scene::setupDescriptorSets(VkDevice device, VkDescriptorPool descriptorPool,
                                 VkDescriptorSetLayout descriptorSetLayout) {
-    std::vector<VkDescriptorSetLayout> layouts(meshTransforms.size(), sceneDescriptorSetLayout);
+    std::vector<VkDescriptorSetLayout> layouts(meshTransforms.size(), uboDescriptorSetLayout);
     VkDescriptorSetAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
     allocInfo.descriptorPool = descriptorPool;
     allocInfo.descriptorSetCount = meshTransforms.size();
     allocInfo.pSetLayouts = layouts.data();
 
-    descriptorSets.resize(meshTransforms.size());
+    uboDescriptorSets.resize(meshTransforms.size());
 
-    VK_CHECK_RESULT(vkAllocateDescriptorSets(device, &allocInfo, descriptorSets.data()))
+    VK_CHECK_RESULT(vkAllocateDescriptorSets(device, &allocInfo, uboDescriptorSets.data()))
 
     int i = 0;
     for (int mesh = 0; mesh < model.meshes.size(); mesh++) {
@@ -112,7 +129,7 @@ void Scene::setupDescriptorSets(VkDevice device, VkDescriptorPool descriptorPool
         VkWriteDescriptorSet descriptorWrite{};
         descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         descriptorSetsMap[mesh] = i++;
-        descriptorWrite.dstSet = descriptorSets[descriptorSetsMap[mesh]];
+        descriptorWrite.dstSet = uboDescriptorSets[descriptorSetsMap[mesh]];
         descriptorWrite.dstBinding = 0;
         descriptorWrite.dstArrayElement = 0;
         descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
@@ -122,6 +139,34 @@ void Scene::setupDescriptorSets(VkDevice device, VkDescriptorPool descriptorPool
         descriptorWrite.pTexelBufferView = nullptr; // Optional
 
         vkUpdateDescriptorSets(device, 1, &descriptorWrite, 0, nullptr);
+    }
+
+    layouts.assign(textures.size(), textureDescriptorSetLayout);
+    allocInfo.descriptorSetCount = textures.size();
+    allocInfo.pSetLayouts = layouts.data();
+
+    std::vector<VkDescriptorSet> textureDescriptorSets(textures.size());
+    VK_CHECK_RESULT(vkAllocateDescriptorSets(device, &allocInfo, textureDescriptorSets.data()))
+
+    i = 0;
+    for (auto& [texId, tex] : textures) {
+        VkDescriptorImageInfo imageInfo{};
+        imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        imageInfo.imageView = tex.imageView;
+        imageInfo.sampler = tex.sampler;
+
+        VkWriteDescriptorSet  descriptorWrite;
+        descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrite.dstSet = textureDescriptorSets[i];
+        descriptorWrite.dstBinding = 0;
+        descriptorWrite.dstArrayElement = 0;
+        descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        descriptorWrite.descriptorCount = 1;
+        descriptorWrite.pImageInfo = &imageInfo;
+        vkUpdateDescriptorSets(device, 1, &descriptorWrite, 0, nullptr);
+
+        tex.dSet = textureDescriptorSets[i];
+        ++i;
     }
 }
 
@@ -252,26 +297,39 @@ VkVertexInputBindingDescription Scene::getVertexBindingDescription(int accessor,
     return bindingDescription;
 }
 
-VkDescriptorSetLayout Scene::getDescriptorSetLayout(VkDevice device) {
+std::vector<VkDescriptorSetLayout> Scene::getDescriptorSetLayouts(VkDevice device) {
     VkDescriptorSetLayoutBinding uboLayoutBinding{};
     uboLayoutBinding.binding = 0;
     uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     uboLayoutBinding.descriptorCount = 1;
     uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
     uboLayoutBinding.pImmutableSamplers = nullptr; // Optional
-
+                                                   //
     VkDescriptorSetLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
     layoutInfo.bindingCount = 1;
     layoutInfo.pBindings = &uboLayoutBinding;
 
-    VK_CHECK_RESULT(vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &sceneDescriptorSetLayout))
+    VK_CHECK_RESULT(vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &uboDescriptorSetLayout))
 
-    return sceneDescriptorSetLayout;
+    VkDescriptorSetLayoutBinding samplerLayoutBinding{};
+    samplerLayoutBinding.binding = 0;
+    samplerLayoutBinding.descriptorCount = 1;
+    samplerLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    samplerLayoutBinding.pImmutableSamplers = nullptr;
+    samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+    layoutInfo.bindingCount = 1;
+    layoutInfo.pBindings = &samplerLayoutBinding;
+
+    VK_CHECK_RESULT(vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &textureDescriptorSetLayout))
+
+    return {uboDescriptorSetLayout, textureDescriptorSetLayout};
 }
 
 void Scene::destroyDescriptorSetLayout(VkDevice device) {
-    vkDestroyDescriptorSetLayout(device, sceneDescriptorSetLayout, nullptr);
+    vkDestroyDescriptorSetLayout(device, uboDescriptorSetLayout, nullptr);
+    vkDestroyDescriptorSetLayout(device, textureDescriptorSetLayout, nullptr);
 }
 
 void calculateBoundingBox(const tinygltf::Model& model, glm::vec3& minBounds, glm::vec3& maxBounds) {
@@ -370,6 +428,40 @@ Scene::LoadedTexture uploadGLTFImage(VulkanDevice *device, const tinygltf::Image
     return loadedTex;
 }
 
+static VkSampler createSampler(VulkanDevice *device) {
+    VkSamplerCreateInfo samplerInfo{};
+    samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+    samplerInfo.magFilter = VK_FILTER_LINEAR;
+    samplerInfo.minFilter = VK_FILTER_LINEAR;
+
+    samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+
+    samplerInfo.anisotropyEnable = VK_TRUE;
+
+    VkPhysicalDeviceProperties properties{};
+    vkGetPhysicalDeviceProperties(device->physicalDevice, &properties);
+    samplerInfo.maxAnisotropy = properties.limits.maxSamplerAnisotropy;
+
+    samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
+    samplerInfo.unnormalizedCoordinates = VK_FALSE;
+    samplerInfo.compareEnable = VK_FALSE;
+    samplerInfo.compareOp = VK_COMPARE_OP_ALWAYS;
+
+    samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+    samplerInfo.mipLodBias = 0.0f;
+    samplerInfo.minLod = 0.0f;
+    samplerInfo.maxLod = 0.0f;
+
+    VkSampler sampler;
+    if (vkCreateSampler(*device, &samplerInfo, nullptr, &sampler) != VK_SUCCESS) {
+        throw std::runtime_error("failed to create texture sampler!");
+    }
+
+    return sampler;
+}
+
 void Scene::setupTextures(VulkanDevice* device) {
     for (size_t i = 0; i < model.materials.size(); i++) {
         const auto& material = model.materials[i];
@@ -388,11 +480,17 @@ void Scene::setupTextures(VulkanDevice* device) {
         }
 
         textures[gTexture.source] = uploadGLTFImage(device, model.images[gTexture.source]);
+        textures[gTexture.source].imageView = device->createImageView(textures[gTexture.source].image,
+            VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_ASPECT_COLOR_BIT);
+        textures[gTexture.source].imageView = device->createImageView(textures[gTexture.source].image,
+            VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_ASPECT_COLOR_BIT);
+        textures[gTexture.source].sampler = createSampler(device);
     }
 }
 
 void Scene::destroyTextures(VulkanDevice* device) {
     for (auto& [idx, tex] : textures) {
+        vkDestroyImageView(*device, tex.imageView, nullptr);
         vkDestroyImage(*device, tex.image, nullptr);
         vkFreeMemory(*device, tex.memory, nullptr);
     }
@@ -400,4 +498,8 @@ void Scene::destroyTextures(VulkanDevice* device) {
 
 std::string Scene::queryShaderName() {
     return meshNeedsColor(model.meshes[0]) ? "shaders/shader" : "shaders/simple-texture";
+}
+
+uint32_t Scene::getNumTextures() {
+    return textures.size();
 }

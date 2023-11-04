@@ -201,7 +201,7 @@ bool VulkanDevice::isDeviceSuitable(VkPhysicalDevice const& device, VkSurfaceKHR
         swapChainAdequate = !swapChainSupport.formats.empty() && !swapChainSupport.presentModes.empty();
     }
 
-    return deviceFeatures.geometryShader &&
+    return deviceFeatures.samplerAnisotropy &&
            indices.isComplete() &&
            extensionsSupported &&
            swapChainAdequate;
@@ -239,6 +239,7 @@ void VulkanDevice::createLogicalDevice(VkSurfaceKHR surface) {
 
     createInfo.enabledExtensionCount = static_cast<uint32_t>(deviceExtensions.size());
     createInfo.ppEnabledExtensionNames = deviceExtensions.data();
+    deviceFeatures.samplerAnisotropy = VK_TRUE;
 
     if (enableValidationLayers) {
         createInfo.enabledLayerCount = static_cast<uint32_t>(validationLayers.size());
