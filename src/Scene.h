@@ -16,6 +16,11 @@
 struct ModelTransform {
     glm::mat4 model;
 };
+struct LightData {
+    glm::vec3 position;
+    glm::vec3 color;
+    glm::float32 intensity;
+};
 
 // load glft using loader. provide definitions and functions for creating pipeline and rendering it.
 class Scene {
@@ -39,6 +44,8 @@ public:
 
     std::tuple<std::vector<VkVertexInputAttributeDescription>, std::vector<VkVertexInputBindingDescription>>
     getAttributeAndBindingDescriptions();
+    std::tuple<std::vector<VkVertexInputAttributeDescription>, std::vector<VkVertexInputBindingDescription>>
+    getLightsAttributeAndBindingDescriptions();
 
     uint32_t getNumDescriptorSets();
     uint32_t getNumTextures();
@@ -86,6 +93,8 @@ public:
     std::map<int, std::vector<ModelTransform>> meshTransforms;
     std::vector<VkDescriptorSet> bindingDescriptorSets;
     std::map<int, LoadedTexture> textures;
+    std::vector<LightData> lights;
+    int lightsBuffer{-1};
 };
 
 
