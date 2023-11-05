@@ -71,10 +71,6 @@ private:
 
     void createRenderPass();
 
-    VkCommandPool commandPool;
-
-    void createCommandPool();
-
     std::vector<VkCommandBuffer> commandBuffers;
 
     void createCommandBuffer();

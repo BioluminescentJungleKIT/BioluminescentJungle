@@ -23,8 +23,12 @@ class VulkanDevice
 
     VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
     VkDevice device;
+
     VkQueue graphicsQueue;
     VkQueue presentQueue;
+
+    // Command pool on the graphics queue
+    VkCommandPool commandPool;
 
     // Allow implicit conversion to a VkDevice, makes our life much easier
     operator VkDevice() {
@@ -39,8 +43,7 @@ class VulkanDevice
             return graphicsFamily.has_value() && presentFamily.has_value();
         };
     };
-
-    QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device, VkSurfaceKHR surface);
+    QueueFamilyIndices chosenQueues;
 
     struct SwapChainSupportDetails {
         VkSurfaceCapabilitiesKHR capabilities;
@@ -57,10 +60,10 @@ class VulkanDevice
 
     VkImageView createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspectFlags);
 
-    VkCommandBuffer beginSingleTimeCommands(VkCommandPool commandPool);
-    void endSingleTimeCommands(VkCommandPool commandPool, VkCommandBuffer commandBuffer);
+    VkCommandBuffer beginSingleTimeCommands();
+    void endSingleTimeCommands(VkCommandBuffer commandBuffer);
 
-    void transitionImageLayout(VkCommandPool pool, VkImage image, VkFormat format,
+    void transitionImageLayout(VkImage image, VkFormat format,
         VkImageLayout oldLayout, VkImageLayout newLayout);
 
   private:
@@ -77,7 +80,10 @@ class VulkanDevice
     VkDebugUtilsMessengerEXT debugMessenger;
     void createInstance();
 
+    void createCommandPool();
+
     bool checkDeviceExtensionSupport(VkPhysicalDevice const& device);
+    QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device, VkSurfaceKHR surface);
 
     void setupDebugMessenger();
     void pickPhysicalDevice(VkSurfaceKHR surface);

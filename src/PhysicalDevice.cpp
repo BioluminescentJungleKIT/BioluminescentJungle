@@ -201,7 +201,7 @@ bool VulkanDevice::isDeviceSuitable(VkPhysicalDevice const& device, VkSurfaceKHR
         swapChainAdequate = !swapChainSupport.formats.empty() && !swapChainSupport.presentModes.empty();
     }
 
-    return deviceFeatures.geometryShader &&
+    return deviceFeatures.samplerAnisotropy &&
            indices.isComplete() &&
            extensionsSupported &&
            swapChainAdequate;
@@ -212,10 +212,10 @@ const std::vector<const char *> deviceExtensions = {
 };
 
 void VulkanDevice::createLogicalDevice(VkSurfaceKHR surface) {
-    QueueFamilyIndices indices = findQueueFamilies(physicalDevice, surface);
+    this->chosenQueues = findQueueFamilies(physicalDevice, surface);
 
     std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
-    std::set<uint32_t> uniqueQueueFamilies = {indices.graphicsFamily.value(), indices.presentFamily.value()};
+    std::set<uint32_t> uniqueQueueFamilies = {chosenQueues.graphicsFamily.value(), chosenQueues.presentFamily.value()};
 
     float queuePriority = 1.0f;
     for (uint32_t queueFamily: uniqueQueueFamilies) {
@@ -239,6 +239,7 @@ void VulkanDevice::createLogicalDevice(VkSurfaceKHR surface) {
 
     createInfo.enabledExtensionCount = static_cast<uint32_t>(deviceExtensions.size());
     createInfo.ppEnabledExtensionNames = deviceExtensions.data();
+    deviceFeatures.samplerAnisotropy = VK_TRUE;
 
     if (enableValidationLayers) {
         createInfo.enabledLayerCount = static_cast<uint32_t>(validationLayers.size());
@@ -249,8 +250,8 @@ void VulkanDevice::createLogicalDevice(VkSurfaceKHR surface) {
 
     VK_CHECK_RESULT(vkCreateDevice(physicalDevice, &createInfo, nullptr, &device))
 
-    vkGetDeviceQueue(device, indices.graphicsFamily.value(), 0, &graphicsQueue);
-    vkGetDeviceQueue(device, indices.presentFamily.value(), 0, &presentQueue);
+    vkGetDeviceQueue(device, chosenQueues.graphicsFamily.value(), 0, &graphicsQueue);
+    vkGetDeviceQueue(device, chosenQueues.presentFamily.value(), 0, &presentQueue);
 }
 
 VulkanDevice::QueueFamilyIndices VulkanDevice::findQueueFamilies(VkPhysicalDevice device, VkSurfaceKHR surface) {
@@ -304,12 +305,13 @@ void VulkanDevice::initInstance() {
 void VulkanDevice::initDeviceForSurface(VkSurfaceKHR surface) {
     pickPhysicalDevice(surface);
     createLogicalDevice(surface);
+    createCommandPool();
 }
 
 void VulkanDevice::destroy()
 {
+    vkDestroyCommandPool(device, commandPool, nullptr);
     vkDestroyDevice(device, nullptr);
-
     if (enableValidationLayers) {
         DestroyDebugUtilsMessengerEXT(instance, debugMessenger, nullptr);
     }
@@ -377,7 +379,7 @@ VkImageView VulkanDevice::createImageView(VkImage image, VkFormat format, VkImag
 
     return imageView;
 }
-VkCommandBuffer VulkanDevice::beginSingleTimeCommands(VkCommandPool commandPool)
+VkCommandBuffer VulkanDevice::beginSingleTimeCommands()
 {
     VkCommandBufferAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
@@ -397,7 +399,7 @@ VkCommandBuffer VulkanDevice::beginSingleTimeCommands(VkCommandPool commandPool)
     return commandBuffer;
 }
 
-void VulkanDevice::endSingleTimeCommands(VkCommandPool commandPool, VkCommandBuffer commandBuffer)
+void VulkanDevice::endSingleTimeCommands(VkCommandBuffer commandBuffer)
 {
     vkEndCommandBuffer(commandBuffer);
 
@@ -416,10 +418,10 @@ bool hasStencilComponent(VkFormat format) {
     return format == VK_FORMAT_D32_SFLOAT_S8_UINT || format == VK_FORMAT_D24_UNORM_S8_UINT;
 }
 
-void VulkanDevice::transitionImageLayout(VkCommandPool pool, VkImage image,
+void VulkanDevice::transitionImageLayout(VkImage image,
     VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout)
 {
-    VkCommandBuffer commandBuffer = beginSingleTimeCommands(pool);
+    VkCommandBuffer commandBuffer = beginSingleTimeCommands();
 
     VkImageMemoryBarrier barrier{};
     barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
@@ -477,5 +479,13 @@ void VulkanDevice::transitionImageLayout(VkCommandPool pool, VkImage image,
 
     vkCmdPipelineBarrier(commandBuffer, sourceStage, destinationStage, 0, 0,
         nullptr, 0, nullptr, 1, &barrier);
-    endSingleTimeCommands(pool, commandBuffer);
+    endSingleTimeCommands(commandBuffer);
+}
+
+void VulkanDevice::createCommandPool() {
+    VkCommandPoolCreateInfo poolInfo{};
+    poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+    poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+    poolInfo.queueFamilyIndex = chosenQueues.graphicsFamily.value();
+    VK_CHECK_RESULT(vkCreateCommandPool(device, &poolInfo, nullptr, &commandPool))
 }

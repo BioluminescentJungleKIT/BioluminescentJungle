@@ -8,7 +8,9 @@
 #include <vulkan/vulkan.h>
 #include <vector>
 #include <glm/glm.hpp>
+#include <vulkan/vulkan_core.h>
 #include "tiny_gltf.h"
+#include "PhysicalDevice.h"
 
 
 struct ModelTransform {
@@ -22,7 +24,11 @@ public:
 
     explicit Scene(std::string filename);
 
-    void setupBuffers(VkDevice device, VkPhysicalDevice physicalDevice, VkCommandPool commandPool, VkQueue queue);
+    void setupBuffers(VulkanDevice *device);
+
+    void setupTextures(VulkanDevice* device);
+    void destroyTextures(VulkanDevice* device);
+    std::string queryShaderName();
 
     void
     setupDescriptorSets(VkDevice device, VkDescriptorPool descriptorPool, VkDescriptorSetLayout descriptorSetLayout);
@@ -34,15 +40,24 @@ public:
     std::tuple<std::vector<VkVertexInputAttributeDescription>, std::vector<VkVertexInputBindingDescription>>
     getAttributeAndBindingDescriptions();
 
-    VkVertexInputBindingDescription getVertexBindingDescription(int accessor);
-
     uint32_t getNumDescriptorSets();
+    uint32_t getNumTextures();
 
-    VkDescriptorSetLayout getDescriptorSetLayout(VkDevice device);
+    std::vector<VkDescriptorSetLayout> getDescriptorSetLayouts(VkDevice device);
 
     void destroyDescriptorSetLayout(VkDevice device);
+    void computeCameraPos(glm::vec3& lookAt, glm::vec3& cameraPos, float& fov);
 
-private:
+    struct LoadedTexture
+    {
+        VkImage image;
+        VkDeviceMemory memory;
+        VkImageView imageView;
+        VkSampler sampler;
+        VkDescriptorSet dSet;
+    };
+
+  private:
     tinygltf::TinyGLTF loader;
     tinygltf::Model model;
 
@@ -56,17 +71,21 @@ private:
 
     void generateTransforms(int nodeIndex, glm::mat4 oldTransform, int maxRecursion);
 
-    void
-    setupUniformBuffers(VkDevice device, VkPhysicalDevice physicalDevice, VkCommandPool commandPool, VkQueue queue);
+    VkVertexInputBindingDescription getVertexBindingDescription(int accessor, int bindingId);
+    void setupUniformBuffers(VulkanDevice *device);
 
     std::map<std::vector<int>, int> transformBuffers;
-    VkDescriptorSetLayout sceneDescriptorSetLayout;
-    std::vector<VkDescriptorSet> descriptorSets;
+
+    VkDescriptorSetLayout uboDescriptorSetLayout;
+    VkDescriptorSetLayout textureDescriptorSetLayout;
+
+    std::vector<VkDescriptorSet> uboDescriptorSets;
+
     std::map<int, int> buffersMap;
     std::map<int, int> descriptorSetsMap;
     std::map<int, std::vector<ModelTransform>> meshTransforms;
     std::vector<VkDescriptorSet> bindingDescriptorSets;
-
+    std::map<int, LoadedTexture> textures;
 };
 
 

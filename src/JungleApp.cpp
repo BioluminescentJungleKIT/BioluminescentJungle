@@ -21,7 +21,6 @@ void JungleApp::initVulkan(const std::string& sceneName) {
 
     swapchain = std::make_unique<Swapchain>(window, surface, &device);
     createRenderPass();
-    createCommandPool();
     setupScene(sceneName);
     createDescriptorSetLayout();
     createGraphicsPipeline(false);
@@ -193,8 +192,7 @@ void JungleApp::initImGui() {
     init_info.Instance = device.instance;
     init_info.PhysicalDevice = device.physicalDevice;
     init_info.Device = device;
-    auto indices = device.findQueueFamilies(device.physicalDevice, surface);
-    init_info.QueueFamily = indices.graphicsFamily.value();
+    init_info.QueueFamily = device.chosenQueues.graphicsFamily.value();
     init_info.Queue = device.graphicsQueue;
     //init_info.PipelineCache = YOUR_PIPELINE_CACHE;
     init_info.DescriptorPool = imguiDescriptorPool;
@@ -206,7 +204,7 @@ void JungleApp::initImGui() {
     // init_info.CheckVkResultFn = check_vk_result;
     ImGui_ImplVulkan_Init(&init_info, renderPass);
 
-    VkCommandPool command_pool = commandPool;
+    VkCommandPool command_pool = device.commandPool;
     VkCommandBuffer command_buffer = commandBuffers[0];
 
     VK_CHECK_RESULT(vkResetCommandPool(device, command_pool, 0))
@@ -233,8 +231,12 @@ void JungleApp::createSurface() {
 }
 
 void JungleApp::createGraphicsPipeline(bool recompileShaders) {
-    auto [vertShaderCode, vertMessage] = getShaderCode("shaders/shader.vert", shaderc_glsl_vertex_shader, recompileShaders);
-    auto [fragShaderCode, fragMessage] = getShaderCode("shaders/shader.frag", shaderc_glsl_fragment_shader, recompileShaders);
+    std::string shaderNames = scene.queryShaderName();
+
+    auto [vertShaderCode, vertMessage] =
+        getShaderCode(shaderNames + ".vert", shaderc_glsl_vertex_shader, recompileShaders);
+    auto [fragShaderCode, fragMessage] =
+        getShaderCode(shaderNames + ".frag", shaderc_glsl_fragment_shader, recompileShaders);
 
     lastVertMessage = vertMessage;
     lastFragMessage = fragMessage;
@@ -349,12 +351,13 @@ void JungleApp::createGraphicsPipeline(bool recompileShaders) {
     depthStencil.depthBoundsTestEnable = VK_FALSE;
     depthStencil.stencilTestEnable = VK_FALSE;
 
-    std::vector<VkDescriptorSetLayout> descriptorSetLayoutsForPipeline{
-        descriptorSetLayout, scene.getDescriptorSetLayout(device)};
+    auto layoutsForPipeline = scene.getDescriptorSetLayouts(device);
+    layoutsForPipeline.insert(layoutsForPipeline.begin(), descriptorSetLayout);
+
     VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
     pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    pipelineLayoutInfo.setLayoutCount = descriptorSetLayoutsForPipeline.size();
-    pipelineLayoutInfo.pSetLayouts = descriptorSetLayoutsForPipeline.data();
+    pipelineLayoutInfo.setLayoutCount = layoutsForPipeline.size();
+    pipelineLayoutInfo.pSetLayouts = layoutsForPipeline.data();
     pipelineLayoutInfo.pushConstantRangeCount = 0; // Optional
     pipelineLayoutInfo.pPushConstantRanges = nullptr; // Optional
     VK_CHECK_RESULT(vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &pipelineLayout))
@@ -465,23 +468,12 @@ void JungleApp::createRenderPass() {
     VK_CHECK_RESULT(vkCreateRenderPass(device, &renderPassInfo, nullptr, &renderPass))
 }
 
-void JungleApp::createCommandPool() {
-    auto queueFamilyIndices = device.findQueueFamilies(device.physicalDevice, surface);
-
-    VkCommandPoolCreateInfo poolInfo{};
-    poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-    poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-    poolInfo.queueFamilyIndex = queueFamilyIndices.graphicsFamily.value();
-
-    VK_CHECK_RESULT(vkCreateCommandPool(device, &poolInfo, nullptr, &commandPool))
-}
-
 void JungleApp::createCommandBuffer() {
     commandBuffers.resize(MAX_FRAMES_IN_FLIGHT);
 
     VkCommandBufferAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-    allocInfo.commandPool = commandPool;
+    allocInfo.commandPool = device.commandPool;
     allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
     allocInfo.commandBufferCount = (uint32_t) commandBuffers.size();
 
@@ -610,18 +602,23 @@ void JungleApp::updateUniformBuffer(uint32_t currentImage) {
 }
 
 void JungleApp::createDescriptorPool() {
-    VkDescriptorPoolSize poolSize{};
-    poolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    poolSize.descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
-    poolSize.descriptorCount += scene.getNumDescriptorSets();
+
+    std::array<VkDescriptorPoolSize, 2> poolSizes{};
+    poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    poolSizes[0].descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+    poolSizes[0].descriptorCount += scene.getNumDescriptorSets();
+
+    poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    poolSizes[1].descriptorCount = scene.getNumTextures();
 
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    poolInfo.poolSizeCount = 1;
-    poolInfo.pPoolSizes = &poolSize;
+    poolInfo.poolSizeCount = poolSizes.size();
+    poolInfo.pPoolSizes = &poolSizes[0];
 
     poolInfo.maxSets = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
     poolInfo.maxSets += scene.getNumDescriptorSets();
+    poolInfo.maxSets += scene.getNumTextures();
 
     VK_CHECK_RESULT(vkCreateDescriptorPool(device, &poolInfo, nullptr, &descriptorPool))
 }
@@ -678,6 +675,7 @@ void JungleApp::cleanup() {
     vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
 
     scene.destroyDescriptorSetLayout(device);
+    scene.destroyTextures(&device);
     scene.destroyBuffers(device);
 
     cleanupGraphicsPipeline();
@@ -690,7 +688,6 @@ void JungleApp::cleanup() {
         vkDestroyFence(device, inFlightFences[i], nullptr);
     }
 
-    vkDestroyCommandPool(device, commandPool, nullptr);
     vkDestroySurfaceKHR(device.instance, surface, nullptr);
     device.destroy();
     glfwDestroyWindow(window);
@@ -699,5 +696,7 @@ void JungleApp::cleanup() {
 
 void JungleApp::setupScene(const std::string& sceneName) {
     scene = Scene(sceneName);
-    scene.setupBuffers(device, device.physicalDevice, commandPool, device.graphicsQueue);
+    scene.setupBuffers(&device);
+    scene.setupTextures(&device);
+    scene.computeCameraPos(cameraLookAt, cameraPosition, cameraFOVY);
 }
