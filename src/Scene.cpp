@@ -208,11 +208,21 @@ void Scene::generateTransforms(int nodeIndex, glm::mat4 oldTransform, int maxRec
     } else if (node.extensions.contains("KHR_lights_punctual")) {
         auto light_idx = node.extensions["KHR_lights_punctual"].Get("light").Get<int>();
         auto light = model.extensions["KHR_lights_punctual"].Get("lights").Get(light_idx);
-        glm::vec3 light_color = glm::vec3(light.Get("color").Get(0).Get<double>(),
-                                     light.Get("color").Get(1).Get<double>(),
-                                     light.Get("color").Get(2).Get<double>());
-        float light_intensity = light.Get("intensity").Get<double>();
-        lights.push_back({glm::make_vec3(newTransform[3]), light_color, light_intensity});
+        auto type = light.Get("type").Get<std::string>();
+        if (type == "point") {  // we currently do not support "directional" and "spot" lights.
+            glm::vec3 light_color = glm::vec3(1.f, 1.f, 1.f);
+            if (light.Has("color")) {
+                light_color = glm::vec3(light.Get("color").Get(0).Get<double>(),
+                                        light.Get("color").Get(1).Get<double>(),
+                                        light.Get("color").Get(2).Get<double>());
+            }
+            float light_intensity = 1;
+            if (light.Has("intensity")) {
+                light_intensity = static_cast<float>(light.Get("intensity").Get<double>());
+            }
+            lights.push_back({glm::make_vec3(newTransform[3]), light_color, light_intensity});
+        }
+        std::cout << "[lights] WARN: Detected unsupported light of type " << type << std::endl;
     }
 
     for (int child: node.children) {
