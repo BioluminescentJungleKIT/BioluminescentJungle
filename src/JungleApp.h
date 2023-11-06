@@ -32,6 +32,12 @@ struct UniformBufferObject {
     glm::mat4 proj;
 };
 
+struct TonemappingUBO {
+    glm::float32 exposure;
+    glm::float32 gamma;
+    glm::int32 mode;
+};
+
 class JungleApp {
 public:
     void run(const std::string& sceneName) {
@@ -102,9 +108,13 @@ private:
     std::vector<VkDeviceMemory> uniformBuffersMemory;
     std::vector<void *> uniformBuffersMapped;
 
+    VkBuffer tonemappingUniformBuffer;
+    VkDeviceMemory tonemappingUniformBufferMemory;
+    void * tonemappingBufferMapped;
+
     void createUniformBuffers();
 
-    void updateUniformBuffer(uint32_t currentImage);
+    void updateUniformBuffers(uint32_t currentImage);
 
     void createDescriptorPool();
 
@@ -137,6 +147,12 @@ private:
     void cleanupGraphicsPipeline();
 
     void recreateGraphicsPipeline();
+
+    float exposure{0};
+    float gamma{2.4};
+    int tonemappingMode{2};
+
+    void createLUTBuffer();
 };
 
 
