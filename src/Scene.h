@@ -83,8 +83,8 @@ public:
 
     std::map<std::vector<int>, int> transformBuffers;
 
-    VkDescriptorSetLayout uboDescriptorSetLayout;
-    VkDescriptorSetLayout textureDescriptorSetLayout;
+    VkDescriptorSetLayout uboDescriptorSetLayout{VK_NULL_HANDLE};
+    VkDescriptorSetLayout textureDescriptorSetLayout{VK_NULL_HANDLE};
 
     std::vector<VkDescriptorSet> uboDescriptorSets;
 
