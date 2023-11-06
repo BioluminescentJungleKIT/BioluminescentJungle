@@ -561,9 +561,6 @@ void Scene::setupTextures(VulkanDevice *device) {
         textures[gTexture.source].imageView = device->createImageView(textures[gTexture.source].image,
                                                                       VK_FORMAT_R8G8B8A8_SRGB,
                                                                       VK_IMAGE_ASPECT_COLOR_BIT);
-        textures[gTexture.source].imageView = device->createImageView(textures[gTexture.source].image,
-                                                                      VK_FORMAT_R8G8B8A8_SRGB,
-                                                                      VK_IMAGE_ASPECT_COLOR_BIT);
         textures[gTexture.source].sampler = createSampler(device);
     }
 }
@@ -572,6 +569,7 @@ void Scene::destroyTextures(VulkanDevice *device) {
     for (auto &[idx, tex]: textures) {
         vkDestroyImageView(*device, tex.imageView, nullptr);
         vkDestroyImage(*device, tex.image, nullptr);
+        vkDestroySampler(*device, tex.sampler, nullptr);
         vkFreeMemory(*device, tex.memory, nullptr);
     }
 }
