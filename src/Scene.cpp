@@ -9,6 +9,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <iomanip>
 #include <vulkan/vulkan_core.h>
+#include <glm/gtc/type_ptr.hpp>
 
 // Definitions of standard names in gltf
 #define BASE_COLOR_TEXTURE "baseColorTexture"
@@ -17,11 +18,11 @@
 
 const int MAX_RECURSION = 10;
 
-static bool meshNeedsColor(const tinygltf::Mesh& mesh) {
+static bool meshNeedsColor(const tinygltf::Mesh &mesh) {
     return mesh.primitives[0].attributes.contains(FIXED_COLOR);
 }
 
-static bool meshNeedsTexcoords(const tinygltf::Mesh& mesh) {
+static bool meshNeedsTexcoords(const tinygltf::Mesh &mesh) {
     return mesh.primitives[0].attributes.contains(TEXCOORD0);
 }
 
@@ -59,19 +60,19 @@ void Scene::renderInstances(int mesh, VkCommandBuffer commandBuffer, VkPipelineL
     const char *colorAttr = meshNeedsColor(model.meshes[mesh]) ? FIXED_COLOR : TEXCOORD0;
     for (auto primitive: model.meshes[mesh].primitives) {
         if (primitive.attributes.contains(TEXCOORD0)) {
-            auto& material = model.materials[primitive.material];
+            auto &material = model.materials[primitive.material];
             auto it = material.values.find(BASE_COLOR_TEXTURE);
             if (it != material.values.end()) {
                 // We have a texture here
-                const auto& textureIdx = it->second.TextureIndex();
-                const tinygltf::Texture& gTexture = model.textures[textureIdx];
+                const auto &textureIdx = it->second.TextureIndex();
+                const tinygltf::Texture &gTexture = model.textures[textureIdx];
 
                 if (!textures.count(gTexture.source)) {
                     throw "Texture not found at runtime??";
                 }
 
                 vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                    pipelineLayout, 2, 1, &textures[gTexture.source].dSet, 0, nullptr);
+                                        pipelineLayout, 2, 1, &textures[gTexture.source].dSet, 0, nullptr);
             }
         }
 
@@ -149,13 +150,13 @@ void Scene::setupDescriptorSets(VkDevice device, VkDescriptorPool descriptorPool
     VK_CHECK_RESULT(vkAllocateDescriptorSets(device, &allocInfo, textureDescriptorSets.data()))
 
     i = 0;
-    for (auto& [texId, tex] : textures) {
+    for (auto &[texId, tex]: textures) {
         VkDescriptorImageInfo imageInfo{};
         imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
         imageInfo.imageView = tex.imageView;
         imageInfo.sampler = tex.sampler;
 
-        VkWriteDescriptorSet  descriptorWrite;
+        VkWriteDescriptorSet descriptorWrite;
         descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         descriptorWrite.dstSet = textureDescriptorSets[i];
         descriptorWrite.dstBinding = 0;
@@ -182,16 +183,16 @@ void Scene::setupBuffers(VulkanDevice *device) {
         auto gltfBuffer = model.buffers[i];
         VkDeviceSize bufferSize = sizeof(gltfBuffer.data[0]) * gltfBuffer.data.size();
         VulkanHelper::createBuffer(*device, device->physicalDevice, bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT |
-                                                                       VK_BUFFER_USAGE_INDEX_BUFFER_BIT |
-                                                                       VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                                                                                VK_BUFFER_USAGE_INDEX_BUFFER_BIT |
+                                                                                VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
                                    VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, buffers[i], bufferMemories[i]);
         VulkanHelper::uploadBuffer(*device, device->physicalDevice, bufferSize, buffers[i],
-            gltfBuffer.data.data(), device->commandPool, device->graphicsQueue);
+                                   gltfBuffer.data.data(), device->commandPool, device->graphicsQueue);
     }
     for (auto node: model.scenes[model.defaultScene].nodes) {
         generateTransforms(node, glm::mat4(1.f), MAX_RECURSION);
-        setupUniformBuffers(device);
     }
+    setupUniformBuffers(device);
 }
 
 void Scene::generateTransforms(int nodeIndex, glm::mat4 oldTransform, int maxRecursion) {
@@ -204,6 +205,24 @@ void Scene::generateTransforms(int nodeIndex, glm::mat4 oldTransform, int maxRec
 
     if (node.mesh >= 0) {
         meshTransforms[node.mesh].push_back(ModelTransform{newTransform});
+    } else if (node.extensions.contains("KHR_lights_punctual")) {
+        auto light_idx = node.extensions["KHR_lights_punctual"].Get("light").Get<int>();
+        auto light = model.extensions["KHR_lights_punctual"].Get("lights").Get(light_idx);
+        auto type = light.Get("type").Get<std::string>();
+        if (type == "point") {  // we currently do not support "directional" and "spot" lights.
+            glm::vec3 light_color = glm::vec3(1.f, 1.f, 1.f);
+            if (light.Has("color")) {
+                light_color = glm::vec3(light.Get("color").Get(0).Get<double>(),
+                                        light.Get("color").Get(1).Get<double>(),
+                                        light.Get("color").Get(2).Get<double>());
+            }
+            float light_intensity = 1;
+            if (light.Has("intensity")) {
+                light_intensity = static_cast<float>(light.Get("intensity").Get<double>());
+            }
+            lights.push_back({glm::make_vec3(newTransform[3]), light_color, light_intensity});
+        }
+        std::cout << "[lights] WARN: Detected unsupported light of type " << type << std::endl;
     }
 
     for (int child: node.children) {
@@ -221,9 +240,24 @@ void Scene::setupUniformBuffers(VulkanDevice *device) {
                                    VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, buffer, bufferMemory);
 
         VulkanHelper::uploadBuffer(*device, device->physicalDevice, bufferSize, buffer, transforms.data(),
-            device->commandPool, device->graphicsQueue);
+                                   device->commandPool, device->graphicsQueue);
 
         buffersMap[mesh] = buffers.size();
+        buffers.push_back(buffer);
+        bufferMemories.push_back(bufferMemory);
+    }
+    if (lights.size() > 0) {
+        VkBuffer buffer;
+        VkDeviceMemory bufferMemory;
+        VkDeviceSize bufferSize = sizeof(LightData) * lights.size();
+        VulkanHelper::createBuffer(*device, device->physicalDevice, bufferSize,
+                                   VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                                   VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, buffer, bufferMemory);
+
+        VulkanHelper::uploadBuffer(*device, device->physicalDevice, bufferSize, buffer, lights.data(),
+                                   device->commandPool, device->graphicsQueue);
+
+        lightsBuffer = buffers.size();
         buffers.push_back(buffer);
         bufferMemories.push_back(bufferMemory);
     }
@@ -235,19 +269,55 @@ void Scene::destroyBuffers(VkDevice device) {
 }
 
 std::tuple<std::vector<VkVertexInputAttributeDescription>, std::vector<VkVertexInputBindingDescription>>
+Scene::getLightsAttributeAndBindingDescriptions() {
+    std::vector<VkVertexInputAttributeDescription> attributeDescriptions;
+    std::vector<VkVertexInputBindingDescription> bindingDescriptions;
+
+    VkVertexInputBindingDescription bindingDescription;
+    bindingDescription.binding = 0;
+    bindingDescription.stride = sizeof(LightData);
+    bindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+    bindingDescriptions.push_back(bindingDescription);
+
+    VkVertexInputAttributeDescription positionAttributeDescription{};
+    positionAttributeDescription.binding = 0;
+    positionAttributeDescription.location = 0;
+    positionAttributeDescription.format = VK_FORMAT_R32G32B32_SFLOAT;
+    positionAttributeDescription.offset = offsetof(LightData, position);
+    attributeDescriptions.push_back(positionAttributeDescription);
+
+    VkVertexInputAttributeDescription colorAttributeDescription{};
+    colorAttributeDescription.binding = 0;
+    colorAttributeDescription.location = 1;
+    colorAttributeDescription.format = VK_FORMAT_R32G32B32_SFLOAT;
+    colorAttributeDescription.offset = offsetof(LightData, color);
+    attributeDescriptions.push_back(colorAttributeDescription);
+
+    VkVertexInputAttributeDescription intensityAttributeDescription{};
+    intensityAttributeDescription.binding = 0;
+    intensityAttributeDescription.location = 2;
+    intensityAttributeDescription.format = VK_FORMAT_R32_SFLOAT;
+    intensityAttributeDescription.offset = offsetof(LightData, intensity);
+    attributeDescriptions.push_back(positionAttributeDescription);
+
+    return {attributeDescriptions, bindingDescriptions};
+}
+
+std::tuple<std::vector<VkVertexInputAttributeDescription>, std::vector<VkVertexInputBindingDescription>>
 Scene::getAttributeAndBindingDescriptions() {
     std::vector<VkVertexInputAttributeDescription> attributeDescriptions;
     std::vector<VkVertexInputBindingDescription> bindingDescriptions;
 
-    // TODO set default color (white) in case the attribute is not present
+    // TODO make this more dynamic: allow either for all meshes, use default values in case the attribute is not present
     if (meshNeedsColor(model.meshes[0])) {
         int colorAccessor = model.meshes[0].primitives[0].attributes[FIXED_COLOR];
         VkVertexInputAttributeDescription colorAttributeDescription{};
-        colorAttributeDescription.binding = 1;
+        colorAttributeDescription.binding = 1; // TODO can this really be hardcoded, when getVertexBindingDescription could in theory return a different binding?
         colorAttributeDescription.location = 1;
         colorAttributeDescription.format =
-            VulkanHelper::gltfTypeToVkFormat(model.accessors[colorAccessor].type,
-            model.accessors[colorAccessor].componentType, model.accessors[colorAccessor].normalized);
+                VulkanHelper::gltfTypeToVkFormat(model.accessors[colorAccessor].type,
+                                                 model.accessors[colorAccessor].componentType,
+                                                 model.accessors[colorAccessor].normalized);
         colorAttributeDescription.offset = 0;
         attributeDescriptions.push_back(colorAttributeDescription);
         bindingDescriptions.push_back(getVertexBindingDescription(colorAccessor, 1));
@@ -257,8 +327,9 @@ Scene::getAttributeAndBindingDescriptions() {
         texcoordAttributeDescription.binding = 1;
         texcoordAttributeDescription.location = 1;
         texcoordAttributeDescription.format =
-            VulkanHelper::gltfTypeToVkFormat(model.accessors[texcoordAccessor].type,
-            model.accessors[texcoordAccessor].componentType, model.accessors[texcoordAccessor].normalized);
+                VulkanHelper::gltfTypeToVkFormat(model.accessors[texcoordAccessor].type,
+                                                 model.accessors[texcoordAccessor].componentType,
+                                                 model.accessors[texcoordAccessor].normalized);
         texcoordAttributeDescription.offset = 0;
         attributeDescriptions.push_back(texcoordAttributeDescription);
         bindingDescriptions.push_back(getVertexBindingDescription(texcoordAccessor, 1));
@@ -304,7 +375,7 @@ std::vector<VkDescriptorSetLayout> Scene::getDescriptorSetLayouts(VkDevice devic
     uboLayoutBinding.descriptorCount = 1;
     uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
     uboLayoutBinding.pImmutableSamplers = nullptr; // Optional
-                                                   //
+    //
     VkDescriptorSetLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
     layoutInfo.bindingCount = 1;
@@ -332,23 +403,23 @@ void Scene::destroyDescriptorSetLayout(VkDevice device) {
     vkDestroyDescriptorSetLayout(device, textureDescriptorSetLayout, nullptr);
 }
 
-void calculateBoundingBox(const tinygltf::Model& model, glm::vec3& minBounds, glm::vec3& maxBounds) {
+void calculateBoundingBox(const tinygltf::Model &model, glm::vec3 &minBounds, glm::vec3 &maxBounds) {
     minBounds = glm::vec3(std::numeric_limits<float>::max());
     maxBounds = glm::vec3(-std::numeric_limits<float>::max());
 
-    for (const auto& mesh : model.meshes) {
-        for (const auto& primitive : mesh.primitives) {
-            const auto& attributes = primitive.attributes;
+    for (const auto &mesh: model.meshes) {
+        for (const auto &primitive: mesh.primitives) {
+            const auto &attributes = primitive.attributes;
             if (attributes.find("POSITION") != attributes.end()) {
                 const int accessorIdx = attributes.at("POSITION");
-                const auto& accessor = model.accessors[accessorIdx];
-                const auto& bufferView = model.bufferViews[accessor.bufferView];
-                const auto& buffer = model.buffers[bufferView.buffer];
+                const auto &accessor = model.accessors[accessorIdx];
+                const auto &bufferView = model.bufferViews[accessor.bufferView];
+                const auto &buffer = model.buffers[bufferView.buffer];
                 const size_t byteStride = accessor.ByteStride(bufferView);
 
                 for (size_t i = 0; i < accessor.count; ++i) {
                     const int pos = bufferView.byteOffset + accessor.byteOffset + i * byteStride;
-                    const float* ptr = reinterpret_cast<const float*>(&buffer.data[pos]);
+                    const float *ptr = reinterpret_cast<const float *>(&buffer.data[pos]);
                     for (int j = 0; j < 3; ++j) {
                         minBounds[j] = std::min(minBounds[j], ptr[j]);
                         maxBounds[j] = std::max(maxBounds[j], ptr[j]);
@@ -359,12 +430,12 @@ void calculateBoundingBox(const tinygltf::Model& model, glm::vec3& minBounds, gl
     }
 }
 
-std::ostream& operator << (std::ostream& out, const glm::vec3& value) {
+std::ostream &operator<<(std::ostream &out, const glm::vec3 &value) {
     out << std::setprecision(4) << "(" << value.x << "," << value.y << "," << value.z << ")";
     return out;
 }
 
-void Scene::computeCameraPos(glm::vec3& lookAt, glm::vec3& cameraPos, float& fov) {
+void Scene::computeCameraPos(glm::vec3 &lookAt, glm::vec3 &cameraPos, float &fov) {
     // TODO: if the scene has a camera, we ought to load the data from it
 
     // Compute bbox of the meshes
@@ -392,36 +463,35 @@ void copyBufferToImage(VulkanDevice *device, VkBuffer buffer, VkImage image, uin
     region.imageSubresource.baseArrayLayer = 0;
     region.imageSubresource.layerCount = 1;
     region.imageOffset = {0, 0, 0};
-    region.imageExtent = { width, height, 1 };
+    region.imageExtent = {width, height, 1};
     vkCmdCopyBufferToImage(commandBuffer, buffer, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
     device->endSingleTimeCommands(commandBuffer);
 }
 
-Scene::LoadedTexture uploadGLTFImage(VulkanDevice *device, const tinygltf::Image& image)
-{
+Scene::LoadedTexture uploadGLTFImage(VulkanDevice *device, const tinygltf::Image &image) {
     Scene::LoadedTexture loadedTex;
     const uint32_t imageSize = image.width * image.height * image.component;
     VkBuffer stagingBuffer;
     VkDeviceMemory stagingBufferMemory;
     VulkanHelper::createBuffer(device->device, device->physicalDevice,
-        imageSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-        stagingBuffer, stagingBufferMemory);
+                               imageSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                               VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                               stagingBuffer, stagingBufferMemory);
 
-    void* data;
+    void *data;
     vkMapMemory(*device, stagingBufferMemory, 0, imageSize, 0, &data);
     memcpy(data, image.image.data(), static_cast<size_t>(imageSize));
     vkUnmapMemory(*device, stagingBufferMemory);
 
     device->createImage(image.width, image.height, VK_FORMAT_R8G8B8A8_SRGB,
-        VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, loadedTex.image, loadedTex.memory);
+                        VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+                        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, loadedTex.image, loadedTex.memory);
 
     device->transitionImageLayout(loadedTex.image, VK_FORMAT_R8G8B8A8_SRGB,
-        VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+                                  VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
     copyBufferToImage(device, stagingBuffer, loadedTex.image, image.width, image.height);
     device->transitionImageLayout(loadedTex.image, VK_FORMAT_R8G8B8A8_SRGB,
-        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+                                  VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
     vkDestroyBuffer(*device, stagingBuffer, nullptr);
     vkFreeMemory(*device, stagingBufferMemory, nullptr);
@@ -462,9 +532,9 @@ static VkSampler createSampler(VulkanDevice *device) {
     return sampler;
 }
 
-void Scene::setupTextures(VulkanDevice* device) {
+void Scene::setupTextures(VulkanDevice *device) {
     for (size_t i = 0; i < model.materials.size(); i++) {
-        const auto& material = model.materials[i];
+        const auto &material = model.materials[i];
 
         auto it = material.values.find(BASE_COLOR_TEXTURE);
         if (it == material.values.end()) {
@@ -472,8 +542,8 @@ void Scene::setupTextures(VulkanDevice* device) {
         }
 
         // We have a texture here
-        const auto& textureIdx = it->second.TextureIndex();
-        const tinygltf::Texture& gTexture = model.textures[textureIdx];
+        const auto &textureIdx = it->second.TextureIndex();
+        const tinygltf::Texture &gTexture = model.textures[textureIdx];
 
         if (textures.count(gTexture.source)) {
             continue;
@@ -481,15 +551,17 @@ void Scene::setupTextures(VulkanDevice* device) {
 
         textures[gTexture.source] = uploadGLTFImage(device, model.images[gTexture.source]);
         textures[gTexture.source].imageView = device->createImageView(textures[gTexture.source].image,
-            VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_ASPECT_COLOR_BIT);
+                                                                      VK_FORMAT_R8G8B8A8_SRGB,
+                                                                      VK_IMAGE_ASPECT_COLOR_BIT);
         textures[gTexture.source].imageView = device->createImageView(textures[gTexture.source].image,
-            VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_ASPECT_COLOR_BIT);
+                                                                      VK_FORMAT_R8G8B8A8_SRGB,
+                                                                      VK_IMAGE_ASPECT_COLOR_BIT);
         textures[gTexture.source].sampler = createSampler(device);
     }
 }
 
-void Scene::destroyTextures(VulkanDevice* device) {
-    for (auto& [idx, tex] : textures) {
+void Scene::destroyTextures(VulkanDevice *device) {
+    for (auto &[idx, tex]: textures) {
         vkDestroyImageView(*device, tex.imageView, nullptr);
         vkDestroyImage(*device, tex.image, nullptr);
         vkFreeMemory(*device, tex.memory, nullptr);
