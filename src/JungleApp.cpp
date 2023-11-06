@@ -82,6 +82,11 @@ void JungleApp::drawFrame() {
             ImGui::Checkbox("Spin", &spinScene);
             ImGui::SliderFloat("Fixed spin", &fixedRotation, 0.0f, 360.0f);
         }
+        if (ImGui::CollapsingHeader("Color Settings")) {
+            ImGui::SliderFloat("Exposure", &exposure, -10, 10);
+            ImGui::SliderFloat("Gamma", &gamma, 0, 4);
+            ImGui::Combo("Tonemapping", &tonemappingMode, "None\0Hable\0AgX\0\0");
+        }
     }
     ImGui::End();
 
@@ -104,7 +109,7 @@ void JungleApp::drawFrame() {
         ImGui::End();
     }
 
-    updateUniformBuffer(currentFrame);
+    updateUniformBuffers(currentFrame);
 
     vkResetCommandBuffer(commandBuffers[currentFrame], 0);
     recordCommandBuffer(commandBuffers[currentFrame], imageIndex);
@@ -559,10 +564,19 @@ void JungleApp::createDescriptorSetLayout() {
     uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
     uboLayoutBinding.pImmutableSamplers = nullptr; // Optional
 
+    VkDescriptorSetLayoutBinding tonemappingLayoutBinding{};
+    tonemappingLayoutBinding.binding = 1;
+    tonemappingLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    tonemappingLayoutBinding.descriptorCount = 1;
+    tonemappingLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    tonemappingLayoutBinding.pImmutableSamplers = nullptr;
+
+    std::vector<VkDescriptorSetLayoutBinding> bindings{uboLayoutBinding, tonemappingLayoutBinding};
+
     VkDescriptorSetLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    layoutInfo.bindingCount = 1;
-    layoutInfo.pBindings = &uboLayoutBinding;
+    layoutInfo.bindingCount = bindings.size();
+    layoutInfo.pBindings = bindings.data();
 
     VK_CHECK_RESULT(vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &descriptorSetLayout))
 }
@@ -582,9 +596,18 @@ void JungleApp::createUniformBuffers() {
 
         vkMapMemory(device, uniformBuffersMemory[i], 0, bufferSize, 0, &uniformBuffersMapped[i]);
     }
+
+    VkDeviceSize tonemappingBufferSize = sizeof(TonemappingUBO);
+
+    VulkanHelper::createBuffer(device, device.physicalDevice, tonemappingBufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                               VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                               tonemappingUniformBuffer,
+                               tonemappingUniformBufferMemory);
+
+    vkMapMemory(device, tonemappingUniformBufferMemory, 0, tonemappingBufferSize, 0, &tonemappingBufferMapped);
 }
 
-void JungleApp::updateUniformBuffer(uint32_t currentImage) {
+void JungleApp::updateUniformBuffers(uint32_t currentImage) {
     static auto startTime = std::chrono::high_resolution_clock::now();
 
     auto currentTime = std::chrono::high_resolution_clock::now();
@@ -599,6 +622,12 @@ void JungleApp::updateUniformBuffer(uint32_t currentImage) {
     ubo.proj[1][1] *= -1;  // because GLM generates OpenGL projections
 
     memcpy(uniformBuffersMapped[currentImage], &ubo, sizeof(ubo));
+
+    TonemappingUBO tonemapping{};
+    tonemapping.exposure = exposure;
+    tonemapping.gamma = gamma;
+    tonemapping.mode = tonemappingMode;
+    memcpy(tonemappingBufferMapped, &tonemapping, sizeof(tonemapping));
 }
 
 void JungleApp::createDescriptorPool() {
@@ -652,7 +681,25 @@ void JungleApp::createDescriptorSets() {
         descriptorWrite.pImageInfo = nullptr; // Optional
         descriptorWrite.pTexelBufferView = nullptr; // Optional
 
-        vkUpdateDescriptorSets(device, 1, &descriptorWrite, 0, nullptr);
+        VkDescriptorBufferInfo tonemappingBufferInfo{};
+        tonemappingBufferInfo.buffer = tonemappingUniformBuffer;
+        tonemappingBufferInfo.offset = 0;
+        tonemappingBufferInfo.range = sizeof(TonemappingUBO);
+
+        VkWriteDescriptorSet tonemappingDescriptorWrite{};
+        tonemappingDescriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        tonemappingDescriptorWrite.dstSet = descriptorSets[i];
+        tonemappingDescriptorWrite.dstBinding = 1;
+        tonemappingDescriptorWrite.dstArrayElement = 0;
+        tonemappingDescriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        tonemappingDescriptorWrite.descriptorCount = 1;
+        tonemappingDescriptorWrite.pBufferInfo = &tonemappingBufferInfo;
+        tonemappingDescriptorWrite.pImageInfo = nullptr; // Optional
+        tonemappingDescriptorWrite.pTexelBufferView = nullptr; // Optional
+
+        std::vector<VkWriteDescriptorSet> descriptorWrites{descriptorWrite, tonemappingDescriptorWrite};
+
+        vkUpdateDescriptorSets(device, descriptorWrites.size(), descriptorWrites.data(), 0, nullptr);
     }
 
     scene.setupDescriptorSets(device, descriptorPool, descriptorSetLayout);
@@ -668,6 +715,8 @@ void JungleApp::cleanup() {
         vkDestroyBuffer(device, uniformBuffers[i], nullptr);
         vkFreeMemory(device, uniformBuffersMemory[i], nullptr);
     }
+    vkDestroyBuffer(device, tonemappingUniformBuffer, nullptr);
+    vkFreeMemory(device, tonemappingUniformBufferMemory, nullptr);
 
     vkDestroyDescriptorPool(device, descriptorPool, nullptr);
     vkDestroyDescriptorPool(device, imguiDescriptorPool, nullptr);

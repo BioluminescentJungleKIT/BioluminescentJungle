@@ -113,6 +113,7 @@ static std::tuple<std::vector<char>, std::string> getShaderCode(const std::strin
 
         if (result.GetCompilationStatus() != shaderc_compilation_status_success) {
             message = "Shader compilation failed:\n" + result.GetErrorMessage();
+            std::cout << message << std::endl;
         } else {
             std::vector<char> spirv = {reinterpret_cast<const char *>(result.cbegin()),
                                        reinterpret_cast<const char *>(result.cend())};
