@@ -221,8 +221,9 @@ void Scene::generateTransforms(int nodeIndex, glm::mat4 oldTransform, int maxRec
                 light_intensity = static_cast<float>(light.Get("intensity").Get<double>());
             }
             lights.push_back({glm::make_vec3(newTransform[3]), light_color, light_intensity});
+        } else {
+            std::cout << "[lights] WARN: Detected unsupported light of type " << type << std::endl;
         }
-        std::cout << "[lights] WARN: Detected unsupported light of type " << type << std::endl;
     }
 
     for (int child: node.children) {
