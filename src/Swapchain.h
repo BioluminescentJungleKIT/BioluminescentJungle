@@ -45,6 +45,9 @@ class Swapchain
     Swapchain(GLFWwindow* window, VkSurfaceKHR surface, VulkanDevice* device);
     ~Swapchain();
 
+    std::optional<uint32_t> acquireNextImage(VkRenderPass renderPass);
+    VkResult queuePresent(VkCommandBuffer commandBuffer, uint32_t imageIndex);
+
     void createFramebuffersForRender(VkRenderPass renderPass);
     void recreateSwapChain(VkRenderPass renderPass);
 
@@ -55,6 +58,8 @@ class Swapchain
 
     RenderTarget defaultTarget;
     VkFormat chooseDepthFormat();
+
+    uint32_t currentFrame = 0;
 
   private:
     GLFWwindow *window;
@@ -72,9 +77,14 @@ class Swapchain
     VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities);
     std::vector<VkImage> swapChainImages;
 
+    void createSyncObjects();
     void createSwapChain();
     void createImageViews();
     void createDepthResources();
+
+    std::vector<VkSemaphore> imageAvailableSemaphores;
+    std::vector<VkSemaphore> renderFinishedSemaphores;
+    std::vector<VkFence> inFlightFences;
 };
 
 #endif /* end of include guard: JUNGLE_SWAPCHAIN */

@@ -82,17 +82,9 @@ private:
 
     void recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex);
 
-    std::vector<VkSemaphore> imageAvailableSemaphores;
-    std::vector<VkSemaphore> renderFinishedSemaphores;
-    std::vector<VkFence> inFlightFences;
-
     bool framebufferResized = false;
 
-    uint32_t currentFrame = 0;
-
     void drawFrame();
-
-    void createSyncObjects();
 
     static void framebufferResizeCallback(GLFWwindow *window, int width, int height) {
         auto app = reinterpret_cast<JungleApp *>(glfwGetWindowUserPointer(window));

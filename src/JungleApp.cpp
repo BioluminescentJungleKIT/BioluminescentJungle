@@ -30,7 +30,6 @@ void JungleApp::initVulkan(const std::string& sceneName, bool recompileShaders) 
     createDescriptorPool();
     createDescriptorSets();
     createCommandBuffer();
-    createSyncObjects();
 }
 
 void JungleApp::mainLoop() {
@@ -43,24 +42,14 @@ void JungleApp::mainLoop() {
 }
 
 void JungleApp::drawFrame() {
-    vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
-
-    uint32_t imageIndex;
-    VkResult result = vkAcquireNextImageKHR(device, swapchain->swapChain, UINT64_MAX,
-        imageAvailableSemaphores[currentFrame], VK_NULL_HANDLE, &imageIndex);
-
-    if (result == VK_ERROR_OUT_OF_DATE_KHR) {
-        swapchain->recreateSwapChain(renderPass);
+    auto imageIndex = swapchain->acquireNextImage(renderPass);
+    if (!imageIndex.has_value()) {
         return;
-    } else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
-        VK_CHECK_RESULT(result)
     }
 
     if (forceReloadShaders) {
         recreateGraphicsPipeline();
     }
-
-    vkResetFences(device, 1, &inFlightFences[currentFrame]);
 
     ImGui_ImplVulkan_NewFrame();
     ImGui_ImplGlfw_NewFrame();
@@ -111,37 +100,12 @@ void JungleApp::drawFrame() {
         ImGui::End();
     }
 
-    updateUniformBuffers(currentFrame);
+    updateUniformBuffers(swapchain->currentFrame);
 
-    vkResetCommandBuffer(commandBuffers[currentFrame], 0);
-    recordCommandBuffer(commandBuffers[currentFrame], imageIndex);
-    VkSubmitInfo submitInfo{};
-    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    vkResetCommandBuffer(commandBuffers[swapchain->currentFrame], 0);
+    recordCommandBuffer(commandBuffers[swapchain->currentFrame], *imageIndex);
 
-    VkSemaphore waitSemaphores[] = {imageAvailableSemaphores[currentFrame]};
-    VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
-    submitInfo.waitSemaphoreCount = 1;
-    submitInfo.pWaitSemaphores = waitSemaphores;
-    submitInfo.pWaitDstStageMask = waitStages;
-    submitInfo.commandBufferCount = 1;
-    submitInfo.pCommandBuffers = &commandBuffers[currentFrame];
-    VkSemaphore signalSemaphores[] = {renderFinishedSemaphores[currentFrame]};
-    submitInfo.signalSemaphoreCount = 1;
-    submitInfo.pSignalSemaphores = signalSemaphores;
-    VK_CHECK_RESULT(vkQueueSubmit(device.graphicsQueue, 1, &submitInfo, inFlightFences[currentFrame]))
-    VkPresentInfoKHR presentInfo{};
-    presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-
-    presentInfo.waitSemaphoreCount = 1;
-    presentInfo.pWaitSemaphores = signalSemaphores;
-    VkSwapchainKHR swapChains[] = {swapchain->swapChain};
-    presentInfo.swapchainCount = 1;
-    presentInfo.pSwapchains = swapChains;
-    presentInfo.pImageIndices = &imageIndex;
-    presentInfo.pResults = nullptr; // Optional
-
-    result = vkQueuePresentKHR(device.presentQueue, &presentInfo);
-
+    auto result = swapchain->queuePresent(commandBuffers[swapchain->currentFrame], *imageIndex);
     if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || framebufferResized || forceRecreateSwapchain) {
         framebufferResized = false;
         forceRecreateSwapchain = false;
@@ -149,10 +113,6 @@ void JungleApp::drawFrame() {
     } else {
         VK_CHECK_RESULT(result)
     }
-
-    currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
-
-    currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
 }
 
 void JungleApp::initWindow() {
@@ -383,7 +343,7 @@ void JungleApp::recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imag
     //vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1,
     //                        &descriptorSets[currentFrame], 0, nullptr);
 
-    scene.render(commandBuffer, pipeline->layout, descriptorSets[currentFrame]);
+    scene.render(commandBuffer, pipeline->layout, descriptorSets[swapchain->currentFrame]);
 
     ImGui::Render();
     ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), commandBuffer);
@@ -391,25 +351,6 @@ void JungleApp::recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imag
     vkCmdEndRenderPass(commandBuffer);
 
     VK_CHECK_RESULT(vkEndCommandBuffer(commandBuffer))
-}
-
-void JungleApp::createSyncObjects() {
-    imageAvailableSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
-    renderFinishedSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
-    inFlightFences.resize(MAX_FRAMES_IN_FLIGHT);
-
-    VkSemaphoreCreateInfo semaphoreInfo{};
-    semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-
-    VkFenceCreateInfo fenceInfo{};
-    fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-    fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
-
-    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-        VK_CHECK_RESULT(vkCreateSemaphore(device, &semaphoreInfo, nullptr, &imageAvailableSemaphores[i]))
-        VK_CHECK_RESULT(vkCreateSemaphore(device, &semaphoreInfo, nullptr, &renderFinishedSemaphores[i]))
-        VK_CHECK_RESULT(vkCreateFence(device, &fenceInfo, nullptr, &inFlightFences[i]))
-    }
 }
 
 void JungleApp::createDescriptorSetLayout() {
@@ -582,13 +523,6 @@ void JungleApp::cleanup() {
     pipeline.reset();
 
     vkDestroyRenderPass(device, renderPass, nullptr);
-
-    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-        vkDestroySemaphore(device, renderFinishedSemaphores[i], nullptr);
-        vkDestroySemaphore(device, imageAvailableSemaphores[i], nullptr);
-        vkDestroyFence(device, inFlightFences[i], nullptr);
-    }
-
     vkDestroySurfaceKHR(device.instance, surface, nullptr);
     device.destroy();
     glfwDestroyWindow(window);
