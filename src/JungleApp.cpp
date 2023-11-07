@@ -22,6 +22,7 @@ void JungleApp::initVulkan(const std::string& sceneName, bool recompileShaders) 
 
     swapchain = std::make_unique<Swapchain>(window, surface, &device);
     createRenderPass();
+
     setupScene(sceneName);
     createDescriptorSetLayout();
     createGraphicsPipeline(recompileShaders);
@@ -500,7 +501,7 @@ void JungleApp::createDescriptorSets() {
         vkUpdateDescriptorSets(device, descriptorWrites.size(), descriptorWrites.data(), 0, nullptr);
     }
 
-    scene.setupDescriptorSets(device, descriptorPool, descriptorSetLayout);
+    scene.setupDescriptorSets(device, descriptorPool);
 }
 
 void JungleApp::cleanup() {

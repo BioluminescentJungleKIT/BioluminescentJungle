@@ -104,8 +104,7 @@ void Scene::renderInstances(int mesh, VkCommandBuffer commandBuffer, VkPipelineL
     }
 }
 
-void Scene::setupDescriptorSets(VkDevice device, VkDescriptorPool descriptorPool,
-                                VkDescriptorSetLayout descriptorSetLayout) {
+void Scene::setupDescriptorSets(VkDevice device, VkDescriptorPool descriptorPool) {
     std::vector<VkDescriptorSetLayout> layouts(meshTransforms.size(), uboDescriptorSetLayout);
     VkDescriptorSetAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;

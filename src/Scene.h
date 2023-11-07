@@ -36,7 +36,7 @@ public:
     std::string queryShaderName();
 
     void
-    setupDescriptorSets(VkDevice device, VkDescriptorPool descriptorPool, VkDescriptorSetLayout descriptorSetLayout);
+    setupDescriptorSets(VkDevice device, VkDescriptorPool descriptorPool);
 
     void render(VkCommandBuffer commandBuffer, VkPipelineLayout pipelineLayout, VkDescriptorSet globalDescriptorSet);
 
