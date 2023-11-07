@@ -26,8 +26,6 @@
 const uint32_t WIDTH = 1800;
 const uint32_t HEIGHT = 1200;
 
-const int MAX_FRAMES_IN_FLIGHT = 2;
-
 struct UniformBufferObject {
     glm::mat4 model;
     glm::mat4 view;

@@ -1,20 +1,77 @@
 #include "Swapchain.h"
 #include "VulkanHelper.h"
 #include <algorithm>
+#include <vulkan/vulkan_core.h>
+
+void RenderTarget::init(VulkanDevice* device, int nrFrames) {
+    this->device = device;
+    this->nrFrames = nrFrames;
+    imageViews.resize(nrFrames);
+    framebuffers.resize(nrFrames);
+}
+
+void RenderTarget::destroyAll() {
+    for (size_t i = 0; i < framebuffers.size(); i++) {
+        vkDestroyFramebuffer(*device, framebuffers[i], nullptr);
+    }
+    framebuffers.clear();
+
+    for (auto& set : imageViews) {
+        for (auto& imageView : set) {
+            vkDestroyImageView(*device, imageView, nullptr);
+        }
+    }
+    imageViews.clear();
+
+    for (auto& img : images) {
+        vkDestroyImage(*device, img, nullptr);
+    }
+    images.clear();
+
+    for (auto& mem : deviceMemories) {
+        vkFreeMemory(*device, mem, nullptr);
+    }
+    deviceMemories.clear();
+}
+
+void RenderTarget::addAttachment(std::vector<VkImage> images, VkFormat fmt, VkImageAspectFlags flags) {
+    assert(images.size() == nrFrames);
+    for (size_t i = 0; i < nrFrames; i++) {
+        imageViews[i].push_back(device->createImageView(images[i], fmt, flags));
+    }
+}
+
+void RenderTarget::addAttachment(VkExtent2D extent, VkFormat fmt,
+    VkImageUsageFlags usageFlags, VkImageAspectFlags aspectFlags) {
+
+    for (int i = 0; i < nrFrames; i++) {
+        VkImage image;
+        VkDeviceMemory memory;
+
+        device->createImage(extent.width, extent.height, fmt, VK_IMAGE_TILING_OPTIMAL, usageFlags,
+            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, image, memory);
+        deviceMemories.push_back(memory);
+        images.push_back(image);
+        imageViews[i].push_back(device->createImageView(image, fmt, aspectFlags));
+    }
+}
+
+void RenderTarget::createFramebuffers(VkRenderPass renderPass, VkExtent2D extent) {
+    for (size_t i = 0; i < nrFrames; i++) {
+        VkFramebufferCreateInfo framebufferInfo{};
+        framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+        framebufferInfo.renderPass = renderPass;
+        framebufferInfo.attachmentCount = static_cast<uint32_t>(imageViews[i].size());
+        framebufferInfo.pAttachments = imageViews[i].data();
+        framebufferInfo.width = extent.width;
+        framebufferInfo.height = extent.height;
+        framebufferInfo.layers = 1;
+        VK_CHECK_RESULT(vkCreateFramebuffer(*device, &framebufferInfo, nullptr, &framebuffers[i]))
+    }
+}
 
 void Swapchain::cleanupSwapChain() {
-    for (size_t i = 0; i < swapChainFramebuffers.size(); i++) {
-        vkDestroyFramebuffer(*device, swapChainFramebuffers[i], nullptr);
-    }
-
-    vkDestroyImageView(*device, depth.view, nullptr);
-    vkDestroyImage(*device, depth.image, nullptr);
-    vkFreeMemory(*device, depth.memory, nullptr);
-
-    for (size_t i = 0; i < swapChainImageViews.size(); i++) {
-        vkDestroyImageView(*device, swapChainImageViews[i], nullptr);
-    }
-
+    defaultTarget.destroyAll();
     vkDestroySwapchainKHR(*device, swapChain, nullptr);
 }
 
@@ -129,33 +186,13 @@ void Swapchain::createSwapChain() {
 }
 
 void Swapchain::createImageViews() {
-    swapChainImageViews.resize(swapChainImages.size());
-    for (size_t i = 0; i < swapChainImages.size(); i++) {
-        swapChainImageViews[i] =
-            device->createImageView(swapChainImages[i], swapChainImageFormat, VK_IMAGE_ASPECT_COLOR_BIT);
-    }
+    defaultTarget.init(device, swapChainImages.size());
+    defaultTarget.addAttachment(swapChainImages, swapChainImageFormat, VK_IMAGE_ASPECT_COLOR_BIT);
 }
 
 void Swapchain::createFramebuffersForRender(VkRenderPass renderPass) {
     createDepthResources();
-    swapChainFramebuffers.resize(swapChainImageViews.size());
-
-    for (size_t i = 0; i < swapChainImageViews.size(); i++) {
-        std::array<VkImageView, 2> attachments = {
-            swapChainImageViews[i],
-            depth.view,
-        };
-
-        VkFramebufferCreateInfo framebufferInfo{};
-        framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-        framebufferInfo.renderPass = renderPass;
-        framebufferInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
-        framebufferInfo.pAttachments = attachments.data();
-        framebufferInfo.width = swapChainExtent.width;
-        framebufferInfo.height = swapChainExtent.height;
-        framebufferInfo.layers = 1;
-        VK_CHECK_RESULT(vkCreateFramebuffer(*device, &framebufferInfo, nullptr, &swapChainFramebuffers[i]))
-    }
+    defaultTarget.createFramebuffers(renderPass, swapChainExtent);
 }
 
 static VkFormat findSupportedFormat(VkPhysicalDevice device, const std::vector<VkFormat>& candidates) {
@@ -177,12 +214,8 @@ VkFormat Swapchain::chooseDepthFormat() {
 }
 
 void Swapchain::createDepthResources() {
-    VkFormat depthFormat = chooseDepthFormat();
-    device->createImage(swapChainExtent.width, swapChainExtent.height, depthFormat,
-        VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
-        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, depth.image, depth.memory);
-
-    depth.view = device->createImageView(depth.image, depthFormat, VK_IMAGE_ASPECT_DEPTH_BIT);
+    defaultTarget.addAttachment(swapChainExtent, chooseDepthFormat(),
+        VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_IMAGE_ASPECT_DEPTH_BIT);
 }
 
 Swapchain::Swapchain(GLFWwindow* window, VkSurfaceKHR surface, VulkanDevice* device) {
