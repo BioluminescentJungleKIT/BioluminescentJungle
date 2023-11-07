@@ -21,6 +21,7 @@
 #include "PhysicalDevice.h"
 #include "Swapchain.h"
 #include "MusicPlayer.h"
+#include "Pipeline.h"
 
 const uint32_t WIDTH = 1800;
 const uint32_t HEIGHT = 1200;
@@ -41,9 +42,9 @@ struct TonemappingUBO {
 
 class JungleApp {
 public:
-    void run(const std::string& sceneName) {
+    void run(const std::string& sceneName, bool recompileShaders) {
         initWindow();
-        initVulkan(sceneName);
+        initVulkan(sceneName, recompileShaders);
         initImGui();
         mplayer.init();
         mainLoop();
@@ -54,7 +55,7 @@ public:
 private:
     void initWindow();
 
-    void initVulkan(const std::string& sceneName);
+    void initVulkan(const std::string& sceneName, bool recompileShaders);
 
     void initImGui();
 
@@ -72,11 +73,8 @@ private:
 
     void createGraphicsPipeline(bool recompileShaders);
 
-    VkShaderModule createShaderModule(std::vector<char> code);
-
     VkRenderPass renderPass;
-    VkPipelineLayout pipelineLayout;
-    VkPipeline graphicsPipeline;
+    std::unique_ptr<GraphicsPipeline> pipeline;
 
     void createRenderPass();
 
@@ -136,8 +134,6 @@ private:
     bool forceRecreateSwapchain;
     bool forceReloadShaders;
     bool showDemoWindow;
-    std::string lastVertMessage;
-    std::string lastFragMessage;
     float nearPlane = .1f;
     float farPlane = 1000.f;
     float cameraFOVY = 45;
@@ -146,8 +142,6 @@ private:
     glm::vec3 cameraUpVector = glm::vec3(0.0f, 0.0f, 1.0f);
     bool spinScene = true;
     float fixedRotation = 0.0;
-
-    void cleanupGraphicsPipeline();
 
     void recreateGraphicsPipeline();
 

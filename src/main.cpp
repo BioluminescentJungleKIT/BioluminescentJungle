@@ -9,8 +9,13 @@ int main(int argc, char **argv) {
         scenePath = argv[1];
     }
 
+    bool recompileShaders = false;
+    if (argc > 2 && !strcmp(argv[2], "--recompile-shaders")) {
+        recompileShaders = true;
+    }
+
     try {
-        app.run(scenePath);
+        app.run(scenePath, recompileShaders);
     } catch (const std::exception& e) {
         std::cerr << e.what() << std::endl;
         return EXIT_FAILURE;
