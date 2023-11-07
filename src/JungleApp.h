@@ -85,6 +85,7 @@ private:
     bool framebufferResized = false;
 
     void drawFrame();
+    void drawImGUI();
 
     static void framebufferResizeCallback(GLFWwindow *window, int width, int height) {
         auto app = reinterpret_cast<JungleApp *>(glfwGetWindowUserPointer(window));

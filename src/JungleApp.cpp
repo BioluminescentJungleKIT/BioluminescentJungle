@@ -41,16 +41,7 @@ void JungleApp::mainLoop() {
     vkDeviceWaitIdle(device.device);
 }
 
-void JungleApp::drawFrame() {
-    auto imageIndex = swapchain->acquireNextImage(renderPass);
-    if (!imageIndex.has_value()) {
-        return;
-    }
-
-    if (forceReloadShaders) {
-        recreateGraphicsPipeline();
-    }
-
+void JungleApp::drawImGUI() {
     ImGui_ImplVulkan_NewFrame();
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
@@ -99,6 +90,19 @@ void JungleApp::drawFrame() {
         }
         ImGui::End();
     }
+}
+
+void JungleApp::drawFrame() {
+    auto imageIndex = swapchain->acquireNextImage(renderPass);
+    if (!imageIndex.has_value()) {
+        return;
+    }
+
+    if (forceReloadShaders) {
+        recreateGraphicsPipeline();
+    }
+
+    drawImGUI();
 
     updateUniformBuffers(swapchain->currentFrame);
 
