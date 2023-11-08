@@ -4,3 +4,6 @@
 [submodule "lib/tinygltf"]
 	path = lib/tinygltf
 	url = https://github.com/syoyo/tinygltf.git
+[submodule "lib/portaudio"]
+	path = lib/portaudio
+	url = https://github.com/PortAudio/portaudio.git

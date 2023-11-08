@@ -20,6 +20,7 @@
 #include "Scene.h"
 #include "PhysicalDevice.h"
 #include "Swapchain.h"
+#include "MusicPlayer.h"
 
 const uint32_t WIDTH = 1800;
 const uint32_t HEIGHT = 1200;
@@ -44,8 +45,10 @@ public:
         initWindow();
         initVulkan(sceneName);
         initImGui();
+        mplayer.init();
         mainLoop();
         cleanup();
+        mplayer.terminate();
     }
 
 private:
@@ -152,7 +155,8 @@ private:
     float gamma{2.4};
     int tonemappingMode{2};
 
-    void createLUTBuffer();
+    MusicPlayer mplayer{"scenes/loop.wav"};
+    bool playMusic;
 };
 
 

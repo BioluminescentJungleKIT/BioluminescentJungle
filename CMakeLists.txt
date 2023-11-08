@@ -38,12 +38,16 @@ add_executable(Jungle src/main.cpp
         src/Scene.h
         src/VulkanHelper.h
         src/VulkanHelper.cpp
+        src/MusicPlayer.cpp
+        src/MusicPlayer.h
 )
 
 target_include_directories(Jungle PRIVATE lib/imgui lib/imgui/backends lib/imgui/misc/cpp/)
-target_link_libraries(Jungle ${ShaderC_LIBRARIES} glfw Vulkan::Vulkan tinygltf)
+target_link_libraries(Jungle ${ShaderC_LIBRARIES} glfw Vulkan::Vulkan tinygltf portaudio)
 target_include_directories(Jungle PUBLIC ${ShaderC_INCLUDE_DIRS})
 target_compile_options(Jungle PUBLIC ${ShaderC_CFLAGS_OTHER})
 
 add_subdirectory(lib/tinygltf)
 include_directories(lib/tinygltf)
+add_subdirectory(lib/portaudio)
+include_directories(lib/portaudio/include)

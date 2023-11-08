@@ -68,6 +68,12 @@ void JungleApp::drawFrame() {
         forceReloadShaders = ImGui::Button("Reload Shaders");
         ImGui::Checkbox("Show Dear ImGui Demo", &showDemoWindow);
         ImGui::Checkbox("Show Metrics", &showMetricsWindow);
+        if (ImGui::CollapsingHeader("Music Settings")) {
+            if (ImGui::Checkbox("Enable Music", &playMusic)) {
+                if (playMusic) mplayer.play();
+                else mplayer.pause();
+            }
+        }
         if (ImGui::CollapsingHeader("Video Settings")) {
             forceRecreateSwapchain = ImGui::Checkbox("VSync", &swapchain->enableVSync);
         }
