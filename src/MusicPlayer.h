@@ -7,6 +7,7 @@
 
 #include <portaudio.h>
 #include <vector>
+#include <cstdint>
 
 struct PlaybackInfo {
     uint32_t currentSample;
