@@ -6,9 +6,9 @@
 #include "VulkanHelper.h"
 
 #ifdef NDEBUG
-const bool enableValidationLayers = false;
+bool enableValidationLayers = false;
 #else
-const bool enableValidationLayers = true;
+bool enableValidationLayers = true;
 #endif
 
 static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
@@ -70,7 +70,8 @@ std::vector<const char *> getRequiredExtensions() {
 
 void VulkanDevice::createInstance() {
     if (enableValidationLayers && !checkValidationLayerSupport()) {
-        throw std::runtime_error("validation layers requested, but not available!");
+        std::cerr << "Warning: disabling validation layers, because they are not supported by host!" << std::endl;
+        enableValidationLayers = false;
     }
 
     VkApplicationInfo appInfo{};
