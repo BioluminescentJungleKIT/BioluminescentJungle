@@ -69,18 +69,30 @@ private:
 
     void createSurface();
 
-    void createGraphicsPipeline(bool recompileShaders);
+    void setupRenderStageScene(const std::string& sceneName, bool recompileShaders);
+    void setupRenderStageTonemap(bool recompileshaders);
 
-    VkRenderPass renderPass;
-    std::unique_ptr<GraphicsPipeline> pipeline;
+    void createScenePipeline(bool recompileShaders);
+    void createTonemapPipeline(bool recompileShaders);
 
-    void createRenderPass();
+    VkRenderPass sceneRPass;
+    std::unique_ptr<GraphicsPipeline> scenePipeline;
+    RenderTarget sceneFinal;
+
+    VkRenderPass tonemapRPass;
+    std::unique_ptr<GraphicsPipeline> tonemapPipeline;
+
+    void createScenePass();
+    void createTonemapPass();
 
     std::vector<VkCommandBuffer> commandBuffers;
 
-    void createCommandBuffer();
+    void createCommandBuffers();
 
-    void recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex);
+    void startRenderPass(VkCommandBuffer commandBuffer, VkFramebuffer fb, VkRenderPass renderPass);
+    void setFullViewportScissor(VkCommandBuffer commandBuffer);
+    void recordSceneCommandBuffer(VkCommandBuffer commandBuffer, uint32_t currentFrame);
+    void recordTonemapCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex);
 
     bool framebufferResized = false;
 
@@ -92,9 +104,11 @@ private:
         app->framebufferResized = true;
     }
 
-    void createDescriptorSetLayout();
+    void createMVPSetLayout();
+    void createTonemapSetLayout();
 
-    VkDescriptorSetLayout descriptorSetLayout;
+    VkDescriptorSetLayout mvpSetLayout;
+    VkDescriptorSetLayout tonemapSetLayout;
 
     std::vector<VkBuffer> uniformBuffers;
     std::vector<VkDeviceMemory> uniformBuffersMemory;
@@ -115,7 +129,9 @@ private:
 
     void createDescriptorSets();
 
-    std::vector<VkDescriptorSet> descriptorSets;
+    std::vector<VkDescriptorSet> sceneDescriptorSets;
+    std::vector<VkDescriptorSet> tonemapDescriptorSets;
+    std::vector<VkSampler> tonemapSamplers;
 
     void setupScene(const std::string& sceneName);
 

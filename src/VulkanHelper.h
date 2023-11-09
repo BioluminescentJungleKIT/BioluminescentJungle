@@ -155,6 +155,8 @@ public:
 
     static VkIndexType gltfTypeToVkIndexType(int componentType);
 
+    static VkSampler createSampler(VulkanDevice* device);
+
     static glm::mat4
     transformFromMatrixOrComponents(std::vector<double> matrix, std::vector<double> scale, std::vector<double> rotation,
                                     std::vector<double> translation);

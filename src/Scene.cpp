@@ -155,7 +155,7 @@ void Scene::setupDescriptorSets(VkDevice device, VkDescriptorPool descriptorPool
         imageInfo.imageView = tex.imageView;
         imageInfo.sampler = tex.sampler;
 
-        VkWriteDescriptorSet descriptorWrite;
+        VkWriteDescriptorSet descriptorWrite{};
         descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         descriptorWrite.dstSet = textureDescriptorSets[i];
         descriptorWrite.dstBinding = 0;
@@ -505,40 +505,6 @@ Scene::LoadedTexture uploadGLTFImage(VulkanDevice *device, const tinygltf::Image
     return loadedTex;
 }
 
-static VkSampler createSampler(VulkanDevice *device) {
-    VkSamplerCreateInfo samplerInfo{};
-    samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-    samplerInfo.magFilter = VK_FILTER_LINEAR;
-    samplerInfo.minFilter = VK_FILTER_LINEAR;
-
-    samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-    samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-    samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-
-    samplerInfo.anisotropyEnable = VK_TRUE;
-
-    VkPhysicalDeviceProperties properties{};
-    vkGetPhysicalDeviceProperties(device->physicalDevice, &properties);
-    samplerInfo.maxAnisotropy = properties.limits.maxSamplerAnisotropy;
-
-    samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
-    samplerInfo.unnormalizedCoordinates = VK_FALSE;
-    samplerInfo.compareEnable = VK_FALSE;
-    samplerInfo.compareOp = VK_COMPARE_OP_ALWAYS;
-
-    samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
-    samplerInfo.mipLodBias = 0.0f;
-    samplerInfo.minLod = 0.0f;
-    samplerInfo.maxLod = 0.0f;
-
-    VkSampler sampler;
-    if (vkCreateSampler(*device, &samplerInfo, nullptr, &sampler) != VK_SUCCESS) {
-        throw std::runtime_error("failed to create texture sampler!");
-    }
-
-    return sampler;
-}
-
 void Scene::setupTextures(VulkanDevice *device) {
     for (size_t i = 0; i < model.materials.size(); i++) {
         const auto &material = model.materials[i];
@@ -560,7 +526,7 @@ void Scene::setupTextures(VulkanDevice *device) {
         textures[gTexture.source].imageView = device->createImageView(textures[gTexture.source].image,
                                                                       VK_FORMAT_R8G8B8A8_SRGB,
                                                                       VK_IMAGE_ASPECT_COLOR_BIT);
-        textures[gTexture.source].sampler = createSampler(device);
+        textures[gTexture.source].sampler = VulkanHelper::createSampler(device);
     }
 }
 

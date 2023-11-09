@@ -1,4 +1,5 @@
 #include "Pipeline.h"
+#include "Swapchain.h"
 #include <vulkan/vulkan_core.h>
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
@@ -15,22 +16,48 @@
 #include "imgui_impl_vulkan.h"
 #include "VulkanHelper.h"
 
+#define LIGHT_ACCUMULATION_FORMAT VK_FORMAT_R8G8B8A8_SRGB
+
 void JungleApp::initVulkan(const std::string& sceneName, bool recompileShaders) {
     device.initInstance();
     createSurface();
     device.initDeviceForSurface(surface);
 
     swapchain = std::make_unique<Swapchain>(window, surface, &device);
-    createRenderPass();
-
-    setupScene(sceneName);
-    createDescriptorSetLayout();
-    createGraphicsPipeline(recompileShaders);
-    swapchain->createFramebuffersForRender(renderPass);
     createUniformBuffers();
+    setupRenderStageScene(sceneName, recompileShaders);
+    setupRenderStageTonemap(recompileShaders);
+
     createDescriptorPool();
     createDescriptorSets();
-    createCommandBuffer();
+    createCommandBuffers();
+}
+
+void JungleApp::setupRenderStageScene(const std::string& sceneName, bool recompileShaders) {
+    setupScene(sceneName);
+    createScenePass();
+    createMVPSetLayout();
+    createScenePipeline(recompileShaders);
+
+    sceneFinal.init(&device, MAX_FRAMES_IN_FLIGHT);
+    sceneFinal.addAttachment(swapchain->swapChainExtent, LIGHT_ACCUMULATION_FORMAT,
+        VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
+    sceneFinal.addAttachment(swapchain->swapChainExtent, swapchain->chooseDepthFormat(),
+        VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_IMAGE_ASPECT_DEPTH_BIT);
+    sceneFinal.createFramebuffers(sceneRPass, swapchain->swapChainExtent);
+}
+
+void JungleApp::setupRenderStageTonemap(bool recompileShaders) {
+    createTonemapPass();
+    swapchain->createFramebuffersForRender(tonemapRPass);
+
+    tonemapSamplers.resize(MAX_FRAMES_IN_FLIGHT);
+    for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+        tonemapSamplers[i] = VulkanHelper::createSampler(&device);
+    }
+
+    createTonemapSetLayout();
+    createTonemapPipeline(recompileShaders);
 }
 
 void JungleApp::mainLoop() {
@@ -85,7 +112,7 @@ void JungleApp::drawImGUI() {
         ImGui::ShowDemoWindow(&showDemoWindow);
     }
 
-    for (auto& [stage, msg] : pipeline->errorsFromShaderCompilation) {
+    for (auto& [stage, msg] : scenePipeline->errorsFromShaderCompilation) {
         if (ImGui::Begin(stage.c_str())) {
             ImGui::Text("%s", msg.c_str());
         }
@@ -94,7 +121,7 @@ void JungleApp::drawImGUI() {
 }
 
 void JungleApp::drawFrame() {
-    auto imageIndex = swapchain->acquireNextImage(renderPass);
+    auto imageIndex = swapchain->acquireNextImage(sceneRPass);
     if (!imageIndex.has_value()) {
         return;
     }
@@ -107,14 +134,26 @@ void JungleApp::drawFrame() {
 
     updateUniformBuffers(swapchain->currentFrame);
 
-    vkResetCommandBuffer(commandBuffers[swapchain->currentFrame], 0);
-    recordCommandBuffer(commandBuffers[swapchain->currentFrame], *imageIndex);
+    auto& commandBuffer = commandBuffers[swapchain->currentFrame];
+
+    vkResetCommandBuffer(commandBuffer, 0);
+
+    VkCommandBufferBeginInfo beginInfo{};
+    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    beginInfo.flags = 0; // Optional
+    beginInfo.pInheritanceInfo = nullptr; // Optional
+    VK_CHECK_RESULT(vkBeginCommandBuffer(commandBuffer, &beginInfo))
+
+    recordSceneCommandBuffer(commandBuffer, swapchain->currentFrame);
+    recordTonemapCommandBuffer(commandBuffer, *imageIndex);
+
+    VK_CHECK_RESULT(vkEndCommandBuffer(commandBuffer))
 
     auto result = swapchain->queuePresent(commandBuffers[swapchain->currentFrame], *imageIndex);
     if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || framebufferResized || forceRecreateSwapchain) {
         framebufferResized = false;
         forceRecreateSwapchain = false;
-        swapchain->recreateSwapChain(renderPass);
+        swapchain->recreateSwapChain(sceneRPass);
     } else {
         VK_CHECK_RESULT(result)
     }
@@ -174,7 +213,7 @@ void JungleApp::initImGui() {
     init_info.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
     // init_info.Allocator = YOUR_ALLOCATOR;
     // init_info.CheckVkResultFn = check_vk_result;
-    ImGui_ImplVulkan_Init(&init_info, renderPass);
+    ImGui_ImplVulkan_Init(&init_info, tonemapRPass);
 
     VkCommandPool command_pool = device.commandPool;
     VkCommandBuffer command_buffer = commandBuffers[0];
@@ -202,7 +241,7 @@ void JungleApp::createSurface() {
     VK_CHECK_RESULT(glfwCreateWindowSurface(device.instance, window, nullptr, &surface))
 }
 
-void JungleApp::createGraphicsPipeline(bool recompileShaders) {
+void JungleApp::createScenePipeline(bool recompileShaders) {
     PipelineParameters params;
 
     std::string shaderNames = scene.queryShaderName();
@@ -224,26 +263,54 @@ void JungleApp::createGraphicsPipeline(bool recompileShaders) {
     params.useDepthTest = true;
 
     params.descriptorSetLayouts = scene.getDescriptorSetLayouts(device);
-    params.descriptorSetLayouts.insert(params.descriptorSetLayouts.begin(), descriptorSetLayout);
-    this->pipeline = std::make_unique<GraphicsPipeline>(&device, renderPass, 0, params);
+    params.descriptorSetLayouts.insert(params.descriptorSetLayouts.begin(), mvpSetLayout);
+    this->scenePipeline = std::make_unique<GraphicsPipeline>(&device, sceneRPass, 0, params);
+}
 
+void JungleApp::createTonemapPipeline(bool recompileShaders) {
+    PipelineParameters params;
+
+    params.shadersList = {
+        {VK_SHADER_STAGE_VERTEX_BIT, "shaders/tonemap.vert"},
+        {VK_SHADER_STAGE_FRAGMENT_BIT, "shaders/tonemap.frag"},
+    };
+
+    params.recompileShaders = recompileShaders;
+
+    // Tonemap shader uses a hardcoded list of vertices
+    params.vertexAttributeDescription = {};
+    params.vertexInputDescription = {};
+    params.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    params.extent = swapchain->swapChainExtent;
+
+    // One color attachment, no blending enabled for it
+    params.blending = {{}};
+    params.useDepthTest = false;
+
+    params.descriptorSetLayouts = {tonemapSetLayout};
+    this->tonemapPipeline = std::make_unique<GraphicsPipeline>(&device, tonemapRPass, 0, params);
 }
 
 void JungleApp::recreateGraphicsPipeline() {
     vkDeviceWaitIdle(device);
-    pipeline.reset();
-    createGraphicsPipeline(true);
+
+    scenePipeline.reset();
+    tonemapPipeline.reset();
+
+    createScenePipeline(true);
+    createTonemapPipeline(true);
 }
-void JungleApp::createRenderPass() {
+
+void JungleApp::createScenePass() {
     VkAttachmentDescription colorAttachment{};
-    colorAttachment.format = swapchain->swapChainImageFormat;
+    colorAttachment.format = LIGHT_ACCUMULATION_FORMAT;
     colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
     colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
     colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
     colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
     colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
     colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    colorAttachment.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
     VkAttachmentReference colorAttachmentRef{};
     colorAttachmentRef.attachment = 0;
@@ -269,17 +336,24 @@ void JungleApp::createRenderPass() {
     subpass.pColorAttachments = &colorAttachmentRef;
     subpass.pDepthStencilAttachment = &depthAttachmentRef;
 
-    VkSubpassDependency dependency{};
-    dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
-    dependency.dstSubpass = 0;
-    dependency.srcStageMask =
-        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-    dependency.srcAccessMask = 0;
-    dependency.dstStageMask =
-        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-    dependency.dstAccessMask =
-        VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+    // We need to first transition the attachments to ATTACHMENT_WRITE, then transition back to READ for the
+    // next stages
+    std::array<VkSubpassDependency, 2> dependencies{};
+    dependencies[0].srcSubpass = VK_SUBPASS_EXTERNAL;
+    dependencies[0].dstSubpass = 0;
+    dependencies[0].srcStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+    dependencies[0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependencies[0].srcAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+    dependencies[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    dependencies[0].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
 
+    dependencies[1].srcSubpass = 0;
+    dependencies[1].dstSubpass = VK_SUBPASS_EXTERNAL;
+    dependencies[1].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependencies[1].dstStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+    dependencies[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    dependencies[1].dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+    dependencies[1].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
     std::array<VkAttachmentDescription, 2> attachments = {colorAttachment, depthAttachment};
 
     VkRenderPassCreateInfo renderPassInfo{};
@@ -288,36 +362,68 @@ void JungleApp::createRenderPass() {
     renderPassInfo.pAttachments = attachments.data();
     renderPassInfo.subpassCount = 1;
     renderPassInfo.pSubpasses = &subpass;
+    renderPassInfo.dependencyCount = dependencies.size();
+    renderPassInfo.pDependencies = dependencies.data();
+
+    VK_CHECK_RESULT(vkCreateRenderPass(device, &renderPassInfo, nullptr, &sceneRPass))
+}
+
+void JungleApp::createTonemapPass() {
+    VkAttachmentDescription colorAttachment{};
+    colorAttachment.format = swapchain->swapChainImageFormat;
+    colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+    colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
+    VkAttachmentReference colorAttachmentRef{};
+    colorAttachmentRef.attachment = 0;
+    colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+    VkSubpassDescription subpass{};
+    subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+    subpass.colorAttachmentCount = 1;
+    subpass.pColorAttachments = &colorAttachmentRef;
+
+    VkSubpassDependency dependency{};
+    dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+    dependency.dstSubpass = 0;
+    dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependency.srcAccessMask = 0;
+    dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+
+    VkRenderPassCreateInfo renderPassInfo{};
+    renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+    renderPassInfo.attachmentCount = 1;
+    renderPassInfo.pAttachments = &colorAttachment;
+    renderPassInfo.subpassCount = 1;
+    renderPassInfo.pSubpasses = &subpass;
     renderPassInfo.dependencyCount = 1;
     renderPassInfo.pDependencies = &dependency;
 
-    VK_CHECK_RESULT(vkCreateRenderPass(device, &renderPassInfo, nullptr, &renderPass))
+    VK_CHECK_RESULT(vkCreateRenderPass(device, &renderPassInfo, nullptr, &tonemapRPass))
 }
 
-void JungleApp::createCommandBuffer() {
-    commandBuffers.resize(MAX_FRAMES_IN_FLIGHT);
 
+void JungleApp::createCommandBuffers() {
+    commandBuffers.resize(MAX_FRAMES_IN_FLIGHT);
     VkCommandBufferAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
     allocInfo.commandPool = device.commandPool;
     allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
     allocInfo.commandBufferCount = (uint32_t) commandBuffers.size();
-
     VK_CHECK_RESULT(vkAllocateCommandBuffers(device, &allocInfo, commandBuffers.data()))
 }
 
-void JungleApp::recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex) {
-    VkCommandBufferBeginInfo beginInfo{};
-    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    beginInfo.flags = 0; // Optional
-    beginInfo.pInheritanceInfo = nullptr; // Optional
-
-    VK_CHECK_RESULT(vkBeginCommandBuffer(commandBuffer, &beginInfo))
-
+void JungleApp::startRenderPass(VkCommandBuffer commandBuffer, VkFramebuffer fb, VkRenderPass renderPass) {
     VkRenderPassBeginInfo renderPassInfo{};
     renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
     renderPassInfo.renderPass = renderPass;
-    renderPassInfo.framebuffer = swapchain->defaultTarget.framebuffers[imageIndex];
+    renderPassInfo.framebuffer = fb;
     renderPassInfo.renderArea.offset = {0, 0};
     renderPassInfo.renderArea.extent = swapchain->swapChainExtent;
 
@@ -326,11 +432,10 @@ void JungleApp::recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imag
     clearValues[1].depthStencil = {1.0f, 0};
     renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
     renderPassInfo.pClearValues = clearValues.data();
-
     vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+}
 
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->pipeline);
-
+void JungleApp::setFullViewportScissor(VkCommandBuffer commandBuffer) {
     VkViewport viewport{};
     viewport.x = 0.0f;
     viewport.y = 0.0f;
@@ -344,27 +449,55 @@ void JungleApp::recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imag
     scissor.offset = {0, 0};
     scissor.extent = swapchain->swapChainExtent;
     vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+}
 
-    //vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1,
-    //                        &descriptorSets[currentFrame], 0, nullptr);
+void JungleApp::recordSceneCommandBuffer(VkCommandBuffer commandBuffer, uint32_t currentFrame) {
+    startRenderPass(commandBuffer, sceneFinal.framebuffers[currentFrame], sceneRPass);
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, scenePipeline->pipeline);
+    setFullViewportScissor(commandBuffer);
 
-    scene.render(commandBuffer, pipeline->layout, descriptorSets[swapchain->currentFrame]);
+    scene.render(commandBuffer, scenePipeline->layout, sceneDescriptorSets[swapchain->currentFrame]);
+
+    vkCmdEndRenderPass(commandBuffer);
+}
+
+void JungleApp::recordTonemapCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex) {
+    startRenderPass(commandBuffer, swapchain->defaultTarget.framebuffers[imageIndex], tonemapRPass);
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, tonemapPipeline->pipeline);
+    setFullViewportScissor(commandBuffer);
+
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+        tonemapPipeline->layout, 0, 1, &tonemapDescriptorSets[swapchain->currentFrame], 0, nullptr);
+
+    vkCmdDraw(commandBuffer, 6, 1, 0, 0);
 
     ImGui::Render();
     ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), commandBuffer);
-
     vkCmdEndRenderPass(commandBuffer);
-
-    VK_CHECK_RESULT(vkEndCommandBuffer(commandBuffer))
 }
 
-void JungleApp::createDescriptorSetLayout() {
+void JungleApp::createMVPSetLayout() {
     VkDescriptorSetLayoutBinding uboLayoutBinding{};
     uboLayoutBinding.binding = 0;
     uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     uboLayoutBinding.descriptorCount = 1;
     uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
     uboLayoutBinding.pImmutableSamplers = nullptr; // Optional
+
+    VkDescriptorSetLayoutCreateInfo layoutInfo{};
+    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    layoutInfo.bindingCount = 1;
+    layoutInfo.pBindings = &uboLayoutBinding;
+    VK_CHECK_RESULT(vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &mvpSetLayout))
+}
+
+void JungleApp::createTonemapSetLayout() {
+    VkDescriptorSetLayoutBinding samplerLayoutBinding{};
+    samplerLayoutBinding.binding = 0;
+    samplerLayoutBinding.descriptorCount = 1;
+    samplerLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    samplerLayoutBinding.pImmutableSamplers = nullptr;
+    samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
     VkDescriptorSetLayoutBinding tonemappingLayoutBinding{};
     tonemappingLayoutBinding.binding = 1;
@@ -373,14 +506,13 @@ void JungleApp::createDescriptorSetLayout() {
     tonemappingLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
     tonemappingLayoutBinding.pImmutableSamplers = nullptr;
 
-    std::vector<VkDescriptorSetLayoutBinding> bindings{uboLayoutBinding, tonemappingLayoutBinding};
+    std::vector<VkDescriptorSetLayoutBinding> bindings{samplerLayoutBinding, tonemappingLayoutBinding};
 
     VkDescriptorSetLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
     layoutInfo.bindingCount = bindings.size();
     layoutInfo.pBindings = bindings.data();
-
-    VK_CHECK_RESULT(vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &descriptorSetLayout))
+    VK_CHECK_RESULT(vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &tonemapSetLayout))
 }
 
 void JungleApp::createUniformBuffers() {
@@ -442,63 +574,96 @@ void JungleApp::createDescriptorPool() {
 
     poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     poolSizes[1].descriptorCount = scene.getNumTextures();
+    poolSizes[1].descriptorCount += static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT); // For tonemapping input sampler
 
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
     poolInfo.poolSizeCount = poolSizes.size();
-    poolInfo.pPoolSizes = &poolSizes[0];
+    poolInfo.pPoolSizes = poolSizes.data();
     poolInfo.maxSets = poolSizes[0].descriptorCount + poolSizes[1].descriptorCount;
     VK_CHECK_RESULT(vkCreateDescriptorPool(device, &poolInfo, nullptr, &descriptorPool))
 }
 
 void JungleApp::createDescriptorSets() {
-    std::vector<VkDescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, descriptorSetLayout);
-    VkDescriptorSetAllocateInfo allocInfo{};
-    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    allocInfo.descriptorPool = descriptorPool;
-    allocInfo.descriptorSetCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
-    allocInfo.pSetLayouts = layouts.data();
+    {
+        std::vector<VkDescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, mvpSetLayout);
+        VkDescriptorSetAllocateInfo allocInfo{};
+        allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+        allocInfo.descriptorPool = descriptorPool;
+        allocInfo.descriptorSetCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+        allocInfo.pSetLayouts = layouts.data();
 
-    descriptorSets.resize(MAX_FRAMES_IN_FLIGHT);
+        sceneDescriptorSets.resize(MAX_FRAMES_IN_FLIGHT);
+        VK_CHECK_RESULT(vkAllocateDescriptorSets(device, &allocInfo, sceneDescriptorSets.data()))
+    }
 
-    VK_CHECK_RESULT(vkAllocateDescriptorSets(device, &allocInfo, descriptorSets.data()))
+    {
+        std::vector<VkDescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, tonemapSetLayout);
+        VkDescriptorSetAllocateInfo allocInfo{};
+        allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+        allocInfo.descriptorPool = descriptorPool;
+        allocInfo.descriptorSetCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+        allocInfo.pSetLayouts = layouts.data();
+
+        tonemapDescriptorSets.resize(MAX_FRAMES_IN_FLIGHT);
+        VK_CHECK_RESULT(vkAllocateDescriptorSets(device, &allocInfo, tonemapDescriptorSets.data()))
+    }
 
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-        VkDescriptorBufferInfo bufferInfo{};
-        bufferInfo.buffer = uniformBuffers[i];
-        bufferInfo.offset = 0;
-        bufferInfo.range = sizeof(UniformBufferObject);
+        { // Update mvp UBO
+            VkDescriptorBufferInfo bufferInfo{};
+            bufferInfo.buffer = uniformBuffers[i];
+            bufferInfo.offset = 0;
+            bufferInfo.range = sizeof(UniformBufferObject);
 
-        VkWriteDescriptorSet descriptorWrite{};
-        descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrite.dstSet = descriptorSets[i];
-        descriptorWrite.dstBinding = 0;
-        descriptorWrite.dstArrayElement = 0;
-        descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        descriptorWrite.descriptorCount = 1;
-        descriptorWrite.pBufferInfo = &bufferInfo;
-        descriptorWrite.pImageInfo = nullptr; // Optional
-        descriptorWrite.pTexelBufferView = nullptr; // Optional
+            VkWriteDescriptorSet descriptorWrite{};
+            descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            descriptorWrite.dstSet = sceneDescriptorSets[i];
+            descriptorWrite.dstBinding = 0;
+            descriptorWrite.dstArrayElement = 0;
+            descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+            descriptorWrite.descriptorCount = 1;
+            descriptorWrite.pBufferInfo = &bufferInfo;
+            descriptorWrite.pImageInfo = nullptr; // Optional
+            descriptorWrite.pTexelBufferView = nullptr; // Optional
+            vkUpdateDescriptorSets(device, 1, &descriptorWrite, 0, nullptr);
+        }
 
-        VkDescriptorBufferInfo tonemappingBufferInfo{};
-        tonemappingBufferInfo.buffer = tonemappingUniformBuffer;
-        tonemappingBufferInfo.offset = 0;
-        tonemappingBufferInfo.range = sizeof(TonemappingUBO);
+        { // update tonemapping UBOs
+            VkDescriptorImageInfo imageInfo{};
+            imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            imageInfo.imageView = sceneFinal.imageViews[i].at(0);
+            imageInfo.sampler = tonemapSamplers[i];
 
-        VkWriteDescriptorSet tonemappingDescriptorWrite{};
-        tonemappingDescriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        tonemappingDescriptorWrite.dstSet = descriptorSets[i];
-        tonemappingDescriptorWrite.dstBinding = 1;
-        tonemappingDescriptorWrite.dstArrayElement = 0;
-        tonemappingDescriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        tonemappingDescriptorWrite.descriptorCount = 1;
-        tonemappingDescriptorWrite.pBufferInfo = &tonemappingBufferInfo;
-        tonemappingDescriptorWrite.pImageInfo = nullptr; // Optional
-        tonemappingDescriptorWrite.pTexelBufferView = nullptr; // Optional
+            VkWriteDescriptorSet descriptorWrite{};
+            descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            descriptorWrite.dstSet = tonemapDescriptorSets[i];
+            descriptorWrite.dstBinding = 0;
+            descriptorWrite.dstArrayElement = 0;
+            descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            descriptorWrite.descriptorCount = 1;
+            descriptorWrite.pImageInfo = &imageInfo;
+            descriptorWrite.pNext = NULL;
 
-        std::vector<VkWriteDescriptorSet> descriptorWrites{descriptorWrite, tonemappingDescriptorWrite};
+            VkDescriptorBufferInfo tonemappingBufferInfo{};
+            tonemappingBufferInfo.buffer = tonemappingUniformBuffer;
+            tonemappingBufferInfo.offset = 0;
+            tonemappingBufferInfo.range = sizeof(TonemappingUBO);
 
-        vkUpdateDescriptorSets(device, descriptorWrites.size(), descriptorWrites.data(), 0, nullptr);
+            VkWriteDescriptorSet tonemappingDescriptorWrite{};
+            tonemappingDescriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            tonemappingDescriptorWrite.dstSet = tonemapDescriptorSets[i];
+            tonemappingDescriptorWrite.dstBinding = 1;
+            tonemappingDescriptorWrite.dstArrayElement = 0;
+            tonemappingDescriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+            tonemappingDescriptorWrite.descriptorCount = 1;
+            tonemappingDescriptorWrite.pBufferInfo = &tonemappingBufferInfo;
+            tonemappingDescriptorWrite.pImageInfo = nullptr; // Optional
+            tonemappingDescriptorWrite.pTexelBufferView = nullptr; // Optional
+
+            std::vector<VkWriteDescriptorSet> descriptorWrites{descriptorWrite, tonemappingDescriptorWrite};
+            vkUpdateDescriptorSets(device, descriptorWrites.size(), descriptorWrites.data(), 0, nullptr);
+        }
     }
 
     scene.setupDescriptorSets(device, descriptorPool);
@@ -520,14 +685,14 @@ void JungleApp::cleanup() {
     vkDestroyDescriptorPool(device, descriptorPool, nullptr);
     vkDestroyDescriptorPool(device, imguiDescriptorPool, nullptr);
 
-    vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
+    vkDestroyDescriptorSetLayout(device, mvpSetLayout, nullptr);
 
     scene.destroyDescriptorSetLayout(device);
     scene.destroyTextures(&device);
     scene.destroyBuffers(device);
-    pipeline.reset();
+    scenePipeline.reset();
 
-    vkDestroyRenderPass(device, renderPass, nullptr);
+    vkDestroyRenderPass(device, sceneRPass, nullptr);
     vkDestroySurfaceKHR(device.instance, surface, nullptr);
     device.destroy();
     glfwDestroyWindow(window);

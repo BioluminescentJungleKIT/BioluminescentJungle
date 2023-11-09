@@ -19,9 +19,13 @@ class RenderTarget {
 
     void addAttachment(std::vector<VkImage> imagePerFrame, VkFormat fmt, VkImageAspectFlags aspectFlags);
     void addAttachment(VkExtent2D extent, VkFormat fmt,
-        VkImageUsageFlags usageFlags, VkImageAspectFlags aspectFlags);
+        VkImageUsageFlags usageFlags, VkImageAspectFlags aspectFlags,
+        std::optional<VkImageAspectFlags> sampleFrom = {});
     void createFramebuffers(VkRenderPass renderPass, VkExtent2D extent);
     std::vector<VkFramebuffer> framebuffers;
+
+    // A list of image views attached to the corresponding framebuffer
+    std::vector<std::vector<VkImageView>> imageViews;
 
   private:
     VulkanDevice *device;
@@ -29,8 +33,6 @@ class RenderTarget {
 
     std::vector<VkImage> images;
     std::vector<VkDeviceMemory> deviceMemories;
-
-    std::vector<std::vector<VkImageView>> imageViews;
 
     int framesInFlight;
 };
@@ -80,7 +82,6 @@ class Swapchain
     void createSyncObjects();
     void createSwapChain();
     void createImageViews();
-    void createDepthResources();
 
     std::vector<VkSemaphore> imageAvailableSemaphores;
     std::vector<VkSemaphore> renderFinishedSemaphores;

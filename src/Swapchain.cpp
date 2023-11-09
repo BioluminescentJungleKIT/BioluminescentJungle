@@ -21,6 +21,7 @@ void RenderTarget::destroyAll() {
             vkDestroyImageView(*device, imageView, nullptr);
         }
     }
+
     imageViews.clear();
 
     for (auto& img : images) {
@@ -42,7 +43,7 @@ void RenderTarget::addAttachment(std::vector<VkImage> images, VkFormat fmt, VkIm
 }
 
 void RenderTarget::addAttachment(VkExtent2D extent, VkFormat fmt,
-    VkImageUsageFlags usageFlags, VkImageAspectFlags aspectFlags) {
+    VkImageUsageFlags usageFlags, VkImageAspectFlags aspectFlags, std::optional<VkImageAspectFlags> sampleFlags) {
 
     for (int i = 0; i < nrFrames; i++) {
         VkImage image;
@@ -197,7 +198,6 @@ void Swapchain::createImageViews() {
 }
 
 void Swapchain::createFramebuffersForRender(VkRenderPass renderPass) {
-    createDepthResources();
     defaultTarget.createFramebuffers(renderPass, swapChainExtent);
 }
 
@@ -217,11 +217,6 @@ static VkFormat findSupportedFormat(VkPhysicalDevice device, const std::vector<V
 VkFormat Swapchain::chooseDepthFormat() {
     return findSupportedFormat(device->physicalDevice,
         {VK_FORMAT_D32_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT});
-}
-
-void Swapchain::createDepthResources() {
-    defaultTarget.addAttachment(swapChainExtent, chooseDepthFormat(),
-        VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_IMAGE_ASPECT_DEPTH_BIT);
 }
 
 Swapchain::Swapchain(GLFWwindow* window, VkSurfaceKHR surface, VulkanDevice* device) {
