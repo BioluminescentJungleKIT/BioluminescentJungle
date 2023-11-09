@@ -497,6 +497,7 @@ void JungleApp::cleanup() {
     scene.destroyTextures(&device);
     scene.destroyBuffers(device);
     scenePipeline.reset();
+    sceneFinal.destroyAll();
 
     vkDestroyRenderPass(device, sceneRPass, nullptr);
     vkDestroySurfaceKHR(device.instance, surface, nullptr);

@@ -141,6 +141,10 @@ void Scene::setupDescriptorSets(VkDevice device, VkDescriptorPool descriptorPool
         vkUpdateDescriptorSets(device, 1, &descriptorWrite, 0, nullptr);
     }
 
+    if (textures.empty()) {
+        return;
+    }
+
     layouts.assign(textures.size(), textureDescriptorSetLayout);
     allocInfo.descriptorSetCount = textures.size();
     allocInfo.pSetLayouts = layouts.data();

@@ -203,4 +203,10 @@ void Tonemap::createDescriptorSets(VkDescriptorPool pool, const RenderTarget& so
 Tonemap::~Tonemap() {
     vkDestroyBuffer(*device, tonemappingUniformBuffer, nullptr);
     vkFreeMemory(*device, tonemappingUniformBufferMemory, nullptr);
+    vkDestroyRenderPass(*device, tonemapRPass, nullptr);
+    vkDestroyDescriptorSetLayout(*device, tonemapSetLayout, nullptr);
+
+    for (auto& sampler : this->tonemapSamplers) {
+        vkDestroySampler(*device, sampler, nullptr);
+    }
 }
