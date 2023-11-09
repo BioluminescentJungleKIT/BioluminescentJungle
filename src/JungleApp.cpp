@@ -24,10 +24,11 @@ void JungleApp::initVulkan(const std::string& sceneName, bool recompileShaders) 
     device.initDeviceForSurface(surface);
 
     swapchain = std::make_unique<Swapchain>(window, surface, &device);
-    createUniformBuffers();
     setupRenderStageScene(sceneName, recompileShaders);
-    setupRenderStageTonemap(recompileShaders);
+    tonemap = std::make_unique<Tonemap>(&device, swapchain.get());
+    tonemap->setupRenderStageTonemap(recompileShaders);
 
+    createUniformBuffers();
     createDescriptorPool();
     createDescriptorSets();
     createCommandBuffers();
@@ -45,19 +46,6 @@ void JungleApp::setupRenderStageScene(const std::string& sceneName, bool recompi
     sceneFinal.addAttachment(swapchain->swapChainExtent, swapchain->chooseDepthFormat(),
         VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_IMAGE_ASPECT_DEPTH_BIT);
     sceneFinal.createFramebuffers(sceneRPass, swapchain->swapChainExtent);
-}
-
-void JungleApp::setupRenderStageTonemap(bool recompileShaders) {
-    createTonemapPass();
-    swapchain->createFramebuffersForRender(tonemapRPass);
-
-    tonemapSamplers.resize(MAX_FRAMES_IN_FLIGHT);
-    for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-        tonemapSamplers[i] = VulkanHelper::createSampler(&device);
-    }
-
-    createTonemapSetLayout();
-    createTonemapPipeline(recompileShaders);
 }
 
 void JungleApp::mainLoop() {
@@ -98,9 +86,9 @@ void JungleApp::drawImGUI() {
             ImGui::SliderFloat("Fixed spin", &fixedRotation, 0.0f, 360.0f);
         }
         if (ImGui::CollapsingHeader("Color Settings")) {
-            ImGui::SliderFloat("Exposure", &exposure, -10, 10);
-            ImGui::SliderFloat("Gamma", &gamma, 0, 4);
-            ImGui::Combo("Tonemapping", &tonemappingMode, "None\0Hable\0AgX\0\0");
+            ImGui::SliderFloat("Exposure", &tonemap->exposure, -10, 10);
+            ImGui::SliderFloat("Gamma", &tonemap->gamma, 0, 4);
+            ImGui::Combo("Tonemapping", &tonemap->tonemappingMode, "None\0Hable\0AgX\0\0");
         }
     }
     ImGui::End();
@@ -145,7 +133,7 @@ void JungleApp::drawFrame() {
     VK_CHECK_RESULT(vkBeginCommandBuffer(commandBuffer, &beginInfo))
 
     recordSceneCommandBuffer(commandBuffer, swapchain->currentFrame);
-    recordTonemapCommandBuffer(commandBuffer, *imageIndex);
+    tonemap->recordTonemapCommandBuffer(commandBuffer, swapchain->defaultTarget.framebuffers[*imageIndex]);
 
     VK_CHECK_RESULT(vkEndCommandBuffer(commandBuffer))
 
@@ -213,7 +201,7 @@ void JungleApp::initImGui() {
     init_info.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
     // init_info.Allocator = YOUR_ALLOCATOR;
     // init_info.CheckVkResultFn = check_vk_result;
-    ImGui_ImplVulkan_Init(&init_info, tonemapRPass);
+    ImGui_ImplVulkan_Init(&init_info, tonemap->tonemapRPass);
 
     VkCommandPool command_pool = device.commandPool;
     VkCommandBuffer command_buffer = commandBuffers[0];
@@ -267,38 +255,13 @@ void JungleApp::createScenePipeline(bool recompileShaders) {
     this->scenePipeline = std::make_unique<GraphicsPipeline>(&device, sceneRPass, 0, params);
 }
 
-void JungleApp::createTonemapPipeline(bool recompileShaders) {
-    PipelineParameters params;
-
-    params.shadersList = {
-        {VK_SHADER_STAGE_VERTEX_BIT, "shaders/tonemap.vert"},
-        {VK_SHADER_STAGE_FRAGMENT_BIT, "shaders/tonemap.frag"},
-    };
-
-    params.recompileShaders = recompileShaders;
-
-    // Tonemap shader uses a hardcoded list of vertices
-    params.vertexAttributeDescription = {};
-    params.vertexInputDescription = {};
-    params.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-    params.extent = swapchain->swapChainExtent;
-
-    // One color attachment, no blending enabled for it
-    params.blending = {{}};
-    params.useDepthTest = false;
-
-    params.descriptorSetLayouts = {tonemapSetLayout};
-    this->tonemapPipeline = std::make_unique<GraphicsPipeline>(&device, tonemapRPass, 0, params);
-}
-
 void JungleApp::recreateGraphicsPipeline() {
     vkDeviceWaitIdle(device);
 
     scenePipeline.reset();
-    tonemapPipeline.reset();
-
     createScenePipeline(true);
-    createTonemapPipeline(true);
+
+    tonemap->createTonemapPipeline(true);
 }
 
 void JungleApp::createScenePass() {
@@ -368,46 +331,6 @@ void JungleApp::createScenePass() {
     VK_CHECK_RESULT(vkCreateRenderPass(device, &renderPassInfo, nullptr, &sceneRPass))
 }
 
-void JungleApp::createTonemapPass() {
-    VkAttachmentDescription colorAttachment{};
-    colorAttachment.format = swapchain->swapChainImageFormat;
-    colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
-    colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-    colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-
-    VkAttachmentReference colorAttachmentRef{};
-    colorAttachmentRef.attachment = 0;
-    colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-
-    VkSubpassDescription subpass{};
-    subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-    subpass.colorAttachmentCount = 1;
-    subpass.pColorAttachments = &colorAttachmentRef;
-
-    VkSubpassDependency dependency{};
-    dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
-    dependency.dstSubpass = 0;
-    dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    dependency.srcAccessMask = 0;
-    dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-
-    VkRenderPassCreateInfo renderPassInfo{};
-    renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-    renderPassInfo.attachmentCount = 1;
-    renderPassInfo.pAttachments = &colorAttachment;
-    renderPassInfo.subpassCount = 1;
-    renderPassInfo.pSubpasses = &subpass;
-    renderPassInfo.dependencyCount = 1;
-    renderPassInfo.pDependencies = &dependency;
-
-    VK_CHECK_RESULT(vkCreateRenderPass(device, &renderPassInfo, nullptr, &tonemapRPass))
-}
-
 
 void JungleApp::createCommandBuffers() {
     commandBuffers.resize(MAX_FRAMES_IN_FLIGHT);
@@ -435,44 +358,13 @@ void JungleApp::startRenderPass(VkCommandBuffer commandBuffer, VkFramebuffer fb,
     vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 }
 
-void JungleApp::setFullViewportScissor(VkCommandBuffer commandBuffer) {
-    VkViewport viewport{};
-    viewport.x = 0.0f;
-    viewport.y = 0.0f;
-    viewport.width = static_cast<float>(swapchain->swapChainExtent.width);
-    viewport.height = static_cast<float>(swapchain->swapChainExtent.height);
-    viewport.minDepth = 0.0f;
-    viewport.maxDepth = 1.0f;
-    vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
-
-    VkRect2D scissor{};
-    scissor.offset = {0, 0};
-    scissor.extent = swapchain->swapChainExtent;
-    vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
-}
-
 void JungleApp::recordSceneCommandBuffer(VkCommandBuffer commandBuffer, uint32_t currentFrame) {
     startRenderPass(commandBuffer, sceneFinal.framebuffers[currentFrame], sceneRPass);
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, scenePipeline->pipeline);
-    setFullViewportScissor(commandBuffer);
+    VulkanHelper::setFullViewportScissor(commandBuffer, swapchain->swapChainExtent);
 
     scene.render(commandBuffer, scenePipeline->layout, sceneDescriptorSets[swapchain->currentFrame]);
 
-    vkCmdEndRenderPass(commandBuffer);
-}
-
-void JungleApp::recordTonemapCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex) {
-    startRenderPass(commandBuffer, swapchain->defaultTarget.framebuffers[imageIndex], tonemapRPass);
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, tonemapPipeline->pipeline);
-    setFullViewportScissor(commandBuffer);
-
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-        tonemapPipeline->layout, 0, 1, &tonemapDescriptorSets[swapchain->currentFrame], 0, nullptr);
-
-    vkCmdDraw(commandBuffer, 6, 1, 0, 0);
-
-    ImGui::Render();
-    ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), commandBuffer);
     vkCmdEndRenderPass(commandBuffer);
 }
 
@@ -491,30 +383,6 @@ void JungleApp::createMVPSetLayout() {
     VK_CHECK_RESULT(vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &mvpSetLayout))
 }
 
-void JungleApp::createTonemapSetLayout() {
-    VkDescriptorSetLayoutBinding samplerLayoutBinding{};
-    samplerLayoutBinding.binding = 0;
-    samplerLayoutBinding.descriptorCount = 1;
-    samplerLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    samplerLayoutBinding.pImmutableSamplers = nullptr;
-    samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-
-    VkDescriptorSetLayoutBinding tonemappingLayoutBinding{};
-    tonemappingLayoutBinding.binding = 1;
-    tonemappingLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    tonemappingLayoutBinding.descriptorCount = 1;
-    tonemappingLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-    tonemappingLayoutBinding.pImmutableSamplers = nullptr;
-
-    std::vector<VkDescriptorSetLayoutBinding> bindings{samplerLayoutBinding, tonemappingLayoutBinding};
-
-    VkDescriptorSetLayoutCreateInfo layoutInfo{};
-    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    layoutInfo.bindingCount = bindings.size();
-    layoutInfo.pBindings = bindings.data();
-    VK_CHECK_RESULT(vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &tonemapSetLayout))
-}
-
 void JungleApp::createUniformBuffers() {
     VkDeviceSize bufferSize = sizeof(UniformBufferObject);
 
@@ -531,14 +399,7 @@ void JungleApp::createUniformBuffers() {
         vkMapMemory(device, uniformBuffersMemory[i], 0, bufferSize, 0, &uniformBuffersMapped[i]);
     }
 
-    VkDeviceSize tonemappingBufferSize = sizeof(TonemappingUBO);
-
-    VulkanHelper::createBuffer(device, device.physicalDevice, tonemappingBufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-                               VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                               tonemappingUniformBuffer,
-                               tonemappingUniformBufferMemory);
-
-    vkMapMemory(device, tonemappingUniformBufferMemory, 0, tonemappingBufferSize, 0, &tonemappingBufferMapped);
+    tonemap->setupBuffers();
 }
 
 void JungleApp::updateUniformBuffers(uint32_t currentImage) {
@@ -556,12 +417,7 @@ void JungleApp::updateUniformBuffers(uint32_t currentImage) {
     ubo.proj[1][1] *= -1;  // because GLM generates OpenGL projections
 
     memcpy(uniformBuffersMapped[currentImage], &ubo, sizeof(ubo));
-
-    TonemappingUBO tonemapping{};
-    tonemapping.exposure = exposure;
-    tonemapping.gamma = gamma;
-    tonemapping.mode = tonemappingMode;
-    memcpy(tonemappingBufferMapped, &tonemapping, sizeof(tonemapping));
+    tonemap->updateBuffers();
 }
 
 void JungleApp::createDescriptorPool() {
@@ -597,76 +453,27 @@ void JungleApp::createDescriptorSets() {
         VK_CHECK_RESULT(vkAllocateDescriptorSets(device, &allocInfo, sceneDescriptorSets.data()))
     }
 
-    {
-        std::vector<VkDescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, tonemapSetLayout);
-        VkDescriptorSetAllocateInfo allocInfo{};
-        allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-        allocInfo.descriptorPool = descriptorPool;
-        allocInfo.descriptorSetCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
-        allocInfo.pSetLayouts = layouts.data();
-
-        tonemapDescriptorSets.resize(MAX_FRAMES_IN_FLIGHT);
-        VK_CHECK_RESULT(vkAllocateDescriptorSets(device, &allocInfo, tonemapDescriptorSets.data()))
-    }
-
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-        { // Update mvp UBO
-            VkDescriptorBufferInfo bufferInfo{};
-            bufferInfo.buffer = uniformBuffers[i];
-            bufferInfo.offset = 0;
-            bufferInfo.range = sizeof(UniformBufferObject);
+        VkDescriptorBufferInfo bufferInfo{};
+        bufferInfo.buffer = uniformBuffers[i];
+        bufferInfo.offset = 0;
+        bufferInfo.range = sizeof(UniformBufferObject);
 
-            VkWriteDescriptorSet descriptorWrite{};
-            descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            descriptorWrite.dstSet = sceneDescriptorSets[i];
-            descriptorWrite.dstBinding = 0;
-            descriptorWrite.dstArrayElement = 0;
-            descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-            descriptorWrite.descriptorCount = 1;
-            descriptorWrite.pBufferInfo = &bufferInfo;
-            descriptorWrite.pImageInfo = nullptr; // Optional
-            descriptorWrite.pTexelBufferView = nullptr; // Optional
-            vkUpdateDescriptorSets(device, 1, &descriptorWrite, 0, nullptr);
-        }
-
-        { // update tonemapping UBOs
-            VkDescriptorImageInfo imageInfo{};
-            imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-            imageInfo.imageView = sceneFinal.imageViews[i].at(0);
-            imageInfo.sampler = tonemapSamplers[i];
-
-            VkWriteDescriptorSet descriptorWrite{};
-            descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            descriptorWrite.dstSet = tonemapDescriptorSets[i];
-            descriptorWrite.dstBinding = 0;
-            descriptorWrite.dstArrayElement = 0;
-            descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-            descriptorWrite.descriptorCount = 1;
-            descriptorWrite.pImageInfo = &imageInfo;
-            descriptorWrite.pNext = NULL;
-
-            VkDescriptorBufferInfo tonemappingBufferInfo{};
-            tonemappingBufferInfo.buffer = tonemappingUniformBuffer;
-            tonemappingBufferInfo.offset = 0;
-            tonemappingBufferInfo.range = sizeof(TonemappingUBO);
-
-            VkWriteDescriptorSet tonemappingDescriptorWrite{};
-            tonemappingDescriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            tonemappingDescriptorWrite.dstSet = tonemapDescriptorSets[i];
-            tonemappingDescriptorWrite.dstBinding = 1;
-            tonemappingDescriptorWrite.dstArrayElement = 0;
-            tonemappingDescriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-            tonemappingDescriptorWrite.descriptorCount = 1;
-            tonemappingDescriptorWrite.pBufferInfo = &tonemappingBufferInfo;
-            tonemappingDescriptorWrite.pImageInfo = nullptr; // Optional
-            tonemappingDescriptorWrite.pTexelBufferView = nullptr; // Optional
-
-            std::vector<VkWriteDescriptorSet> descriptorWrites{descriptorWrite, tonemappingDescriptorWrite};
-            vkUpdateDescriptorSets(device, descriptorWrites.size(), descriptorWrites.data(), 0, nullptr);
-        }
+        VkWriteDescriptorSet descriptorWrite{};
+        descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrite.dstSet = sceneDescriptorSets[i];
+        descriptorWrite.dstBinding = 0;
+        descriptorWrite.dstArrayElement = 0;
+        descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        descriptorWrite.descriptorCount = 1;
+        descriptorWrite.pBufferInfo = &bufferInfo;
+        descriptorWrite.pImageInfo = nullptr; // Optional
+        descriptorWrite.pTexelBufferView = nullptr; // Optional
+        vkUpdateDescriptorSets(device, 1, &descriptorWrite, 0, nullptr);
     }
 
     scene.setupDescriptorSets(device, descriptorPool);
+    tonemap->createDescriptorSets(descriptorPool, sceneFinal);
 }
 
 void JungleApp::cleanup() {
@@ -679,9 +486,8 @@ void JungleApp::cleanup() {
         vkDestroyBuffer(device, uniformBuffers[i], nullptr);
         vkFreeMemory(device, uniformBuffersMemory[i], nullptr);
     }
-    vkDestroyBuffer(device, tonemappingUniformBuffer, nullptr);
-    vkFreeMemory(device, tonemappingUniformBufferMemory, nullptr);
 
+    tonemap.reset();
     vkDestroyDescriptorPool(device, descriptorPool, nullptr);
     vkDestroyDescriptorPool(device, imguiDescriptorPool, nullptr);
 

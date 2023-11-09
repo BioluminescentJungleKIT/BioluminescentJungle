@@ -157,6 +157,8 @@ public:
 
     static VkSampler createSampler(VulkanDevice* device);
 
+    static void setFullViewportScissor(VkCommandBuffer commandBuffer, VkExtent2D extent);
+
     static glm::mat4
     transformFromMatrixOrComponents(std::vector<double> matrix, std::vector<double> scale, std::vector<double> rotation,
                                     std::vector<double> translation);

@@ -17,6 +17,7 @@ add_executable(Jungle src/main.cpp
         src/PhysicalDevice.cpp
         src/Pipeline.cpp
         src/Swapchain.cpp
+        src/Tonemap.cpp
         src/JungleApp.h
         lib/imgui/imconfig.h
         lib/imgui/imgui.cpp

@@ -5,9 +5,6 @@
 #ifndef VULKANBASICS_PLANETAPP_H
 #define VULKANBASICS_PLANETAPP_H
 
-#define GLFW_INCLUDE_VULKAN
-
-#include <GLFW/glfw3.h>
 #include <iostream>
 #include <stdexcept>
 #include <cstdlib>
@@ -16,12 +13,12 @@
 #include <memory>
 #include <array>
 #include <shaderc/shaderc.hpp>
-#include <glm/glm.hpp>
 #include "Scene.h"
 #include "PhysicalDevice.h"
 #include "Swapchain.h"
 #include "MusicPlayer.h"
 #include "Pipeline.h"
+#include "Tonemap.h"
 
 const uint32_t WIDTH = 1800;
 const uint32_t HEIGHT = 1200;
@@ -30,12 +27,6 @@ struct UniformBufferObject {
     glm::mat4 model;
     glm::mat4 view;
     glm::mat4 proj;
-};
-
-struct TonemappingUBO {
-    glm::float32 exposure;
-    glm::float32 gamma;
-    glm::int32 mode;
 };
 
 class JungleApp {
@@ -70,29 +61,23 @@ private:
     void createSurface();
 
     void setupRenderStageScene(const std::string& sceneName, bool recompileShaders);
-    void setupRenderStageTonemap(bool recompileshaders);
 
     void createScenePipeline(bool recompileShaders);
-    void createTonemapPipeline(bool recompileShaders);
+
+    std::unique_ptr<Tonemap> tonemap;
 
     VkRenderPass sceneRPass;
     std::unique_ptr<GraphicsPipeline> scenePipeline;
     RenderTarget sceneFinal;
 
-    VkRenderPass tonemapRPass;
-    std::unique_ptr<GraphicsPipeline> tonemapPipeline;
-
     void createScenePass();
-    void createTonemapPass();
 
     std::vector<VkCommandBuffer> commandBuffers;
 
     void createCommandBuffers();
 
     void startRenderPass(VkCommandBuffer commandBuffer, VkFramebuffer fb, VkRenderPass renderPass);
-    void setFullViewportScissor(VkCommandBuffer commandBuffer);
     void recordSceneCommandBuffer(VkCommandBuffer commandBuffer, uint32_t currentFrame);
-    void recordTonemapCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex);
 
     bool framebufferResized = false;
 
@@ -105,18 +90,12 @@ private:
     }
 
     void createMVPSetLayout();
-    void createTonemapSetLayout();
 
     VkDescriptorSetLayout mvpSetLayout;
-    VkDescriptorSetLayout tonemapSetLayout;
 
     std::vector<VkBuffer> uniformBuffers;
     std::vector<VkDeviceMemory> uniformBuffersMemory;
     std::vector<void *> uniformBuffersMapped;
-
-    VkBuffer tonemappingUniformBuffer;
-    VkDeviceMemory tonemappingUniformBufferMemory;
-    void * tonemappingBufferMapped;
 
     void createUniformBuffers();
 
@@ -130,8 +109,6 @@ private:
     void createDescriptorSets();
 
     std::vector<VkDescriptorSet> sceneDescriptorSets;
-    std::vector<VkDescriptorSet> tonemapDescriptorSets;
-    std::vector<VkSampler> tonemapSamplers;
 
     void setupScene(const std::string& sceneName);
 
@@ -151,10 +128,6 @@ private:
     float fixedRotation = 0.0;
 
     void recreateGraphicsPipeline();
-
-    float exposure{0};
-    float gamma{2.4};
-    int tonemappingMode{2};
 
     MusicPlayer mplayer{"scenes/loop.wav"};
     bool playMusic;
