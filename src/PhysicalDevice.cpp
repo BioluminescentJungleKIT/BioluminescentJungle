@@ -11,6 +11,8 @@ bool enableValidationLayers = false;
 bool enableValidationLayers = true;
 #endif
 
+bool crashOnValidationWarning = false;
+
 static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
     VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
     VkDebugUtilsMessageTypeFlagsEXT messageType,
@@ -18,8 +20,10 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
     void *pUserData) {
 
     std::cerr << "validation layer: " << pCallbackData->pMessage << std::endl;
-    if (messageSeverity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) {
-        // Message is important enough to show
+    if (messageSeverity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT && crashOnValidationWarning) {
+        // Message is important enough and we want to crash and print a backtrace
+        int *p = 0;
+        *p = 1;
     }
 
     return VK_FALSE;

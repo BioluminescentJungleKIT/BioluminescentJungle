@@ -1,5 +1,6 @@
 #include <iostream>
 #include "JungleApp.h"
+#include "PhysicalDevice.h"
 
 int main(int argc, char **argv) {
     JungleApp app{};
@@ -10,8 +11,15 @@ int main(int argc, char **argv) {
     }
 
     bool recompileShaders = false;
-    if (argc > 2 && !strcmp(argv[2], "--recompile-shaders")) {
-        recompileShaders = true;
+
+    for (int i = 2; i < argc; i++) {
+        if (!strcmp(argv[i], "--recompile-shaders")) {
+            recompileShaders = true;
+        }
+
+        if (!strcmp(argv[i], "--crash-on-validation-message")) {
+            crashOnValidationWarning = true;
+        }
     }
 
     try {

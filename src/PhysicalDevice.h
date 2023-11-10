@@ -7,6 +7,8 @@
 #include <vector>
 #include <optional>
 
+extern bool crashOnValidationWarning;
+
 /**
  * The physical device class is meant to encapsulate all device-specific functions: allocating memory/images,
  * choosing best formats, checking support for features, managing queues. Also manages the VkInstance.
