@@ -93,6 +93,7 @@ void Swapchain::recreateSwapChain(VkRenderPass renderPass) {
     vkDeviceWaitIdle(*device);
 
     cleanupSwapChain();
+    createSyncObjects();
     createSwapChain();
     createImageViews();
     createFramebuffersForRender(renderPass);

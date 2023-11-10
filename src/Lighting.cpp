@@ -127,11 +127,7 @@ void DeferredLighting::setup(bool recompileShaders, Scene *scene, VkDescriptorSe
 
     createDescriptorSetLayout();
     createPipeline(recompileShaders, mvpLayout, scene);
-
-    compositedLight.init(device, MAX_FRAMES_IN_FLIGHT);
-    compositedLight.addAttachment(swapchain->swapChainExtent, LIGHT_ACCUMULATION_FORMAT,
-        VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
-    compositedLight.createFramebuffers(renderPass, swapchain->swapChainExtent);
+    setupRenderTarget();
 }
 
 void DeferredLighting::recordCommandBuffer(VkCommandBuffer commandBuffer, VkDescriptorSet mvpSet, Scene *scene) {
@@ -207,13 +203,17 @@ void DeferredLighting::createDescriptorSets(VkDescriptorPool pool, const RenderT
     this->debugSets =
         VulkanHelper::createDescriptorSetsFromLayout(*device, pool, debugLayout, MAX_FRAMES_IN_FLIGHT);
 
+    updateSamplerBindings(sourceBuffer);
+}
+
+void DeferredLighting::updateSamplerBindings(const RenderTarget& gBuffer) {
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
         std::vector<VkWriteDescriptorSet> descriptorWrites((int)GBufferTargets::NumAttachments);
         std::vector<VkDescriptorImageInfo> imageInfos((int)GBufferTargets::NumAttachments);
 
         for (size_t j = 0; j < descriptorWrites.size(); j++) {
             imageInfos[j].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-            imageInfos[j].imageView = sourceBuffer.imageViews[i][j];
+            imageInfos[j].imageView = gBuffer.imageViews[i][j];
             imageInfos[j].sampler = samplers[i][j];
 
             descriptorWrites[j].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -269,4 +269,18 @@ RequiredDescriptors DeferredLighting::getNumDescriptors() {
         .requireUniformBuffers = MAX_FRAMES_IN_FLIGHT,
         .requireSamplers = MAX_FRAMES_IN_FLIGHT * GBufferTargets::NumAttachments,
     };
+}
+
+void DeferredLighting::handleResize(const RenderTarget& gBuffer, VkDescriptorSetLayout mvpSetLayout, Scene *scene) {
+    compositedLight.destroyAll();
+    setupRenderTarget();
+    updateSamplerBindings(gBuffer);
+    createPipeline(false, mvpSetLayout, scene);
+}
+
+void DeferredLighting::setupRenderTarget() {
+    compositedLight.init(device, MAX_FRAMES_IN_FLIGHT);
+    compositedLight.addAttachment(swapchain->swapChainExtent, LIGHT_ACCUMULATION_FORMAT,
+        VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
+    compositedLight.createFramebuffers(renderPass, swapchain->swapChainExtent);
 }

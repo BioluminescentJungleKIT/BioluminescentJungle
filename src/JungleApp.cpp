@@ -42,7 +42,10 @@ void JungleApp::setupRenderStageScene(const std::string& sceneName, bool recompi
     createScenePass();
     createMVPSetLayout();
     createScenePipeline(recompileShaders);
+    setupGBuffer();
+}
 
+void JungleApp::setupGBuffer() {
     // The layout of the gBuffer needs to match GBufferTargets
     gBuffer.init(&device, MAX_FRAMES_IN_FLIGHT);
     gBuffer.addAttachment(swapchain->swapChainExtent, LIGHT_ACCUMULATION_FORMAT,
@@ -150,7 +153,13 @@ void JungleApp::drawFrame() {
     if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || framebufferResized || forceRecreateSwapchain) {
         framebufferResized = false;
         forceRecreateSwapchain = false;
-        swapchain->recreateSwapChain(sceneRPass);
+        swapchain->recreateSwapChain(tonemap->tonemapRPass);
+
+        gBuffer.destroyAll();
+        setupGBuffer();
+        createScenePipeline(false);
+        lighting->handleResize(gBuffer, mvpSetLayout, &scene);
+        tonemap->handleResize(lighting->compositedLight);
     } else {
         VK_CHECK_RESULT(result)
     }

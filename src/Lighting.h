@@ -50,6 +50,10 @@ class DeferredLighting {
 
     RenderTarget compositedLight;
 
+    void handleResize(const RenderTarget& gBuffer, VkDescriptorSetLayout mvpSetLayout, Scene *scene);
+    void setupRenderTarget();
+    void updateSamplerBindings(const RenderTarget& gBuffer);
+
     void setupBuffers();
     void updateBuffers();
 

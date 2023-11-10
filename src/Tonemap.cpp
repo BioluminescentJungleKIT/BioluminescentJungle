@@ -158,6 +158,10 @@ void Tonemap::createDescriptorSets(VkDescriptorPool pool, const RenderTarget& so
     tonemapDescriptorSets = VulkanHelper::createDescriptorSetsFromLayout(*device, pool,
         tonemapSetLayout, MAX_FRAMES_IN_FLIGHT);
 
+    updateSamplerBindings(sourceBuffer);
+}
+
+void Tonemap::updateSamplerBindings(const RenderTarget& sourceBuffer) {
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
         VkDescriptorImageInfo imageInfo{};
         imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
@@ -211,4 +215,9 @@ RequiredDescriptors Tonemap::getNumDescriptors() {
         .requireUniformBuffers = MAX_FRAMES_IN_FLIGHT,
         .requireSamplers = MAX_FRAMES_IN_FLIGHT,
     };
+}
+
+void Tonemap::handleResize(const RenderTarget& sourceBuffer) {
+    updateSamplerBindings(sourceBuffer);
+    createTonemapPipeline(false);
 }

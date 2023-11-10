@@ -130,6 +130,7 @@ private:
     float fixedRotation = 0.0;
 
     void recreateGraphicsPipeline();
+    void setupGBuffer();
 
     MusicPlayer mplayer{"scenes/loop.wav"};
     bool playMusic;

@@ -47,6 +47,9 @@ class Tonemap {
     void recordTonemapCommandBuffer(VkCommandBuffer commandBuffer, VkFramebuffer target);
     void createTonemapSetLayout();
 
+    void handleResize(const RenderTarget& sourceBuffer);
+    void updateSamplerBindings(const RenderTarget& sourceBuffer);
+
     void setupBuffers();
     void updateBuffers();
 
