@@ -290,7 +290,7 @@ Scene::getLightsAttributeAndBindingDescriptions() {
     intensityAttributeDescription.location = 2;
     intensityAttributeDescription.format = VK_FORMAT_R32_SFLOAT;
     intensityAttributeDescription.offset = offsetof(LightData, intensity);
-    attributeDescriptions.push_back(positionAttributeDescription);
+    attributeDescriptions.push_back(intensityAttributeDescription);
 
     return {attributeDescriptions, bindingDescriptions};
 }
