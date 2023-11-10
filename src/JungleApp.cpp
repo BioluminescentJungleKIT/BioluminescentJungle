@@ -293,7 +293,7 @@ void JungleApp::createScenePass() {
     depthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
     depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
     depthAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    depthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    depthAttachment.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
     VkAttachmentReference depthAttachmentRef{};
     depthAttachmentRef.attachment = 1;
@@ -319,9 +319,9 @@ void JungleApp::createScenePass() {
     dependencies[1].srcSubpass = 0;
     dependencies[1].dstSubpass = VK_SUBPASS_EXTERNAL;
     dependencies[1].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    dependencies[1].dstStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+    dependencies[1].dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
     dependencies[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-    dependencies[1].dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+    dependencies[1].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
     dependencies[1].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
     std::array<VkAttachmentDescription, 2> attachments = {colorAttachment, depthAttachment};
 
@@ -336,7 +336,6 @@ void JungleApp::createScenePass() {
 
     VK_CHECK_RESULT(vkCreateRenderPass(device, &renderPassInfo, nullptr, &sceneRPass))
 }
-
 
 void JungleApp::createCommandBuffers() {
     commandBuffers.resize(MAX_FRAMES_IN_FLIGHT);
