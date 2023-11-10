@@ -65,6 +65,8 @@ public:
 
     void drawPointLights(VkCommandBuffer buffer);
 
+    static bool addArtificialLight;
+
   private:
     tinygltf::TinyGLTF loader;
     tinygltf::Model model;
