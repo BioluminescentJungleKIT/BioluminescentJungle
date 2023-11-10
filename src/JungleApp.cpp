@@ -441,17 +441,8 @@ void JungleApp::createDescriptorPool() {
 }
 
 void JungleApp::createDescriptorSets() {
-    {
-        std::vector<VkDescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, mvpSetLayout);
-        VkDescriptorSetAllocateInfo allocInfo{};
-        allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-        allocInfo.descriptorPool = descriptorPool;
-        allocInfo.descriptorSetCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
-        allocInfo.pSetLayouts = layouts.data();
-
-        sceneDescriptorSets.resize(MAX_FRAMES_IN_FLIGHT);
-        VK_CHECK_RESULT(vkAllocateDescriptorSets(device, &allocInfo, sceneDescriptorSets.data()))
-    }
+    sceneDescriptorSets = VulkanHelper::createDescriptorSetsFromLayout(device, descriptorPool,
+        mvpSetLayout, MAX_FRAMES_IN_FLIGHT);
 
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
         VkDescriptorBufferInfo bufferInfo{};

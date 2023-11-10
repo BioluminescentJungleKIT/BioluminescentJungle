@@ -105,16 +105,8 @@ void Scene::renderInstances(int mesh, VkCommandBuffer commandBuffer, VkPipelineL
 }
 
 void Scene::setupDescriptorSets(VkDevice device, VkDescriptorPool descriptorPool) {
-    std::vector<VkDescriptorSetLayout> layouts(meshTransforms.size(), uboDescriptorSetLayout);
-    VkDescriptorSetAllocateInfo allocInfo{};
-    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    allocInfo.descriptorPool = descriptorPool;
-    allocInfo.descriptorSetCount = meshTransforms.size();
-    allocInfo.pSetLayouts = layouts.data();
-
-    uboDescriptorSets.resize(meshTransforms.size());
-
-    VK_CHECK_RESULT(vkAllocateDescriptorSets(device, &allocInfo, uboDescriptorSets.data()))
+    uboDescriptorSets = VulkanHelper::createDescriptorSetsFromLayout(
+        device, descriptorPool, uboDescriptorSetLayout, meshTransforms.size());
 
     int i = 0;
     for (int mesh = 0; mesh < model.meshes.size(); mesh++) {
@@ -145,12 +137,8 @@ void Scene::setupDescriptorSets(VkDevice device, VkDescriptorPool descriptorPool
         return;
     }
 
-    layouts.assign(textures.size(), textureDescriptorSetLayout);
-    allocInfo.descriptorSetCount = textures.size();
-    allocInfo.pSetLayouts = layouts.data();
-
-    std::vector<VkDescriptorSet> textureDescriptorSets(textures.size());
-    VK_CHECK_RESULT(vkAllocateDescriptorSets(device, &allocInfo, textureDescriptorSets.data()))
+    auto textureDescriptorSets = VulkanHelper::createDescriptorSetsFromLayout(device, descriptorPool,
+        textureDescriptorSetLayout, textures.size());
 
     i = 0;
     for (auto &[texId, tex]: textures) {

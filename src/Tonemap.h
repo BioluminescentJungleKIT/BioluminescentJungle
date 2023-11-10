@@ -16,7 +16,6 @@ struct TonemappingUBO {
     glm::int32 mode;
 };
 
-
 /**
  * A helper class which manages tonemapping-related resources
  */
@@ -57,6 +56,5 @@ class Tonemap {
     VulkanDevice *device;
     Swapchain *swapchain;
 };
-
 
 #endif /* end of include guard: TONEMAP_H */

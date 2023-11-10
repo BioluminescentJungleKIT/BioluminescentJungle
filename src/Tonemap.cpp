@@ -154,14 +154,8 @@ void Tonemap::updateBuffers() {
 }
 
 void Tonemap::createDescriptorSets(VkDescriptorPool pool, const RenderTarget& sourceBuffer) {
-    std::vector<VkDescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, tonemapSetLayout);
-    VkDescriptorSetAllocateInfo allocInfo{};
-    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    allocInfo.descriptorPool = pool;
-    allocInfo.descriptorSetCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
-    allocInfo.pSetLayouts = layouts.data();
-    tonemapDescriptorSets.resize(MAX_FRAMES_IN_FLIGHT);
-    VK_CHECK_RESULT(vkAllocateDescriptorSets(*device, &allocInfo, tonemapDescriptorSets.data()))
+    tonemapDescriptorSets = VulkanHelper::createDescriptorSetsFromLayout(*device, pool,
+        tonemapSetLayout, MAX_FRAMES_IN_FLIGHT);
 
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
         VkDescriptorImageInfo imageInfo{};

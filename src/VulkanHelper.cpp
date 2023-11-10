@@ -364,3 +364,18 @@ void VulkanHelper::setFullViewportScissor(VkCommandBuffer commandBuffer, VkExten
     scissor.extent = extent;
     vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 }
+
+std::vector<VkDescriptorSet> VulkanHelper::createDescriptorSetsFromLayout(
+    VkDevice device, VkDescriptorPool pool, VkDescriptorSetLayout layout, size_t n)
+{
+    std::vector<VkDescriptorSetLayout> layouts(n, layout);
+    std::vector<VkDescriptorSet> sets(n);
+
+    VkDescriptorSetAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    allocInfo.descriptorPool = pool;
+    allocInfo.descriptorSetCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+    allocInfo.pSetLayouts = layouts.data();
+    VK_CHECK_RESULT(vkAllocateDescriptorSets(device, &allocInfo, sets.data()));
+    return sets;
+}
