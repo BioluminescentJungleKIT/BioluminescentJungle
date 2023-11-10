@@ -190,7 +190,7 @@ void DeferredLighting::createDescriptorSetLayout() {
         debug[0].descriptorCount = 1;
         debug[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
         debug[0].pImmutableSamplers = nullptr;
-        debug[0].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        debug[0].stageFlags = VK_SHADER_STAGE_GEOMETRY_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
 
         VkDescriptorSetLayoutCreateInfo layoutInfo{};
         layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;

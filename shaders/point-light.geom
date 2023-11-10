@@ -9,6 +9,11 @@ layout(set = 0, binding = 0) uniform UniformBufferObject {
     mat4 proj;
 } ubo;
 
+layout(set = 2, binding = 0) uniform DebugOptions {
+    int showLightBoxes;
+    int compositionMode;
+} debug;
+
 layout(location = 0) in vec3 position[];
 layout(location = 1) in vec3 intensity[];
 
@@ -16,7 +21,22 @@ layout(location = 0) out vec3 fPosition;
 layout(location = 1) out vec3 fIntensity;
 
 void main() {
-    const float radius = 0.5;
+    fPosition = position[0];
+    fIntensity = intensity[0];
+
+    if (debug.compositionMode > 0) {
+        // Draw just once
+        if (gl_PrimitiveIDIn > 0) return;
+
+        gl_Position = vec4(-1, -1, 0, 1); EmitVertex();
+        gl_Position = vec4(-1, 1, 0, 1); EmitVertex();
+        gl_Position = vec4(1, -1, 0, 1); EmitVertex();
+        gl_Position = vec4(1, 1, 0, 1); EmitVertex();
+        return;
+    }
+
+    // TODO: add option for this in the ImGui
+    const float radius = 10.0;
 
     fPosition = position[0];
     fIntensity = intensity[0];

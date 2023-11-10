@@ -75,6 +75,10 @@ void JungleApp::drawImGUI() {
                 else mplayer.pause();
             }
         }
+        if (ImGui::CollapsingHeader("Debug Settings")) {
+            ImGui::Combo("G-Buffer Visualization", &lighting->debug.compositionMode, "None\0Albedo\0Depth\0\0");
+            ImGui::Checkbox("Show Light BBoxes", (bool*)&lighting->debug.showLightBoxes);
+        }
         if (ImGui::CollapsingHeader("Video Settings")) {
             forceRecreateSwapchain = ImGui::Checkbox("VSync", &swapchain->enableVSync);
         }
@@ -424,6 +428,11 @@ void JungleApp::updateUniformBuffers(uint32_t currentImage) {
 
     memcpy(uniformBuffersMapped[currentImage], &ubo, sizeof(ubo));
     lighting->updateBuffers();
+
+    // TODO: is there a better way to integrate this somehow? Too lazy to skip the tonemapping render pass completely.
+    if (lighting->debug.compositionMode != 0) {
+        tonemap->tonemappingMode = 0;
+    }
     tonemap->updateBuffers();
 }
 

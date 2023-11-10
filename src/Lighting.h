@@ -13,7 +13,11 @@
 #define LIGHT_ACCUMULATION_FORMAT VK_FORMAT_R8G8B8A8_SRGB
 
 struct DebugOptions {
-    int debugBoxes;
+    // 0 - don't show light boxes, 1 - show light bbox as an overlay
+    glm::int32_t showLightBoxes = 0;
+
+    // 0 - normal, 1 - show albedo, 2 - show depth
+    glm::int32_t compositionMode = 0;
 };
 
 /**

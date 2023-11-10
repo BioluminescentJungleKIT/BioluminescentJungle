@@ -1,4 +1,3 @@
-
 #version 450
 
 layout(location = 0) in vec3 fPosition;
@@ -16,7 +15,8 @@ layout(set = 1, binding = 0) uniform sampler2D albedo;
 layout(set = 1, binding = 1) uniform sampler2D depth;
 
 layout(set = 2, binding = 0) uniform DebugOptions {
-    int debugBoxes;
+    int showLightBoxes;
+    int compositionMode;
 } debug;
 
 vec3 calculatePosition() {
@@ -33,13 +33,19 @@ vec3 rndColor() {
 }
 
 void main() {
-    if (debug.debugBoxes > 0) {
+    if (debug.showLightBoxes > 0) {
         outColor = vec4(rndColor() * 0.2, 0.2);
-        return;
+    } else {
+        outColor = vec4(0.0);
     }
 
-    vec3 albedo = texelFetch(albedo, ivec2(gl_FragCoord), 0).rgb;
-
-    // TODO: phong shading based on the lights
-    outColor = vec4(albedo, 1.0);
+    if (debug.compositionMode == 0) {
+        vec3 albedo = texelFetch(albedo, ivec2(gl_FragCoord), 0).rgb;
+        // TODO: phong shading based on the lights
+        outColor += vec4(albedo, 1.0);
+    } else if (debug.compositionMode == 1) {
+        outColor += vec4(texelFetch(albedo, ivec2(gl_FragCoord), 0).rgb, 1.0);
+    } else {
+        outColor += vec4(vec3(texelFetch(depth, ivec2(gl_FragCoord), 0).r), 1.0);
+    }
 }
