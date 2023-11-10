@@ -1,3 +1,4 @@
+#include "Lighting.h"
 #include "Pipeline.h"
 #include "Swapchain.h"
 #include <vulkan/vulkan_core.h>
@@ -16,8 +17,6 @@
 #include "imgui_impl_vulkan.h"
 #include "VulkanHelper.h"
 
-#define LIGHT_ACCUMULATION_FORMAT VK_FORMAT_R8G8B8A8_SRGB
-
 void JungleApp::initVulkan(const std::string& sceneName, bool recompileShaders) {
     device.initInstance();
     createSurface();
@@ -25,6 +24,10 @@ void JungleApp::initVulkan(const std::string& sceneName, bool recompileShaders) 
 
     swapchain = std::make_unique<Swapchain>(window, surface, &device);
     setupRenderStageScene(sceneName, recompileShaders);
+
+    lighting = std::make_unique<DeferredLighting>(&device, swapchain.get());
+    lighting->setup(recompileShaders, &scene, mvpSetLayout);
+
     tonemap = std::make_unique<Tonemap>(&device, swapchain.get());
     tonemap->setupRenderStageTonemap(recompileShaders);
 
@@ -40,12 +43,13 @@ void JungleApp::setupRenderStageScene(const std::string& sceneName, bool recompi
     createMVPSetLayout();
     createScenePipeline(recompileShaders);
 
-    sceneFinal.init(&device, MAX_FRAMES_IN_FLIGHT);
-    sceneFinal.addAttachment(swapchain->swapChainExtent, LIGHT_ACCUMULATION_FORMAT,
+    // The layout of the gBuffer needs to match GBufferTargets
+    gBuffer.init(&device, MAX_FRAMES_IN_FLIGHT);
+    gBuffer.addAttachment(swapchain->swapChainExtent, LIGHT_ACCUMULATION_FORMAT,
         VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
-    sceneFinal.addAttachment(swapchain->swapChainExtent, swapchain->chooseDepthFormat(),
-        VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_IMAGE_ASPECT_DEPTH_BIT);
-    sceneFinal.createFramebuffers(sceneRPass, swapchain->swapChainExtent);
+    gBuffer.addAttachment(swapchain->swapChainExtent, swapchain->chooseDepthFormat(),
+        VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_IMAGE_ASPECT_DEPTH_BIT);
+    gBuffer.createFramebuffers(sceneRPass, swapchain->swapChainExtent);
 }
 
 void JungleApp::mainLoop() {
@@ -133,6 +137,7 @@ void JungleApp::drawFrame() {
     VK_CHECK_RESULT(vkBeginCommandBuffer(commandBuffer, &beginInfo))
 
     recordSceneCommandBuffer(commandBuffer, swapchain->currentFrame);
+    lighting->recordCommandBuffer(commandBuffer, sceneDescriptorSets[swapchain->currentFrame], &scene);
     tonemap->recordTonemapCommandBuffer(commandBuffer, swapchain->defaultTarget.framebuffers[*imageIndex]);
 
     VK_CHECK_RESULT(vkEndCommandBuffer(commandBuffer))
@@ -261,6 +266,7 @@ void JungleApp::recreateGraphicsPipeline() {
     scenePipeline.reset();
     createScenePipeline(true);
 
+    lighting->createPipeline(true, mvpSetLayout, &scene);
     tonemap->createTonemapPipeline(true);
 }
 
@@ -342,11 +348,11 @@ void JungleApp::createCommandBuffers() {
     VK_CHECK_RESULT(vkAllocateCommandBuffers(device, &allocInfo, commandBuffers.data()))
 }
 
-void JungleApp::startRenderPass(VkCommandBuffer commandBuffer, VkFramebuffer fb, VkRenderPass renderPass) {
+void JungleApp::startRenderPass(VkCommandBuffer commandBuffer, uint32_t currentFrame, VkRenderPass renderPass) {
     VkRenderPassBeginInfo renderPassInfo{};
     renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
     renderPassInfo.renderPass = renderPass;
-    renderPassInfo.framebuffer = fb;
+    renderPassInfo.framebuffer = gBuffer.framebuffers[currentFrame];
     renderPassInfo.renderArea.offset = {0, 0};
     renderPassInfo.renderArea.extent = swapchain->swapChainExtent;
 
@@ -359,7 +365,7 @@ void JungleApp::startRenderPass(VkCommandBuffer commandBuffer, VkFramebuffer fb,
 }
 
 void JungleApp::recordSceneCommandBuffer(VkCommandBuffer commandBuffer, uint32_t currentFrame) {
-    startRenderPass(commandBuffer, sceneFinal.framebuffers[currentFrame], sceneRPass);
+    startRenderPass(commandBuffer, currentFrame, sceneRPass);
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, scenePipeline->pipeline);
     VulkanHelper::setFullViewportScissor(commandBuffer, swapchain->swapChainExtent);
 
@@ -373,7 +379,7 @@ void JungleApp::createMVPSetLayout() {
     uboLayoutBinding.binding = 0;
     uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     uboLayoutBinding.descriptorCount = 1;
-    uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_GEOMETRY_BIT;
     uboLayoutBinding.pImmutableSamplers = nullptr; // Optional
 
     VkDescriptorSetLayoutCreateInfo layoutInfo{};
@@ -399,6 +405,7 @@ void JungleApp::createUniformBuffers() {
         vkMapMemory(device, uniformBuffersMemory[i], 0, bufferSize, 0, &uniformBuffersMapped[i]);
     }
 
+    lighting->setupBuffers();
     tonemap->setupBuffers();
 }
 
@@ -417,6 +424,7 @@ void JungleApp::updateUniformBuffers(uint32_t currentImage) {
     ubo.proj[1][1] *= -1;  // because GLM generates OpenGL projections
 
     memcpy(uniformBuffersMapped[currentImage], &ubo, sizeof(ubo));
+    lighting->updateBuffers();
     tonemap->updateBuffers();
 }
 
@@ -424,13 +432,22 @@ void JungleApp::createDescriptorPool() {
 
     std::array<VkDescriptorPoolSize, 2> poolSizes{};
     poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    poolSizes[0].descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
-    poolSizes[0].descriptorCount += static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT); // For tonemapping UBOs
-    poolSizes[0].descriptorCount += scene.getNumDescriptorSets();
-
     poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    poolSizes[1].descriptorCount = scene.getNumTextures();
-    poolSizes[1].descriptorCount += static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT); // For tonemapping input sampler
+
+    std::vector<RequiredDescriptors> requirements = {
+        scene.getNumDescriptors(), lighting->getNumDescriptors(), tonemap->getNumDescriptors()
+    };
+
+    // Descriptors required in JungleApp itself
+    requirements.push_back({
+        .requireUniformBuffers = MAX_FRAMES_IN_FLIGHT,
+        .requireSamplers = 0,
+    });
+
+    for (auto& req : requirements) {
+        poolSizes[0].descriptorCount += req.requireUniformBuffers;
+        poolSizes[1].descriptorCount += req.requireSamplers;
+    }
 
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -464,7 +481,8 @@ void JungleApp::createDescriptorSets() {
     }
 
     scene.setupDescriptorSets(device, descriptorPool);
-    tonemap->createDescriptorSets(descriptorPool, sceneFinal);
+    lighting->createDescriptorSets(descriptorPool, gBuffer);
+    tonemap->createDescriptorSets(descriptorPool, lighting->compositedLight);
 }
 
 void JungleApp::cleanup() {
@@ -478,6 +496,7 @@ void JungleApp::cleanup() {
         vkFreeMemory(device, uniformBuffersMemory[i], nullptr);
     }
 
+    lighting.reset();
     tonemap.reset();
     vkDestroyDescriptorPool(device, descriptorPool, nullptr);
     vkDestroyDescriptorPool(device, imguiDescriptorPool, nullptr);
@@ -488,7 +507,7 @@ void JungleApp::cleanup() {
     scene.destroyTextures(&device);
     scene.destroyBuffers(device);
     scenePipeline.reset();
-    sceneFinal.destroyAll();
+    gBuffer.destroyAll();
 
     vkDestroyRenderPass(device, sceneRPass, nullptr);
     vkDestroySurfaceKHR(device.instance, surface, nullptr);

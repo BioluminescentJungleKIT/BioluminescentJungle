@@ -374,7 +374,7 @@ std::vector<VkDescriptorSet> VulkanHelper::createDescriptorSetsFromLayout(
     VkDescriptorSetAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
     allocInfo.descriptorPool = pool;
-    allocInfo.descriptorSetCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+    allocInfo.descriptorSetCount = n;
     allocInfo.pSetLayouts = layouts.data();
     VK_CHECK_RESULT(vkAllocateDescriptorSets(device, &allocInfo, sets.data()));
     return sets;

@@ -13,6 +13,7 @@
 #include <memory>
 #include <array>
 #include <shaderc/shaderc.hpp>
+#include "Lighting.h"
 #include "Scene.h"
 #include "PhysicalDevice.h"
 #include "Swapchain.h"
@@ -65,10 +66,11 @@ private:
     void createScenePipeline(bool recompileShaders);
 
     std::unique_ptr<Tonemap> tonemap;
+    std::unique_ptr<DeferredLighting> lighting;
 
     VkRenderPass sceneRPass;
     std::unique_ptr<GraphicsPipeline> scenePipeline;
-    RenderTarget sceneFinal;
+    RenderTarget gBuffer;
 
     void createScenePass();
 
@@ -76,7 +78,7 @@ private:
 
     void createCommandBuffers();
 
-    void startRenderPass(VkCommandBuffer commandBuffer, VkFramebuffer fb, VkRenderPass renderPass);
+    void startRenderPass(VkCommandBuffer commandBuffer, uint32_t currentFrame, VkRenderPass renderPass);
     void recordSceneCommandBuffer(VkCommandBuffer commandBuffer, uint32_t currentFrame);
 
     bool framebufferResized = false;

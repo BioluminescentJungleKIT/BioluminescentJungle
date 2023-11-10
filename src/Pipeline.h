@@ -15,6 +15,11 @@ struct BasicBlending {
     VkBlendFactor dstBlend;
 };
 
+struct RequiredDescriptors {
+    int requireUniformBuffers = 0;
+    int requireSamplers = 0;
+};
+
 struct PipelineParameters {
     std::vector<std::pair<VkShaderStageFlagBits, std::string>> shadersList;
     bool recompileShaders = false;

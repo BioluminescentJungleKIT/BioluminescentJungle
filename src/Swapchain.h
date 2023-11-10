@@ -37,6 +37,13 @@ class RenderTarget {
     int framesInFlight;
 };
 
+// Must match the creation order in JungleApp.cpp
+enum GBufferTargets {
+    Albedo = 0,
+    Depth = 1,
+
+    NumAttachments = 2,
+};
 
 /**
  * A class which manages the swapchain and render targets for the window.

@@ -4,6 +4,7 @@
 
 #include <iostream>
 #include "PhysicalDevice.h"
+#include "Pipeline.h"
 #include "Scene.h"
 #include "VulkanHelper.h"
 #include <glm/gtc/matrix_transform.hpp>
@@ -44,7 +45,6 @@ Scene::render(VkCommandBuffer commandBuffer, VkPipelineLayout pipelineLayout, Vk
         renderInstances(mesh, commandBuffer, pipelineLayout, globalDescriptorSet);
     }
 }
-
 
 void Scene::renderInstances(int mesh, VkCommandBuffer commandBuffer, VkPipelineLayout pipelineLayout,
                             VkDescriptorSet globalDescriptorSet) {
@@ -102,6 +102,12 @@ void Scene::renderInstances(int mesh, VkCommandBuffer commandBuffer, VkPipelineL
             throw std::runtime_error("Non-indexed geometry is currently not supported.");
         }
     }
+}
+
+void Scene::drawPointLights(VkCommandBuffer commandBuffer) {
+    VkDeviceSize offset = 0;
+    vkCmdBindVertexBuffers(commandBuffer, 0, 1, &buffers[lightsBuffer], &offset);
+    vkCmdDraw(commandBuffer, lights.size(), 1, 0, 0);
 }
 
 void Scene::setupDescriptorSets(VkDevice device, VkDescriptorPool descriptorPool) {
@@ -162,8 +168,11 @@ void Scene::setupDescriptorSets(VkDevice device, VkDescriptorPool descriptorPool
     }
 }
 
-uint32_t Scene::getNumDescriptorSets() {
-    return meshTransforms.size();
+RequiredDescriptors Scene::getNumDescriptors() {
+    return RequiredDescriptors {
+        .requireUniformBuffers = (int)meshTransforms.size(),
+        .requireSamplers = (int)textures.size(),
+    };
 }
 
 void Scene::setupBuffers(VulkanDevice *device) {
@@ -533,8 +542,4 @@ void Scene::destroyTextures(VulkanDevice *device) {
 
 std::string Scene::queryShaderName() {
     return meshNeedsColor(model.meshes[0]) ? "shaders/shader" : "shaders/simple-texture";
-}
-
-uint32_t Scene::getNumTextures() {
-    return textures.size();
 }

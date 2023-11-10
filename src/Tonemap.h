@@ -52,6 +52,8 @@ class Tonemap {
 
     void createDescriptorSets(VkDescriptorPool pool, const RenderTarget& sourceBuffer);
 
+    RequiredDescriptors getNumDescriptors();
+
   private:
     VulkanDevice *device;
     Swapchain *swapchain;

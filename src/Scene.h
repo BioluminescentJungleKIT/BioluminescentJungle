@@ -9,6 +9,7 @@
 #include <vector>
 #include <glm/glm.hpp>
 #include <vulkan/vulkan_core.h>
+#include "Pipeline.h"
 #include "tiny_gltf.h"
 #include "PhysicalDevice.h"
 
@@ -47,9 +48,7 @@ public:
     std::tuple<std::vector<VkVertexInputAttributeDescription>, std::vector<VkVertexInputBindingDescription>>
     getLightsAttributeAndBindingDescriptions();
 
-    uint32_t getNumDescriptorSets();
-    uint32_t getNumTextures();
-
+    RequiredDescriptors getNumDescriptors();
     std::vector<VkDescriptorSetLayout> getDescriptorSetLayouts(VkDevice device);
 
     void destroyDescriptorSetLayout(VkDevice device);
@@ -63,6 +62,8 @@ public:
         VkSampler sampler;
         VkDescriptorSet dSet;
     };
+
+    void drawPointLights(VkCommandBuffer buffer);
 
   private:
     tinygltf::TinyGLTF loader;

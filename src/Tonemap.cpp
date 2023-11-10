@@ -1,4 +1,5 @@
 #include "Tonemap.h"
+#include "Pipeline.h"
 #include "Swapchain.h"
 #include "VulkanHelper.h"
 #include "imgui.h"
@@ -203,4 +204,11 @@ Tonemap::~Tonemap() {
     for (auto& sampler : this->tonemapSamplers) {
         vkDestroySampler(*device, sampler, nullptr);
     }
+}
+
+RequiredDescriptors Tonemap::getNumDescriptors() {
+    return {
+        .requireUniformBuffers = MAX_FRAMES_IN_FLIGHT,
+        .requireSamplers = MAX_FRAMES_IN_FLIGHT,
+    };
 }
