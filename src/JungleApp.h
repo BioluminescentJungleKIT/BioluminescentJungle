@@ -94,10 +94,7 @@ private:
     void createMVPSetLayout();
 
     VkDescriptorSetLayout mvpSetLayout;
-
-    std::vector<VkBuffer> uniformBuffers;
-    std::vector<VkDeviceMemory> uniformBuffersMemory;
-    std::vector<void *> uniformBuffersMapped;
+    UniformBuffer mvpUBO;
 
     void createUniformBuffers();
 

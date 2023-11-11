@@ -3,6 +3,7 @@
 
 #include "Scene.h"
 #include "Swapchain.h"
+#include "UniformBuffer.h"
 #define GLFW_INCLUDE_VULKAN
 
 #include <GLFW/glfw3.h>
@@ -64,10 +65,7 @@ class DeferredLighting {
   private:
     VulkanDevice *device;
     Swapchain *swapchain;
-
-    std::vector<VkBuffer> debugUniformBuffer;
-    std::vector<VkDeviceMemory> debugUniformBufferMemory;
-    std::vector<void *> debugBufferMapped;
+    UniformBuffer debugUBO;
 };
 
 #endif /* end of include guard: LIGHTIG_H */

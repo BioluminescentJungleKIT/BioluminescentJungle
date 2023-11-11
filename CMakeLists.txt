@@ -19,6 +19,7 @@ add_executable(Jungle src/main.cpp
         src/Lighting.cpp
         src/Swapchain.cpp
         src/Tonemap.cpp
+        src/UniformBuffer.cpp
         src/JungleApp.h
         lib/imgui/imconfig.h
         lib/imgui/imgui.cpp

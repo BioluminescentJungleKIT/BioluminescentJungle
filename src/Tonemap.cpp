@@ -137,13 +137,7 @@ void Tonemap::createTonemapSetLayout() {
 }
 
 void Tonemap::setupBuffers() {
-    VkDeviceSize tonemappingBufferSize = sizeof(TonemappingUBO);
-    VulkanHelper::createBuffer(*device, device->physicalDevice, tonemappingBufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-                               VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                               tonemappingUniformBuffer,
-                               tonemappingUniformBufferMemory);
-
-    vkMapMemory(*device, tonemappingUniformBufferMemory, 0, tonemappingBufferSize, 0, &tonemappingBufferMapped);
+    ubo.allocate(device, sizeof(TonemappingUBO), 1);
 }
 
 void Tonemap::updateBuffers() {
@@ -151,7 +145,7 @@ void Tonemap::updateBuffers() {
     tonemapping.exposure = exposure;
     tonemapping.gamma = gamma;
     tonemapping.mode = tonemappingMode;
-    memcpy(tonemappingBufferMapped, &tonemapping, sizeof(tonemapping));
+    ubo.update(&tonemapping, sizeof(tonemapping), 0);
 }
 
 void Tonemap::createDescriptorSets(VkDescriptorPool pool, const RenderTarget& sourceBuffer) {
@@ -179,7 +173,7 @@ void Tonemap::updateSamplerBindings(const RenderTarget& sourceBuffer) {
         descriptorWrite.pNext = NULL;
 
         VkDescriptorBufferInfo tonemappingBufferInfo{};
-        tonemappingBufferInfo.buffer = tonemappingUniformBuffer;
+        tonemappingBufferInfo.buffer = ubo.buffers[0];
         tonemappingBufferInfo.offset = 0;
         tonemappingBufferInfo.range = sizeof(TonemappingUBO);
 
@@ -200,8 +194,7 @@ void Tonemap::updateSamplerBindings(const RenderTarget& sourceBuffer) {
 }
 
 Tonemap::~Tonemap() {
-    vkDestroyBuffer(*device, tonemappingUniformBuffer, nullptr);
-    vkFreeMemory(*device, tonemappingUniformBufferMemory, nullptr);
+    ubo.destroy(device);
     vkDestroyRenderPass(*device, tonemapRPass, nullptr);
     vkDestroyDescriptorSetLayout(*device, tonemapSetLayout, nullptr);
 

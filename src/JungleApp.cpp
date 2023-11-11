@@ -403,20 +403,7 @@ void JungleApp::createMVPSetLayout() {
 
 void JungleApp::createUniformBuffers() {
     VkDeviceSize bufferSize = sizeof(UniformBufferObject);
-
-    uniformBuffers.resize(MAX_FRAMES_IN_FLIGHT);
-    uniformBuffersMemory.resize(MAX_FRAMES_IN_FLIGHT);
-    uniformBuffersMapped.resize(MAX_FRAMES_IN_FLIGHT);
-
-    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-        VulkanHelper::createBuffer(device, device.physicalDevice, bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-                                   VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                                   uniformBuffers[i],
-                                   uniformBuffersMemory[i]);
-
-        vkMapMemory(device, uniformBuffersMemory[i], 0, bufferSize, 0, &uniformBuffersMapped[i]);
-    }
-
+    mvpUBO.allocate(&device, bufferSize, MAX_FRAMES_IN_FLIGHT);
     lighting->setupBuffers();
     tonemap->setupBuffers();
 }
@@ -435,7 +422,7 @@ void JungleApp::updateUniformBuffers(uint32_t currentImage) {
         (float) swapchain->swapChainExtent.width / (float) swapchain->swapChainExtent.height, nearPlane, farPlane);
     ubo.proj[1][1] *= -1;  // because GLM generates OpenGL projections
 
-    memcpy(uniformBuffersMapped[currentImage], &ubo, sizeof(ubo));
+    mvpUBO.update(&ubo, sizeof(ubo), currentImage);
     lighting->updateBuffers();
 
     // TODO: is there a better way to integrate this somehow? Too lazy to skip the tonemapping render pass completely.
@@ -480,7 +467,7 @@ void JungleApp::createDescriptorSets() {
 
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
         VkDescriptorBufferInfo bufferInfo{};
-        bufferInfo.buffer = uniformBuffers[i];
+        bufferInfo.buffer = mvpUBO.buffers[i];
         bufferInfo.offset = 0;
         bufferInfo.range = sizeof(UniformBufferObject);
 
@@ -508,11 +495,7 @@ void JungleApp::cleanup() {
     ImGui::DestroyContext();
     swapchain.reset();
 
-    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-        vkDestroyBuffer(device, uniformBuffers[i], nullptr);
-        vkFreeMemory(device, uniformBuffersMemory[i], nullptr);
-    }
-
+    mvpUBO.destroy(&device);
     lighting.reset();
     tonemap.reset();
     vkDestroyDescriptorPool(device, descriptorPool, nullptr);

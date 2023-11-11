@@ -10,15 +10,7 @@ DeferredLighting::DeferredLighting(VulkanDevice* device, Swapchain* swapChain) {
 }
 
 DeferredLighting::~DeferredLighting() {
-
-    for (auto& buffer : debugUniformBuffer) {
-        vkDestroyBuffer(*device, buffer, nullptr);
-    }
-
-    for (auto& mem : debugUniformBufferMemory) {
-        vkFreeMemory(*device, mem, nullptr);
-    }
-
+    debugUBO.destroy(device);
     vkDestroyRenderPass(*device, renderPass, nullptr);
 
     vkDestroyDescriptorSetLayout(*device, debugLayout, nullptr);
@@ -227,7 +219,7 @@ void DeferredLighting::updateSamplerBindings(const RenderTarget& gBuffer) {
         }
 
         VkDescriptorBufferInfo bufferInfo;
-        bufferInfo.buffer = debugUniformBuffer[i];
+        bufferInfo.buffer = debugUBO.buffers[i];
         bufferInfo.offset = 0;
         bufferInfo.range = sizeof(DebugOptions);
 
@@ -245,23 +237,11 @@ void DeferredLighting::updateSamplerBindings(const RenderTarget& gBuffer) {
 }
 
 void DeferredLighting::setupBuffers() {
-    debugUniformBuffer.resize(MAX_FRAMES_IN_FLIGHT);
-    debugUniformBufferMemory.resize(MAX_FRAMES_IN_FLIGHT);
-    debugBufferMapped.resize(MAX_FRAMES_IN_FLIGHT);
-
-    for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-        VkDeviceSize bufferSize = sizeof(DebugOptions);
-        VulkanHelper::createBuffer(*device, device->physicalDevice, bufferSize,
-            VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-            debugUniformBuffer[i], debugUniformBufferMemory[i]);
-
-        vkMapMemory(*device, debugUniformBufferMemory[i], 0, bufferSize, 0, &debugBufferMapped[i]);
-    }
+    debugUBO.allocate(device, sizeof(DebugOptions), MAX_FRAMES_IN_FLIGHT);
 }
 
 void DeferredLighting::updateBuffers() {
-    memcpy(debugBufferMapped[swapchain->currentFrame], &debug, sizeof(DebugOptions));
+    debugUBO.update(&debug, sizeof(DebugOptions), swapchain->currentFrame);
 }
 
 RequiredDescriptors DeferredLighting::getNumDescriptors() {

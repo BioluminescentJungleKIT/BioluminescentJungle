@@ -2,6 +2,7 @@
 #define TONEMAP_H
 
 #include "Swapchain.h"
+#include "UniformBuffer.h"
 #define GLFW_INCLUDE_VULKAN
 
 #include <GLFW/glfw3.h>
@@ -36,10 +37,6 @@ class Tonemap {
     void createTonemapPass();
     VkDescriptorSetLayout tonemapSetLayout;
 
-    VkBuffer tonemappingUniformBuffer;
-    VkDeviceMemory tonemappingUniformBufferMemory;
-    void * tonemappingBufferMapped;
-
     std::vector<VkDescriptorSet> tonemapDescriptorSets;
     std::vector<VkSampler> tonemapSamplers;
     int tonemappingMode{2};
@@ -60,6 +57,7 @@ class Tonemap {
   private:
     VulkanDevice *device;
     Swapchain *swapchain;
+    UniformBuffer ubo;
 };
 
 #endif /* end of include guard: TONEMAP_H */
