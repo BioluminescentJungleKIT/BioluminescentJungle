@@ -19,6 +19,8 @@ struct DebugOptions {
 
     // 0 - normal, 1 - show albedo, 2 - show depth
     glm::int32_t compositionMode = 0;
+
+    glm::float32_t lightRadius = 1.0;
 };
 
 /**
@@ -56,8 +58,9 @@ class DeferredLighting {
     void updateSamplerBindings(const RenderTarget& gBuffer);
 
     void setupBuffers();
-    void updateBuffers();
+    void updateBuffers(glm::mat4 VP);
 
+    float lightRadiusLog = 0.5;
     DebugOptions debug;
 
     RequiredDescriptors getNumDescriptors();
@@ -66,6 +69,7 @@ class DeferredLighting {
     VulkanDevice *device;
     Swapchain *swapchain;
     UniformBuffer debugUBO;
+    UniformBuffer inverseTranformUBO;
 };
 
 #endif /* end of include guard: LIGHTIG_H */

@@ -12,6 +12,7 @@ layout(set = 0, binding = 0) uniform UniformBufferObject {
 layout(set = 2, binding = 0) uniform DebugOptions {
     int showLightBoxes;
     int compositionMode;
+    float radius;
 } debug;
 
 layout(location = 0) in vec3 position[];
@@ -25,9 +26,9 @@ void main() {
     fIntensity = intensity[0];
 
     if (debug.compositionMode > 0) {
-        // Draw just once
+        // If we are debugging a specific g-buffer, we just want to see how the gbuffer looks
+        // TODO: in the end, we will likely want to remove all this debug stuff to make the shader even faster.
         if (gl_PrimitiveIDIn > 0) return;
-
         gl_Position = vec4(-1, -1, 0, 1); EmitVertex();
         gl_Position = vec4(-1, 1, 0, 1); EmitVertex();
         gl_Position = vec4(1, -1, 0, 1); EmitVertex();
@@ -35,16 +36,15 @@ void main() {
         return;
     }
 
-    // TODO: add option for this in the ImGui
-    const float radius = 10.0;
+    const float radius = debug.radius;
 
     fPosition = position[0];
     fIntensity = intensity[0];
 
-    mat4 VP = ubo.proj * ubo.view;
+    mat4 VP = ubo.proj * ubo.view * ubo.model;
     vec4 center = VP * vec4(position[0], 1.0);
-    vec4 edge1 = VP * vec4(position[0] + vec3(radius), 1.0);
-    vec4 edge2 = VP * vec4(position[0] - vec3(radius), 1.0);
+    vec4 edge1 = VP * vec4(position[0] + vec3(radius, -radius, radius), 1.0);
+    vec4 edge2 = VP * vec4(position[0] - vec3(-radius, radius, -radius), 1.0);
 
     center /= center.w;
     edge1 /= edge1.w;

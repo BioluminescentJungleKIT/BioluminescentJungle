@@ -11,6 +11,7 @@
 #include <iomanip>
 #include <vulkan/vulkan_core.h>
 #include <glm/gtc/type_ptr.hpp>
+#include <random>
 
 // Definitions of standard names in gltf
 #define BASE_COLOR_TEXTURE "baseColorTexture"
@@ -192,6 +193,25 @@ void Scene::setupBuffers(VulkanDevice *device) {
     for (auto node: model.scenes[model.defaultScene].nodes) {
         generateTransforms(node, glm::mat4(1.f), MAX_RECURSION);
     }
+
+    if (addArtificialLight && lights.empty()) {
+        float fov;
+        glm::vec3 lookAt, camera;
+        computeCameraPos(lookAt, camera, fov);
+
+        float range = (camera - lookAt).length() * 0.1;
+
+        std::mt19937 mt(0);
+        auto distX = std::uniform_real_distribution<float>(-range, range);
+        auto distY = std::uniform_real_distribution<float>(-range, range);
+        auto distZ = std::uniform_real_distribution<float>(-range * 0.1, range * 0.1);
+
+        for (int i = 0; i < 5; i++) {
+            glm::vec3 delta{distX(mt), distY(mt), distZ(mt)};
+            lights.push_back({lookAt + delta, glm::vec3((i % 3) / 2.0, (i % 2) / 2.0, (i % 5) / 4.0), 5.0});
+        }
+    }
+
     setupUniformBuffers(device);
 }
 
@@ -226,16 +246,6 @@ void Scene::generateTransforms(int nodeIndex, glm::mat4 oldTransform, int maxRec
         } else {
             std::cout << "[lights] WARN: Detected unsupported light of type " << type << std::endl;
         }
-    }
-
-    if (addArtificialLight) {
-        float fov;
-        glm::vec3 lookAt, camera;
-        computeCameraPos(lookAt, camera, fov);
-        glm::vec3 cameraRay = camera - lookAt;
-        cameraRay.x *= -1;
-        cameraRay.z *= -1;
-        lights.push_back({lookAt + cameraRay, glm::vec3(1.0, 0.5, 0.1), 5.0});
     }
 
     for (int child: node.children) {
