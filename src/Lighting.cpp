@@ -4,8 +4,10 @@
 #include "VulkanHelper.h"
 #include <vulkan/vulkan_core.h>
 
-struct InverseTransformBuffer {
+struct LightingBuffer {
     glm::mat4 inverseMVP;
+    alignas(16) glm::vec3 cameraPos;
+    alignas(16) glm::vec3 cameraUp;
     glm::float32_t viewportWidth;
     glm::float32_t viewportHeight;
 };
@@ -17,7 +19,7 @@ DeferredLighting::DeferredLighting(VulkanDevice* device, Swapchain* swapChain) {
 
 DeferredLighting::~DeferredLighting() {
     debugUBO.destroy(device);
-    inverseTranformUBO.destroy(device);
+    lightUBO.destroy(device);
     vkDestroyRenderPass(*device, renderPass, nullptr);
     vkDestroyDescriptorSetLayout(*device, debugLayout, nullptr);
     vkDestroyDescriptorSetLayout(*device, samplersLayout, nullptr);
@@ -192,7 +194,7 @@ void DeferredLighting::createDescriptorSetLayout() {
         debug[1].descriptorCount = 1;
         debug[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
         debug[1].pImmutableSamplers = nullptr;
-        debug[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        debug[1].stageFlags = VK_SHADER_STAGE_GEOMETRY_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
 
         VkDescriptorSetLayoutCreateInfo layoutInfo{};
         layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
@@ -248,9 +250,9 @@ void DeferredLighting::updateSamplerBindings(const RenderTarget& gBuffer) {
         descriptorWrites.push_back(debugWrite);
 
         VkDescriptorBufferInfo bufferInfoInvTr;
-        bufferInfo.buffer = inverseTranformUBO.buffers[i];
-        bufferInfo.offset = 0;
-        bufferInfo.range = sizeof(InverseTransformBuffer);
+        bufferInfoInvTr.buffer = lightUBO.buffers[i];
+        bufferInfoInvTr.offset = 0;
+        bufferInfoInvTr.range = sizeof(LightingBuffer);
 
         VkWriteDescriptorSet debugWriteInvTr{};
         debugWriteInvTr.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -259,7 +261,7 @@ void DeferredLighting::updateSamplerBindings(const RenderTarget& gBuffer) {
         debugWriteInvTr.dstArrayElement = 0;
         debugWriteInvTr.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
         debugWriteInvTr.descriptorCount = 1;
-        debugWriteInvTr.pBufferInfo = &bufferInfo;
+        debugWriteInvTr.pBufferInfo = &bufferInfoInvTr;
         descriptorWrites.push_back(debugWriteInvTr);
 
         vkUpdateDescriptorSets(*device, descriptorWrites.size(), descriptorWrites.data(), 0, nullptr);
@@ -268,18 +270,20 @@ void DeferredLighting::updateSamplerBindings(const RenderTarget& gBuffer) {
 
 void DeferredLighting::setupBuffers() {
     debugUBO.allocate(device, sizeof(DebugOptions), MAX_FRAMES_IN_FLIGHT);
-    inverseTranformUBO.allocate(device, sizeof(InverseTransformBuffer), MAX_FRAMES_IN_FLIGHT);
+    lightUBO.allocate(device, sizeof(LightingBuffer), MAX_FRAMES_IN_FLIGHT);
 }
 
-void DeferredLighting::updateBuffers(glm::mat4 vp) {
+void DeferredLighting::updateBuffers(glm::mat4 vp, glm::vec3 cameraPos, glm::vec3 cameraUp) {
     debug.lightRadius = std::exp(lightRadiusLog);
     debugUBO.update(&debug, sizeof(DebugOptions), swapchain->currentFrame);
 
-    InverseTransformBuffer buffer;
+    LightingBuffer buffer;
     buffer.inverseMVP = glm::inverse(vp);
+    buffer.cameraPos = cameraPos;
+    buffer.cameraUp = cameraUp;
     buffer.viewportWidth = swapchain->swapChainExtent.width;
     buffer.viewportHeight = swapchain->swapChainExtent.height;
-    inverseTranformUBO.update(&buffer, sizeof(buffer), swapchain->currentFrame);
+    lightUBO.update(&buffer, sizeof(buffer), swapchain->currentFrame);
 }
 
 RequiredDescriptors DeferredLighting::getNumDescriptors() {

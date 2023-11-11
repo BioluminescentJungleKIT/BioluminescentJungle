@@ -58,7 +58,7 @@ class DeferredLighting {
     void updateSamplerBindings(const RenderTarget& gBuffer);
 
     void setupBuffers();
-    void updateBuffers(glm::mat4 VP);
+    void updateBuffers(glm::mat4 VP, glm::vec3 cameraPos, glm::vec3 cameraUp);
 
     float lightRadiusLog = 0.5;
     DebugOptions debug;
@@ -69,7 +69,7 @@ class DeferredLighting {
     VulkanDevice *device;
     Swapchain *swapchain;
     UniformBuffer debugUBO;
-    UniformBuffer inverseTranformUBO;
+    UniformBuffer lightUBO;
 };
 
 #endif /* end of include guard: LIGHTIG_H */

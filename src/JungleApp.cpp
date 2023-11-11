@@ -81,7 +81,7 @@ void JungleApp::drawImGUI() {
         if (ImGui::CollapsingHeader("Debug Settings")) {
             ImGui::Combo("G-Buffer Visualization", &lighting->debug.compositionMode, "None\0Albedo\0Depth\0Position\0\0");
             ImGui::Checkbox("Show Light BBoxes", (bool*)&lighting->debug.showLightBoxes);
-            ImGui::SliderFloat("Light bbox size", &lighting->lightRadiusLog, -5.f, 5.f);
+            ImGui::SliderFloat("Light bbox log size", &lighting->lightRadiusLog, -5.f, 5.f);
         }
         if (ImGui::CollapsingHeader("Video Settings")) {
             forceRecreateSwapchain = ImGui::Checkbox("VSync", &swapchain->enableVSync);
@@ -303,7 +303,7 @@ void JungleApp::createScenePass() {
     depthAttachment.format = swapchain->chooseDepthFormat();
     depthAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
     depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
     depthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
     depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
     depthAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
@@ -424,7 +424,7 @@ void JungleApp::updateUniformBuffers(uint32_t currentImage) {
     ubo.proj[1][1] *= -1;  // because GLM generates OpenGL projections
 
     mvpUBO.update(&ubo, sizeof(ubo), currentImage);
-    lighting->updateBuffers(ubo.proj * ubo.view * ubo.model);
+    lighting->updateBuffers(ubo.proj * ubo.view * ubo.model, cameraPosition, cameraUpVector);
 
     // TODO: is there a better way to integrate this somehow? Too lazy to skip the tonemapping render pass completely.
     if (lighting->debug.compositionMode != 0) {
