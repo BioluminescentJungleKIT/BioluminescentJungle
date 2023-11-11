@@ -5,9 +5,6 @@
 #ifndef VULKANBASICS_PLANETAPP_H
 #define VULKANBASICS_PLANETAPP_H
 
-#define GLFW_INCLUDE_VULKAN
-
-#include <GLFW/glfw3.h>
 #include <iostream>
 #include <stdexcept>
 #include <cstdlib>
@@ -16,16 +13,16 @@
 #include <memory>
 #include <array>
 #include <shaderc/shaderc.hpp>
-#include <glm/glm.hpp>
+#include "Lighting.h"
 #include "Scene.h"
 #include "PhysicalDevice.h"
 #include "Swapchain.h"
 #include "MusicPlayer.h"
+#include "Pipeline.h"
+#include "Tonemap.h"
 
 const uint32_t WIDTH = 1800;
 const uint32_t HEIGHT = 1200;
-
-const int MAX_FRAMES_IN_FLIGHT = 2;
 
 struct UniformBufferObject {
     glm::mat4 model;
@@ -33,17 +30,11 @@ struct UniformBufferObject {
     glm::mat4 proj;
 };
 
-struct TonemappingUBO {
-    glm::float32 exposure;
-    glm::float32 gamma;
-    glm::int32 mode;
-};
-
 class JungleApp {
 public:
-    void run(const std::string& sceneName) {
+    void run(const std::string& sceneName, bool recompileShaders) {
         initWindow();
-        initVulkan(sceneName);
+        initVulkan(sceneName, recompileShaders);
         initImGui();
         mplayer.init();
         mainLoop();
@@ -54,7 +45,7 @@ public:
 private:
     void initWindow();
 
-    void initVulkan(const std::string& sceneName);
+    void initVulkan(const std::string& sceneName, bool recompileShaders);
 
     void initImGui();
 
@@ -70,50 +61,40 @@ private:
 
     void createSurface();
 
-    void createGraphicsPipeline(bool recompileShaders);
+    void setupRenderStageScene(const std::string& sceneName, bool recompileShaders);
 
-    VkShaderModule createShaderModule(std::vector<char> code);
+    void createScenePipeline(bool recompileShaders);
 
-    VkRenderPass renderPass;
-    VkPipelineLayout pipelineLayout;
-    VkPipeline graphicsPipeline;
+    std::unique_ptr<Tonemap> tonemap;
+    std::unique_ptr<DeferredLighting> lighting;
 
-    void createRenderPass();
+    VkRenderPass sceneRPass;
+    std::unique_ptr<GraphicsPipeline> scenePipeline;
+    RenderTarget gBuffer;
+
+    void createScenePass();
 
     std::vector<VkCommandBuffer> commandBuffers;
 
-    void createCommandBuffer();
+    void createCommandBuffers();
 
-    void recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex);
-
-    std::vector<VkSemaphore> imageAvailableSemaphores;
-    std::vector<VkSemaphore> renderFinishedSemaphores;
-    std::vector<VkFence> inFlightFences;
+    void startRenderPass(VkCommandBuffer commandBuffer, uint32_t currentFrame, VkRenderPass renderPass);
+    void recordSceneCommandBuffer(VkCommandBuffer commandBuffer, uint32_t currentFrame);
 
     bool framebufferResized = false;
 
-    uint32_t currentFrame = 0;
-
     void drawFrame();
-
-    void createSyncObjects();
+    void drawImGUI();
 
     static void framebufferResizeCallback(GLFWwindow *window, int width, int height) {
         auto app = reinterpret_cast<JungleApp *>(glfwGetWindowUserPointer(window));
         app->framebufferResized = true;
     }
 
-    void createDescriptorSetLayout();
+    void createMVPSetLayout();
 
-    VkDescriptorSetLayout descriptorSetLayout;
-
-    std::vector<VkBuffer> uniformBuffers;
-    std::vector<VkDeviceMemory> uniformBuffersMemory;
-    std::vector<void *> uniformBuffersMapped;
-
-    VkBuffer tonemappingUniformBuffer;
-    VkDeviceMemory tonemappingUniformBufferMemory;
-    void * tonemappingBufferMapped;
+    VkDescriptorSetLayout mvpSetLayout;
+    UniformBuffer mvpUBO;
 
     void createUniformBuffers();
 
@@ -126,7 +107,7 @@ private:
 
     void createDescriptorSets();
 
-    std::vector<VkDescriptorSet> descriptorSets;
+    std::vector<VkDescriptorSet> sceneDescriptorSets;
 
     void setupScene(const std::string& sceneName);
 
@@ -136,8 +117,6 @@ private:
     bool forceRecreateSwapchain;
     bool forceReloadShaders;
     bool showDemoWindow;
-    std::string lastVertMessage;
-    std::string lastFragMessage;
     float nearPlane = .1f;
     float farPlane = 1000.f;
     float cameraFOVY = 45;
@@ -147,13 +126,8 @@ private:
     bool spinScene = true;
     float fixedRotation = 0.0;
 
-    void cleanupGraphicsPipeline();
-
     void recreateGraphicsPipeline();
-
-    float exposure{0};
-    float gamma{2.4};
-    int tonemappingMode{2};
+    void setupGBuffer();
 
     MusicPlayer mplayer{"scenes/loop.wav"};
     bool playMusic;

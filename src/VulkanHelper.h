@@ -19,6 +19,7 @@
 #include <stdexcept>
 #include <iostream>
 #include <GLFW/glfw3.h>
+#include <vulkan/vulkan_core.h>
 
 static std::string errorString(VkResult errorCode) {
     switch (errorCode) {
@@ -154,6 +155,13 @@ public:
     static uint32_t strideFromGltfType(int type, int componentType, size_t stride);
 
     static VkIndexType gltfTypeToVkIndexType(int componentType);
+
+    static VkSampler createSampler(VulkanDevice* device);
+
+    static void setFullViewportScissor(VkCommandBuffer commandBuffer, VkExtent2D extent);
+
+    static std::vector<VkDescriptorSet> createDescriptorSetsFromLayout(
+        VkDevice device, VkDescriptorPool pool, VkDescriptorSetLayout layout, size_t n);
 
     static glm::mat4
     transformFromMatrixOrComponents(std::vector<double> matrix, std::vector<double> scale, std::vector<double> rotation,

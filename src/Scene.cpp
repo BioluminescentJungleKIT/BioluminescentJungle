@@ -4,12 +4,14 @@
 
 #include <iostream>
 #include "PhysicalDevice.h"
+#include "Pipeline.h"
 #include "Scene.h"
 #include "VulkanHelper.h"
 #include <glm/gtc/matrix_transform.hpp>
 #include <iomanip>
 #include <vulkan/vulkan_core.h>
 #include <glm/gtc/type_ptr.hpp>
+#include <random>
 
 // Definitions of standard names in gltf
 #define BASE_COLOR_TEXTURE "baseColorTexture"
@@ -44,7 +46,6 @@ Scene::render(VkCommandBuffer commandBuffer, VkPipelineLayout pipelineLayout, Vk
         renderInstances(mesh, commandBuffer, pipelineLayout, globalDescriptorSet);
     }
 }
-
 
 void Scene::renderInstances(int mesh, VkCommandBuffer commandBuffer, VkPipelineLayout pipelineLayout,
                             VkDescriptorSet globalDescriptorSet) {
@@ -104,18 +105,17 @@ void Scene::renderInstances(int mesh, VkCommandBuffer commandBuffer, VkPipelineL
     }
 }
 
-void Scene::setupDescriptorSets(VkDevice device, VkDescriptorPool descriptorPool,
-                                VkDescriptorSetLayout descriptorSetLayout) {
-    std::vector<VkDescriptorSetLayout> layouts(meshTransforms.size(), uboDescriptorSetLayout);
-    VkDescriptorSetAllocateInfo allocInfo{};
-    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    allocInfo.descriptorPool = descriptorPool;
-    allocInfo.descriptorSetCount = meshTransforms.size();
-    allocInfo.pSetLayouts = layouts.data();
+void Scene::drawPointLights(VkCommandBuffer commandBuffer) {
+    if (lights.size()) {
+        VkDeviceSize offset = 0;
+        vkCmdBindVertexBuffers(commandBuffer, 0, 1, &buffers[lightsBuffer], &offset);
+        vkCmdDraw(commandBuffer, lights.size(), 1, 0, 0);
+    }
+}
 
-    uboDescriptorSets.resize(meshTransforms.size());
-
-    VK_CHECK_RESULT(vkAllocateDescriptorSets(device, &allocInfo, uboDescriptorSets.data()))
+void Scene::setupDescriptorSets(VkDevice device, VkDescriptorPool descriptorPool) {
+    uboDescriptorSets = VulkanHelper::createDescriptorSetsFromLayout(
+        device, descriptorPool, uboDescriptorSetLayout, meshTransforms.size());
 
     int i = 0;
     for (int mesh = 0; mesh < model.meshes.size(); mesh++) {
@@ -142,12 +142,12 @@ void Scene::setupDescriptorSets(VkDevice device, VkDescriptorPool descriptorPool
         vkUpdateDescriptorSets(device, 1, &descriptorWrite, 0, nullptr);
     }
 
-    layouts.assign(textures.size(), textureDescriptorSetLayout);
-    allocInfo.descriptorSetCount = textures.size();
-    allocInfo.pSetLayouts = layouts.data();
+    if (textures.empty()) {
+        return;
+    }
 
-    std::vector<VkDescriptorSet> textureDescriptorSets(textures.size());
-    VK_CHECK_RESULT(vkAllocateDescriptorSets(device, &allocInfo, textureDescriptorSets.data()))
+    auto textureDescriptorSets = VulkanHelper::createDescriptorSetsFromLayout(device, descriptorPool,
+        textureDescriptorSetLayout, textures.size());
 
     i = 0;
     for (auto &[texId, tex]: textures) {
@@ -156,7 +156,7 @@ void Scene::setupDescriptorSets(VkDevice device, VkDescriptorPool descriptorPool
         imageInfo.imageView = tex.imageView;
         imageInfo.sampler = tex.sampler;
 
-        VkWriteDescriptorSet descriptorWrite;
+        VkWriteDescriptorSet descriptorWrite{};
         descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         descriptorWrite.dstSet = textureDescriptorSets[i];
         descriptorWrite.dstBinding = 0;
@@ -171,8 +171,11 @@ void Scene::setupDescriptorSets(VkDevice device, VkDescriptorPool descriptorPool
     }
 }
 
-uint32_t Scene::getNumDescriptorSets() {
-    return meshTransforms.size();
+RequiredDescriptors Scene::getNumDescriptors() {
+    return RequiredDescriptors {
+        .requireUniformBuffers = (int)meshTransforms.size(),
+        .requireSamplers = (int)textures.size(),
+    };
 }
 
 void Scene::setupBuffers(VulkanDevice *device) {
@@ -192,8 +195,29 @@ void Scene::setupBuffers(VulkanDevice *device) {
     for (auto node: model.scenes[model.defaultScene].nodes) {
         generateTransforms(node, glm::mat4(1.f), MAX_RECURSION);
     }
+
+    if (addArtificialLight && lights.empty()) {
+        float fov;
+        glm::vec3 lookAt, camera;
+        computeCameraPos(lookAt, camera, fov);
+
+        float range = (camera - lookAt).length() * 0.1;
+
+        std::mt19937 mt(0);
+        auto distX = std::uniform_real_distribution<float>(-range, range);
+        auto distY = std::uniform_real_distribution<float>(-range, range);
+        auto distZ = std::uniform_real_distribution<float>(-range * 0.1, range * 0.1);
+
+        for (int i = 0; i < 5; i++) {
+            glm::vec3 delta{distX(mt), distY(mt), distZ(mt)};
+            lights.push_back({lookAt + delta, glm::vec3((i % 3) / 2.0, (i % 2) / 2.0, (i % 5) / 4.0), 5.0});
+        }
+    }
+
     setupUniformBuffers(device);
 }
+
+bool Scene::addArtificialLight = false;
 
 void Scene::generateTransforms(int nodeIndex, glm::mat4 oldTransform, int maxRecursion) {
     if (maxRecursion <= 0) return;
@@ -299,7 +323,7 @@ Scene::getLightsAttributeAndBindingDescriptions() {
     intensityAttributeDescription.location = 2;
     intensityAttributeDescription.format = VK_FORMAT_R32_SFLOAT;
     intensityAttributeDescription.offset = offsetof(LightData, intensity);
-    attributeDescriptions.push_back(positionAttributeDescription);
+    attributeDescriptions.push_back(intensityAttributeDescription);
 
     return {attributeDescriptions, bindingDescriptions};
 }
@@ -506,40 +530,6 @@ Scene::LoadedTexture uploadGLTFImage(VulkanDevice *device, const tinygltf::Image
     return loadedTex;
 }
 
-static VkSampler createSampler(VulkanDevice *device) {
-    VkSamplerCreateInfo samplerInfo{};
-    samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-    samplerInfo.magFilter = VK_FILTER_LINEAR;
-    samplerInfo.minFilter = VK_FILTER_LINEAR;
-
-    samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-    samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-    samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-
-    samplerInfo.anisotropyEnable = VK_TRUE;
-
-    VkPhysicalDeviceProperties properties{};
-    vkGetPhysicalDeviceProperties(device->physicalDevice, &properties);
-    samplerInfo.maxAnisotropy = properties.limits.maxSamplerAnisotropy;
-
-    samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
-    samplerInfo.unnormalizedCoordinates = VK_FALSE;
-    samplerInfo.compareEnable = VK_FALSE;
-    samplerInfo.compareOp = VK_COMPARE_OP_ALWAYS;
-
-    samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
-    samplerInfo.mipLodBias = 0.0f;
-    samplerInfo.minLod = 0.0f;
-    samplerInfo.maxLod = 0.0f;
-
-    VkSampler sampler;
-    if (vkCreateSampler(*device, &samplerInfo, nullptr, &sampler) != VK_SUCCESS) {
-        throw std::runtime_error("failed to create texture sampler!");
-    }
-
-    return sampler;
-}
-
 void Scene::setupTextures(VulkanDevice *device) {
     for (size_t i = 0; i < model.materials.size(); i++) {
         const auto &material = model.materials[i];
@@ -561,7 +551,7 @@ void Scene::setupTextures(VulkanDevice *device) {
         textures[gTexture.source].imageView = device->createImageView(textures[gTexture.source].image,
                                                                       VK_FORMAT_R8G8B8A8_SRGB,
                                                                       VK_IMAGE_ASPECT_COLOR_BIT);
-        textures[gTexture.source].sampler = createSampler(device);
+        textures[gTexture.source].sampler = VulkanHelper::createSampler(device);
     }
 }
 
@@ -576,8 +566,4 @@ void Scene::destroyTextures(VulkanDevice *device) {
 
 std::string Scene::queryShaderName() {
     return meshNeedsColor(model.meshes[0]) ? "shaders/shader" : "shaders/simple-texture";
-}
-
-uint32_t Scene::getNumTextures() {
-    return textures.size();
 }

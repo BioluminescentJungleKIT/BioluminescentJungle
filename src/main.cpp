@@ -1,5 +1,6 @@
 #include <iostream>
 #include "JungleApp.h"
+#include "PhysicalDevice.h"
 
 int main(int argc, char **argv) {
     JungleApp app{};
@@ -9,8 +10,24 @@ int main(int argc, char **argv) {
         scenePath = argv[1];
     }
 
+    bool recompileShaders = false;
+
+    for (int i = 2; i < argc; i++) {
+        if (!strcmp(argv[i], "--recompile-shaders")) {
+            recompileShaders = true;
+        }
+
+        if (!strcmp(argv[i], "--crash-on-validation-message")) {
+            crashOnValidationWarning = true;
+        }
+
+        if (!strcmp(argv[i], "--artificial-light")) {
+            Scene::addArtificialLight = true;
+        }
+    }
+
     try {
-        app.run(scenePath);
+        app.run(scenePath, recompileShaders);
     } catch (const std::exception& e) {
         std::cerr << e.what() << std::endl;
         return EXIT_FAILURE;

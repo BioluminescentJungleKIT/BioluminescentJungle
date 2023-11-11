@@ -11,6 +11,8 @@ bool enableValidationLayers = false;
 bool enableValidationLayers = true;
 #endif
 
+bool crashOnValidationWarning = false;
+
 static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
     VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
     VkDebugUtilsMessageTypeFlagsEXT messageType,
@@ -18,8 +20,10 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
     void *pUserData) {
 
     std::cerr << "validation layer: " << pCallbackData->pMessage << std::endl;
-    if (messageSeverity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) {
-        // Message is important enough to show
+    if (messageSeverity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT && crashOnValidationWarning) {
+        // Message is important enough and we want to crash and print a backtrace
+        int *p = 0;
+        *p = 1;
     }
 
     return VK_FALSE;
@@ -203,6 +207,7 @@ bool VulkanDevice::isDeviceSuitable(VkPhysicalDevice const& device, VkSurfaceKHR
     }
 
     return deviceFeatures.samplerAnisotropy &&
+           deviceFeatures.geometryShader &&
            indices.isComplete() &&
            extensionsSupported &&
            swapChainAdequate;
@@ -236,11 +241,12 @@ void VulkanDevice::createLogicalDevice(VkSurfaceKHR surface) {
     createInfo.queueCreateInfoCount = static_cast<uint32_t>(queueCreateInfos.size());
     createInfo.pQueueCreateInfos = queueCreateInfos.data();
 
+    deviceFeatures.samplerAnisotropy = VK_TRUE;
+    deviceFeatures.geometryShader = VK_TRUE;
     createInfo.pEnabledFeatures = &deviceFeatures;
 
     createInfo.enabledExtensionCount = static_cast<uint32_t>(deviceExtensions.size());
     createInfo.ppEnabledExtensionNames = deviceExtensions.data();
-    deviceFeatures.samplerAnisotropy = VK_TRUE;
 
     if (enableValidationLayers) {
         createInfo.enabledLayerCount = static_cast<uint32_t>(validationLayers.size());
