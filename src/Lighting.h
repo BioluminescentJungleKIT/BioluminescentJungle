@@ -37,6 +37,7 @@ class DeferredLighting {
 
     VkRenderPass renderPass;
     std::unique_ptr<GraphicsPipeline> pipeline;
+    std::unique_ptr<GraphicsPipeline> debugPipeline;
 
     void createRenderPass();
     VkDescriptorSetLayout samplersLayout, debugLayout;

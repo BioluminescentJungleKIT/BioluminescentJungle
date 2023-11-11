@@ -32,18 +32,6 @@ layout(location = 1) out vec3 fIntensity;
 void main() {
     fPosition = position[0];
     fIntensity = intensity[0];
-
-    if (debug.compositionMode > 0) {
-        // If we are debugging a specific g-buffer, we just want to see how the gbuffer looks
-        // TODO: in the end, we will likely want to remove all this debug stuff to make the shader even faster.
-        if (gl_PrimitiveIDIn > 0) return;
-        gl_Position = vec4(-1, -1, 0, 1); EmitVertex();
-        gl_Position = vec4(-1, 1, 0, 1); EmitVertex();
-        gl_Position = vec4(1, -1, 0, 1); EmitVertex();
-        gl_Position = vec4(1, 1, 0, 1); EmitVertex();
-        return;
-    }
-
     const float radius = debug.radius;
 
     fPosition = position[0];

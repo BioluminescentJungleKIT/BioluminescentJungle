@@ -106,9 +106,11 @@ void Scene::renderInstances(int mesh, VkCommandBuffer commandBuffer, VkPipelineL
 }
 
 void Scene::drawPointLights(VkCommandBuffer commandBuffer) {
-    VkDeviceSize offset = 0;
-    vkCmdBindVertexBuffers(commandBuffer, 0, 1, &buffers[lightsBuffer], &offset);
-    vkCmdDraw(commandBuffer, lights.size(), 1, 0, 0);
+    if (lights.size()) {
+        VkDeviceSize offset = 0;
+        vkCmdBindVertexBuffers(commandBuffer, 0, 1, &buffers[lightsBuffer], &offset);
+        vkCmdDraw(commandBuffer, lights.size(), 1, 0, 0);
+    }
 }
 
 void Scene::setupDescriptorSets(VkDevice device, VkDescriptorPool descriptorPool) {

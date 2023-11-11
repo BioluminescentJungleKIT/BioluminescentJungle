@@ -35,7 +35,6 @@ DeferredLighting::~DeferredLighting() {
 
 void DeferredLighting::createPipeline(bool recompileShaders, VkDescriptorSetLayout mvpLayout, Scene *scene) {
     PipelineParameters params;
-
     params.shadersList = {
         {VK_SHADER_STAGE_VERTEX_BIT, "shaders/point-light.vert"},
         {VK_SHADER_STAGE_GEOMETRY_BIT, "shaders/point-light.geom"},
@@ -45,7 +44,6 @@ void DeferredLighting::createPipeline(bool recompileShaders, VkDescriptorSetLayo
     params.recompileShaders = recompileShaders;
 
     // Tonemap shader uses a hardcoded list of vertices
-
     auto [attributes, inputs] = scene->getLightsAttributeAndBindingDescriptions();
     params.vertexAttributeDescription = attributes;
     params.vertexInputDescription = inputs;
@@ -61,9 +59,30 @@ void DeferredLighting::createPipeline(bool recompileShaders, VkDescriptorSetLayo
 
     // TODO: depth testing, we ought to enable it
     params.useDepthTest = false;
-
     params.descriptorSetLayouts = {mvpLayout, samplersLayout, debugLayout};
     this->pipeline = std::make_unique<GraphicsPipeline>(device, renderPass, 0, params);
+
+    // Second pipeline: used for debug purposes
+    params.shadersList = {
+        {VK_SHADER_STAGE_VERTEX_BIT, "shaders/point-debug.vert"},
+        {VK_SHADER_STAGE_FRAGMENT_BIT, "shaders/point-light.frag"},
+    };
+
+    params.recompileShaders = recompileShaders;
+
+    // Tonemap shader uses a hardcoded list of vertices
+    params.vertexAttributeDescription = {};
+    params.vertexInputDescription = {};
+    params.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    params.extent = swapchain->swapChainExtent;
+
+    // One color attachment, no blending enabled for it
+    params.blending = {{}};
+
+    // TODO: depth testing, we ought to enable it
+    params.useDepthTest = false;
+    params.descriptorSetLayouts = {mvpLayout, samplersLayout, debugLayout};
+    this->debugPipeline = std::make_unique<GraphicsPipeline>(device, renderPass, 0, params);
 }
 
 void DeferredLighting::createRenderPass() {
@@ -146,17 +165,24 @@ void DeferredLighting::recordCommandBuffer(VkCommandBuffer commandBuffer, VkDesc
     renderPassInfo.pClearValues = clearValues.data();
     vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->pipeline);
-    VulkanHelper::setFullViewportScissor(commandBuffer, swapchain->swapChainExtent);
+    GraphicsPipeline *currentPipeline = debug.compositionMode ? debugPipeline.get() : pipeline.get();
 
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, currentPipeline->pipeline);
+
+    VulkanHelper::setFullViewportScissor(commandBuffer, swapchain->swapChainExtent);
     std::array<VkDescriptorSet, 3> neededSets = {
         mvpSet, samplersSets[swapchain->currentFrame], debugSets[swapchain->currentFrame],
     };
 
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-        pipeline->layout, 0, neededSets.size(), neededSets.data(), 0, nullptr);
+        currentPipeline->layout, 0, neededSets.size(), neededSets.data(), 0, nullptr);
 
-    scene->drawPointLights(commandBuffer);
+    if (debug.compositionMode) {
+        vkCmdDraw(commandBuffer, 6, 1, 0, 0);
+    } else {
+        scene->drawPointLights(commandBuffer);
+    }
+
     vkCmdEndRenderPass(commandBuffer);
 }
 

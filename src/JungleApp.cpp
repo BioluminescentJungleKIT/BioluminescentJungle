@@ -424,7 +424,7 @@ void JungleApp::updateUniformBuffers(uint32_t currentImage) {
     ubo.proj[1][1] *= -1;  // because GLM generates OpenGL projections
 
     mvpUBO.update(&ubo, sizeof(ubo), currentImage);
-    lighting->updateBuffers(ubo.proj * ubo.view * ubo.model, cameraPosition, cameraUpVector);
+    lighting->updateBuffers(ubo.proj * ubo.view, cameraPosition, cameraUpVector);
 
     // TODO: is there a better way to integrate this somehow? Too lazy to skip the tonemapping render pass completely.
     if (lighting->debug.compositionMode != 0) {
