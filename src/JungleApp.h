@@ -63,13 +63,10 @@ private:
 
     void setupRenderStageScene(const std::string& sceneName, bool recompileShaders);
 
-    void createScenePipeline(bool recompileShaders);
-
     std::unique_ptr<Tonemap> tonemap;
     std::unique_ptr<DeferredLighting> lighting;
 
     VkRenderPass sceneRPass;
-    std::unique_ptr<GraphicsPipeline> scenePipeline;
     RenderTarget gBuffer;
 
     void createScenePass();
@@ -77,9 +74,7 @@ private:
     std::vector<VkCommandBuffer> commandBuffers;
 
     void createCommandBuffers();
-
     void startRenderPass(VkCommandBuffer commandBuffer, uint32_t currentFrame, VkRenderPass renderPass);
-    void recordSceneCommandBuffer(VkCommandBuffer commandBuffer, uint32_t currentFrame);
 
     bool framebufferResized = false;
 

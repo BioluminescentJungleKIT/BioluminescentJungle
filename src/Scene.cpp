@@ -12,6 +12,7 @@
 #include <vulkan/vulkan_core.h>
 #include <glm/gtc/type_ptr.hpp>
 #include <random>
+#include <memory>
 
 // Definitions of standard names in gltf
 #define BASE_COLOR_TEXTURE "baseColorTexture"
@@ -37,13 +38,6 @@ Scene::Scene(std::string filename) {
 
     if (!err.empty()) {
         throw std::runtime_error("[loader] ERR: " + err);
-    }
-}
-
-void
-Scene::render(VkCommandBuffer commandBuffer, VkPipelineLayout pipelineLayout, VkDescriptorSet globalDescriptorSet) {
-    for (int mesh = 0; mesh < model.meshes.size(); ++mesh) {
-        renderInstances(mesh, commandBuffer, pipelineLayout, globalDescriptorSet);
     }
 }
 
@@ -333,52 +327,33 @@ Scene::getAttributeAndBindingDescriptions() {
     std::vector<VkVertexInputAttributeDescription> attributeDescriptions;
     std::vector<VkVertexInputBindingDescription> bindingDescriptions;
 
+    const auto& addAttributeAndBinding = [&] (int location, int binding, int accessor) {
+        VkVertexInputAttributeDescription description{};
+        description.binding = binding;
+        description.location = location;
+        description.format = VulkanHelper::gltfTypeToVkFormat(model.accessors[accessor].type,
+            model.accessors[accessor].componentType, model.accessors[accessor].normalized);
+        description.offset = 0;
+        attributeDescriptions.push_back(description);
+        bindingDescriptions.push_back(getVertexBindingDescription(accessor, binding));
+    };
+
     // TODO make this more dynamic: allow either for all meshes, use default values in case the attribute is not present
     if (meshNeedsColor(model.meshes[0])) {
         int colorAccessor = model.meshes[0].primitives[0].attributes[FIXED_COLOR];
-        VkVertexInputAttributeDescription colorAttributeDescription{};
-        colorAttributeDescription.binding = 1; // TODO can this really be hardcoded, when getVertexBindingDescription could in theory return a different binding?
-        colorAttributeDescription.location = 1;
-        colorAttributeDescription.format =
-                VulkanHelper::gltfTypeToVkFormat(model.accessors[colorAccessor].type,
-                                                 model.accessors[colorAccessor].componentType,
-                                                 model.accessors[colorAccessor].normalized);
-        colorAttributeDescription.offset = 0;
-        attributeDescriptions.push_back(colorAttributeDescription);
-        bindingDescriptions.push_back(getVertexBindingDescription(colorAccessor, 1));
+        addAttributeAndBinding(1, 1, colorAccessor);
     } else if (meshNeedsTexcoords(model.meshes[0])) {
         int texcoordAccessor = model.meshes[0].primitives[0].attributes[TEXCOORD0];
-        VkVertexInputAttributeDescription texcoordAttributeDescription{};
-        texcoordAttributeDescription.binding = 1;
-        texcoordAttributeDescription.location = 1;
-        texcoordAttributeDescription.format =
-                VulkanHelper::gltfTypeToVkFormat(model.accessors[texcoordAccessor].type,
-                                                 model.accessors[texcoordAccessor].componentType,
-                                                 model.accessors[texcoordAccessor].normalized);
-        texcoordAttributeDescription.offset = 0;
-        attributeDescriptions.push_back(texcoordAttributeDescription);
-        bindingDescriptions.push_back(getVertexBindingDescription(texcoordAccessor, 1));
+        addAttributeAndBinding(1, 1, texcoordAccessor);
     }
 
     int positionAccessor = model.meshes[0].primitives[0].attributes["POSITION"];
-    VkVertexInputAttributeDescription positionAttributeDescription{};
-    positionAttributeDescription.binding = 0;
-    positionAttributeDescription.location = 0;
-    positionAttributeDescription.format = VulkanHelper::gltfTypeToVkFormat(model.accessors[positionAccessor].type,
-                                                                           model.accessors[positionAccessor].componentType,
-                                                                           model.accessors[positionAccessor].normalized);
-    positionAttributeDescription.offset = 0;
-    attributeDescriptions.push_back(positionAttributeDescription);
-    bindingDescriptions.push_back(getVertexBindingDescription(positionAccessor, 0));
+    addAttributeAndBinding(0, 0, positionAccessor);
 
     return {attributeDescriptions, bindingDescriptions};
 }
 
 VkVertexInputBindingDescription Scene::getVertexBindingDescription(int accessor, int bindingId) {
-    if (vertexBindingDescriptions.contains(accessor)) {
-        return vertexBindingDescriptions[accessor];
-    }
-
     VkVertexInputBindingDescription bindingDescription;
 
     bindingDescription.binding = bindingId;
@@ -387,9 +362,6 @@ VkVertexInputBindingDescription Scene::getVertexBindingDescription(int accessor,
             model.accessors[accessor].componentType,
             model.bufferViews[model.accessors[accessor].bufferView].byteStride);
     bindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-
-    vertexBindingDescriptions[accessor] = bindingDescription;
-
     return bindingDescription;
 }
 
@@ -566,4 +538,48 @@ void Scene::destroyTextures(VulkanDevice *device) {
 
 std::string Scene::queryShaderName() {
     return meshNeedsColor(model.meshes[0]) ? "shaders/shader" : "shaders/simple-texture";
+}
+
+void Scene::destroyAll(VulkanDevice *device) {
+    destroyDescriptorSetLayout(*device);
+    destroyTextures(device);
+    destroyBuffers(*device);
+    pipeline.reset();
+}
+
+void Scene::createPipelines(VulkanDevice* device, Swapchain* swapchain, VkRenderPass renderPass,
+    VkDescriptorSetLayout mvpLayout, bool forceRecompile)
+{
+    PipelineParameters params;
+
+    std::string shaderNames = queryShaderName();
+    params.shadersList = {
+        {VK_SHADER_STAGE_VERTEX_BIT, shaderNames + ".vert"},
+        {VK_SHADER_STAGE_FRAGMENT_BIT, shaderNames + ".frag"},
+    };
+
+    params.recompileShaders = forceRecompile;
+
+    auto [attributeDescriptions, bindingDescriptions] = getAttributeAndBindingDescriptions();
+    params.vertexAttributeDescription = attributeDescriptions;
+    params.vertexInputDescription = bindingDescriptions;
+    params.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    params.extent = swapchain->swapChainExtent;
+
+    // One color attachment, no blending enabled for it
+    params.blending = {{}};
+    params.useDepthTest = true;
+
+    params.descriptorSetLayouts = getDescriptorSetLayouts(*device);
+    params.descriptorSetLayouts.insert(params.descriptorSetLayouts.begin(), mvpLayout);
+    this->pipeline = std::make_unique<GraphicsPipeline>(device, renderPass, 0, params);
+}
+
+void Scene::recordCommandBuffer(VkCommandBuffer commandBuffer, VkDescriptorSet mvpSet, Swapchain *swapchain)
+{
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->pipeline);
+    VulkanHelper::setFullViewportScissor(commandBuffer, swapchain->swapChainExtent);
+    for (int mesh = 0; mesh < model.meshes.size(); ++mesh) {
+        renderInstances(mesh, commandBuffer, pipeline->layout, mvpSet);
+    }
 }

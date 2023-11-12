@@ -5,11 +5,13 @@
 #ifndef JUNGLE_SCENE_H
 #define JUNGLE_SCENE_H
 
+#include <memory>
 #include <vulkan/vulkan.h>
 #include <vector>
 #include <glm/glm.hpp>
 #include <vulkan/vulkan_core.h>
 #include "Pipeline.h"
+#include "Swapchain.h"
 #include "tiny_gltf.h"
 #include "PhysicalDevice.h"
 
@@ -30,26 +32,27 @@ public:
 
     explicit Scene(std::string filename);
 
+    void createPipelines(VulkanDevice* device, Swapchain* swapchain, VkRenderPass renderPass,
+        VkDescriptorSetLayout mvpLayout, bool forceRecompile);
+
+    // free up all resources
+    void destroyAll(VulkanDevice *device);
+
     void setupBuffers(VulkanDevice *device);
 
     void setupTextures(VulkanDevice* device);
     void destroyTextures(VulkanDevice* device);
     std::string queryShaderName();
 
-    void
-    setupDescriptorSets(VkDevice device, VkDescriptorPool descriptorPool);
-
-    void render(VkCommandBuffer commandBuffer, VkPipelineLayout pipelineLayout, VkDescriptorSet globalDescriptorSet);
+    void setupDescriptorSets(VkDevice device, VkDescriptorPool descriptorPool);
+    void recordCommandBuffer(
+        VkCommandBuffer commandBuffer, VkDescriptorSet mvpSet, Swapchain *swapchain);
 
     void destroyBuffers(VkDevice device);
-
-    std::tuple<std::vector<VkVertexInputAttributeDescription>, std::vector<VkVertexInputBindingDescription>>
-    getAttributeAndBindingDescriptions();
     std::tuple<std::vector<VkVertexInputAttributeDescription>, std::vector<VkVertexInputBindingDescription>>
     getLightsAttributeAndBindingDescriptions();
 
     RequiredDescriptors getNumDescriptors();
-    std::vector<VkDescriptorSetLayout> getDescriptorSetLayouts(VkDevice device);
 
     void destroyDescriptorSetLayout(VkDevice device);
     void computeCameraPos(glm::vec3& lookAt, glm::vec3& cameraPos, float& fov);
@@ -67,6 +70,8 @@ public:
 
     static bool addArtificialLight;
 
+    std::unique_ptr<GraphicsPipeline> pipeline;
+
   private:
     tinygltf::TinyGLTF loader;
     tinygltf::Model model;
@@ -74,12 +79,14 @@ public:
     std::vector<VkBuffer> buffers;
     std::vector<VkDeviceMemory> bufferMemories;
 
-    std::map<int, VkVertexInputBindingDescription> vertexBindingDescriptions;
-
     void renderInstances(int mesh, VkCommandBuffer commandBuffer,
                          VkPipelineLayout pipelineLayout, VkDescriptorSet globalDescriptorSet);
 
     void generateTransforms(int nodeIndex, glm::mat4 oldTransform, int maxRecursion);
+
+    std::tuple<std::vector<VkVertexInputAttributeDescription>, std::vector<VkVertexInputBindingDescription>>
+    getAttributeAndBindingDescriptions();
+    std::vector<VkDescriptorSetLayout> getDescriptorSetLayouts(VkDevice device);
 
     VkVertexInputBindingDescription getVertexBindingDescription(int accessor, int bindingId);
     void setupUniformBuffers(VulkanDevice *device);
