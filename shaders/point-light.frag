@@ -29,7 +29,7 @@ vec3 calculatePosition() {
     vec4 ndc = vec4(
             (gl_FragCoord.x / info.viewportWidth - 0.5) * 2.0,
             (gl_FragCoord.y / info.viewportHeight - 0.5) * 2.0,
-            (depth - 0.5) * 2.0, 1.0);
+            depth, 1.0);
 
     // Convert NDC throuch inverse clip coordinates to view coordinates
     vec4 clip = info.inverseMVP * ndc;
