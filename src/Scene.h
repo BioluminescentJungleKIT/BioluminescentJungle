@@ -25,6 +25,26 @@ struct LightData {
     glm::float32 intensity;
 };
 
+// We may need multiple pipelines for the various parts of the different meshes in the scene.
+// The pipieline description object is used to keep track of all created pipelines.
+struct PipelineDescription {
+    std::optional<int> vertexPosAccessor;
+    std::optional<int> vertexTexcoordsAccessor;
+    std::optional<int> vertexFixedColorAccessor;
+
+    auto toTuple() const {
+        return std::make_tuple(vertexPosAccessor, vertexTexcoordsAccessor, vertexFixedColorAccessor);
+    }
+
+    bool operator < (const PipelineDescription& other) const {
+        return toTuple() < other.toTuple();
+    }
+
+    bool operator == (const PipelineDescription& other) const {
+        return toTuple() == other.toTuple();
+    }
+};
+
 // load glft using loader. provide definitions and functions for creating pipeline and rendering it.
 class Scene {
 public:
@@ -41,7 +61,6 @@ public:
 
     void setupTextures();
     void destroyTextures();
-    std::string queryShaderName();
 
     void setupDescriptorSets(VkDescriptorPool descriptorPool);
     void recordCommandBuffer(
@@ -66,10 +85,7 @@ public:
     };
 
     void drawPointLights(VkCommandBuffer buffer);
-
     static bool addArtificialLight;
-
-    std::unique_ptr<GraphicsPipeline> pipeline;
 
   private:
     tinygltf::TinyGLTF loader;
@@ -80,14 +96,20 @@ public:
     std::vector<VkBuffer> buffers;
     std::vector<VkDeviceMemory> bufferMemories;
 
-    void renderInstances(int mesh, VkCommandBuffer commandBuffer,
-                         VkPipelineLayout pipelineLayout, VkDescriptorSet globalDescriptorSet);
+    std::map<PipelineDescription, std::unique_ptr<GraphicsPipeline>> pipelines;
+
+    // meshPrimitivesWithPipeline[description][meshId] -> list of primitives of the mesh with given pipeline
+    std::map<PipelineDescription, std::map<int, std::vector<int>>> meshPrimitivesWithPipeline;
+    PipelineDescription getPipelineDescriptionForPrimitive(const tinygltf::Primitive& primitive);
+
+    void createPipelinesWithDescription(PipelineDescription descr,
+        VkRenderPass renderPass, VkDescriptorSetLayout mvpLayout, bool forceRecompile);
+
+    void renderPrimitiveInstances(int meshId, int primitiveId,
+        VkCommandBuffer commandBuffer, const PipelineDescription& descr, VkPipelineLayout pipelineLayout);
 
     void generateTransforms(int nodeIndex, glm::mat4 oldTransform, int maxRecursion);
-
-    std::tuple<std::vector<VkVertexInputAttributeDescription>, std::vector<VkVertexInputBindingDescription>>
-    getAttributeAndBindingDescriptions();
-    std::vector<VkDescriptorSetLayout> getDescriptorSetLayouts();
+    void ensureDescriptorSetLayouts();
 
     VkVertexInputBindingDescription getVertexBindingDescription(int accessor, int bindingId);
     void setupUniformBuffers();

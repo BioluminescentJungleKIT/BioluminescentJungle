@@ -14,7 +14,7 @@ static shaderc_shader_kind getShadercType(VkShaderStageFlagBits stageType) {
 
         default:
           // TODO: we currently do not need all stages
-          throw "Unsupported shader type!";
+          throw std::runtime_error("Unsupported shader type!");
           /*
              case VK_SHADER_STAGE_COMPUTE_BIT:
              case VK_SHADER_STAGE_ALL_GRAPHICS:
