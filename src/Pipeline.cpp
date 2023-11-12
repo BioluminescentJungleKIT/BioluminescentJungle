@@ -197,6 +197,8 @@ GraphicsPipeline::GraphicsPipeline(VulkanDevice* device, VkRenderPass renderPass
     this->device = device;
 }
 
+std::vector<std::pair<std::string, std::string>> GraphicsPipeline::errorsFromShaderCompilation;
+
 GraphicsPipeline::~GraphicsPipeline() {
     vkDestroyPipeline(*device, pipeline, nullptr);
     vkDestroyPipelineLayout(*device, layout, nullptr);

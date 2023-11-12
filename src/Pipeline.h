@@ -41,7 +41,8 @@ class GraphicsPipeline {
     GraphicsPipeline(VulkanDevice* device, VkRenderPass renderPass, int subpassId, const PipelineParameters& params);
     ~GraphicsPipeline();
 
-    std::vector<std::pair<std::string, std::string>> errorsFromShaderCompilation;
+    static std::vector<std::pair<std::string, std::string>> errorsFromShaderCompilation;
+
     VkPipeline pipeline;
     VkPipelineLayout layout;
 

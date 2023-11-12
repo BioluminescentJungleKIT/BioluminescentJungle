@@ -112,7 +112,7 @@ void JungleApp::drawImGUI() {
         ImGui::ShowDemoWindow(&showDemoWindow);
     }
 
-    for (auto& [stage, msg] : scene.pipeline->errorsFromShaderCompilation) {
+    for (auto& [stage, msg] : GraphicsPipeline::errorsFromShaderCompilation) {
         if (ImGui::Begin(stage.c_str())) {
             ImGui::Text("%s", msg.c_str());
         }
@@ -127,6 +127,7 @@ void JungleApp::drawFrame() {
     }
 
     if (forceReloadShaders) {
+        GraphicsPipeline::errorsFromShaderCompilation.clear();
         recreateGraphicsPipeline();
     }
 
