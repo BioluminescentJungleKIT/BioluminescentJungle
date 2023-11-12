@@ -5,11 +5,13 @@
 #ifndef JUNGLE_SCENE_H
 #define JUNGLE_SCENE_H
 
+#include <memory>
 #include <vulkan/vulkan.h>
 #include <vector>
 #include <glm/glm.hpp>
 #include <vulkan/vulkan_core.h>
 #include "Pipeline.h"
+#include "Swapchain.h"
 #include "tiny_gltf.h"
 #include "PhysicalDevice.h"
 
@@ -23,35 +25,54 @@ struct LightData {
     glm::float32 intensity;
 };
 
+// We may need multiple pipelines for the various parts of the different meshes in the scene.
+// The pipieline description object is used to keep track of all created pipelines.
+struct PipelineDescription {
+    std::optional<int> vertexPosAccessor;
+    std::optional<int> vertexTexcoordsAccessor;
+    std::optional<int> vertexFixedColorAccessor;
+
+    auto toTuple() const {
+        return std::make_tuple(vertexPosAccessor, vertexTexcoordsAccessor, vertexFixedColorAccessor);
+    }
+
+    bool operator < (const PipelineDescription& other) const {
+        return toTuple() < other.toTuple();
+    }
+
+    bool operator == (const PipelineDescription& other) const {
+        return toTuple() == other.toTuple();
+    }
+};
+
 // load glft using loader. provide definitions and functions for creating pipeline and rendering it.
 class Scene {
 public:
     explicit Scene() = default;
 
-    explicit Scene(std::string filename);
+    explicit Scene(VulkanDevice *device, Swapchain *swapchain, std::string filename);
 
-    void setupBuffers(VulkanDevice *device);
+    void createPipelines(VkRenderPass renderPass, VkDescriptorSetLayout mvpLayout, bool forceRecompile);
 
-    void setupTextures(VulkanDevice* device);
-    void destroyTextures(VulkanDevice* device);
-    std::string queryShaderName();
+    // free up all resources
+    void destroyAll();
 
-    void
-    setupDescriptorSets(VkDevice device, VkDescriptorPool descriptorPool);
+    void setupBuffers();
 
-    void render(VkCommandBuffer commandBuffer, VkPipelineLayout pipelineLayout, VkDescriptorSet globalDescriptorSet);
+    void setupTextures();
+    void destroyTextures();
 
-    void destroyBuffers(VkDevice device);
+    void setupDescriptorSets(VkDescriptorPool descriptorPool);
+    void recordCommandBuffer(
+        VkCommandBuffer commandBuffer, VkDescriptorSet mvpSet);
 
-    std::tuple<std::vector<VkVertexInputAttributeDescription>, std::vector<VkVertexInputBindingDescription>>
-    getAttributeAndBindingDescriptions();
+    void destroyBuffers();
     std::tuple<std::vector<VkVertexInputAttributeDescription>, std::vector<VkVertexInputBindingDescription>>
     getLightsAttributeAndBindingDescriptions();
 
     RequiredDescriptors getNumDescriptors();
-    std::vector<VkDescriptorSetLayout> getDescriptorSetLayouts(VkDevice device);
 
-    void destroyDescriptorSetLayout(VkDevice device);
+    void destroyDescriptorSetLayout();
     void computeCameraPos(glm::vec3& lookAt, glm::vec3& cameraPos, float& fov);
 
     struct LoadedTexture
@@ -64,25 +85,34 @@ public:
     };
 
     void drawPointLights(VkCommandBuffer buffer);
-
     static bool addArtificialLight;
 
   private:
     tinygltf::TinyGLTF loader;
     tinygltf::Model model;
+    VulkanDevice *device;
+    Swapchain *swapchain;
 
     std::vector<VkBuffer> buffers;
     std::vector<VkDeviceMemory> bufferMemories;
 
-    std::map<int, VkVertexInputBindingDescription> vertexBindingDescriptions;
+    std::map<PipelineDescription, std::unique_ptr<GraphicsPipeline>> pipelines;
 
-    void renderInstances(int mesh, VkCommandBuffer commandBuffer,
-                         VkPipelineLayout pipelineLayout, VkDescriptorSet globalDescriptorSet);
+    // meshPrimitivesWithPipeline[description][meshId] -> list of primitives of the mesh with given pipeline
+    std::map<PipelineDescription, std::map<int, std::vector<int>>> meshPrimitivesWithPipeline;
+    PipelineDescription getPipelineDescriptionForPrimitive(const tinygltf::Primitive& primitive);
+
+    void createPipelinesWithDescription(PipelineDescription descr,
+        VkRenderPass renderPass, VkDescriptorSetLayout mvpLayout, bool forceRecompile);
+
+    void renderPrimitiveInstances(int meshId, int primitiveId,
+        VkCommandBuffer commandBuffer, const PipelineDescription& descr, VkPipelineLayout pipelineLayout);
 
     void generateTransforms(int nodeIndex, glm::mat4 oldTransform, int maxRecursion);
+    void ensureDescriptorSetLayouts();
 
     VkVertexInputBindingDescription getVertexBindingDescription(int accessor, int bindingId);
-    void setupUniformBuffers(VulkanDevice *device);
+    void setupUniformBuffers();
 
     std::map<std::vector<int>, int> transformBuffers;
 

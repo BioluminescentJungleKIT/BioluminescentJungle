@@ -9,26 +9,43 @@
 #include "VulkanHelper.h"
 #include <glm/gtc/matrix_transform.hpp>
 #include <iomanip>
+#include <stdexcept>
 #include <vulkan/vulkan_core.h>
 #include <glm/gtc/type_ptr.hpp>
 #include <random>
+#include <memory>
 
 // Definitions of standard names in gltf
+#define POSITION "POSITION"
 #define BASE_COLOR_TEXTURE "baseColorTexture"
 #define FIXED_COLOR "COLOR_0"
 #define TEXCOORD0 "TEXCOORD_0"
 
 const int MAX_RECURSION = 10;
 
-static bool meshNeedsColor(const tinygltf::Mesh &mesh) {
-    return mesh.primitives[0].attributes.contains(FIXED_COLOR);
+PipelineDescription Scene::getPipelineDescriptionForPrimitive(const tinygltf::Primitive& primitive) {
+    PipelineDescription descr;
+
+    const auto &attributes = primitive.attributes;
+
+    if (attributes.count(POSITION)) {
+        descr.vertexPosAccessor = attributes.at(POSITION);
+    }
+
+    if (attributes.count(TEXCOORD0) && model.materials[primitive.material].values.count(BASE_COLOR_TEXTURE)) {
+        descr.vertexTexcoordsAccessor = attributes.at(TEXCOORD0);
+    } else if (attributes.count(FIXED_COLOR)) {
+        descr.vertexFixedColorAccessor = attributes.at(FIXED_COLOR);
+    }
+
+    return descr;
 }
 
-static bool meshNeedsTexcoords(const tinygltf::Mesh &mesh) {
-    return mesh.primitives[0].attributes.contains(TEXCOORD0);
-}
 
-Scene::Scene(std::string filename) {
+Scene::Scene(VulkanDevice *device, Swapchain *swapchain, std::string filename) {
+    this->device = device;
+    this->swapchain = swapchain;
+
     std::string err, warn;
     loader.LoadASCIIFromFile(&model, &err, &warn, filename);
     if (!warn.empty()) {
@@ -38,70 +55,96 @@ Scene::Scene(std::string filename) {
     if (!err.empty()) {
         throw std::runtime_error("[loader] ERR: " + err);
     }
-}
 
-void
-Scene::render(VkCommandBuffer commandBuffer, VkPipelineLayout pipelineLayout, VkDescriptorSet globalDescriptorSet) {
-    for (int mesh = 0; mesh < model.meshes.size(); ++mesh) {
-        renderInstances(mesh, commandBuffer, pipelineLayout, globalDescriptorSet);
+    // We precompute a list of mesh primitives to be rendered with each of the generated programs.
+    for (size_t i = 0; i < model.meshes.size(); i++) {
+        for (size_t j = 0; j < model.meshes[i].primitives.size(); j++) {
+            auto descr = getPipelineDescriptionForPrimitive(model.meshes[i].primitives[j]);
+            meshPrimitivesWithPipeline[descr][i].emplace_back(j);
+        }
     }
 }
 
-void Scene::renderInstances(int mesh, VkCommandBuffer commandBuffer, VkPipelineLayout pipelineLayout,
-                            VkDescriptorSet globalDescriptorSet) {
-    if (meshTransforms.find(mesh) == meshTransforms.end()) return; // 0 instances. skip.
+void Scene::recordCommandBuffer(VkCommandBuffer commandBuffer, VkDescriptorSet mvpSet) {
+    // Draw all primitives with all available pipelines.
+    for (auto& [programDescr, meshMap] : meshPrimitivesWithPipeline) {
+        auto& pipeline = pipelines[programDescr];
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->pipeline);
+        VulkanHelper::setFullViewportScissor(commandBuffer, swapchain->swapChainExtent);
 
-    // bind transformations
-    bindingDescriptorSets.clear();
-    bindingDescriptorSets.push_back(globalDescriptorSet);
-    bindingDescriptorSets.push_back(uboDescriptorSets[descriptorSetsMap[mesh]]);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0,
-                            bindingDescriptorSets.size(), bindingDescriptorSets.data(), 0, nullptr);
+        for (auto& [meshId, primitivesList] : meshMap) {
+            // bind transformations for each mesh
+            bindingDescriptorSets.clear();
+            bindingDescriptorSets.push_back(mvpSet);
+            bindingDescriptorSets.push_back(uboDescriptorSets[descriptorSetsMap[meshId]]);
+            vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->layout, 0,
+                bindingDescriptorSets.size(), bindingDescriptorSets.data(), 0, nullptr);
 
-    const char *colorAttr = meshNeedsColor(model.meshes[mesh]) ? FIXED_COLOR : TEXCOORD0;
-    for (auto primitive: model.meshes[mesh].primitives) {
-        if (primitive.attributes.contains(TEXCOORD0)) {
-            auto &material = model.materials[primitive.material];
-            auto it = material.values.find(BASE_COLOR_TEXTURE);
-            if (it != material.values.end()) {
-                // We have a texture here
-                const auto &textureIdx = it->second.TextureIndex();
-                const tinygltf::Texture &gTexture = model.textures[textureIdx];
-
-                if (!textures.count(gTexture.source)) {
-                    throw "Texture not found at runtime??";
-                }
-
-                vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                        pipelineLayout, 2, 1, &textures[gTexture.source].dSet, 0, nullptr);
+            for (auto& primitiveId : primitivesList) {
+                // Bind the specific texture for each primitive
+                renderPrimitiveInstances(meshId, primitiveId, commandBuffer, programDescr, pipeline->layout);
             }
         }
+    }
+}
 
-        std::vector<VkBuffer> vertex_buffers = {
-                buffers[model.bufferViews[model.accessors[primitive.attributes["POSITION"]].bufferView].buffer],
-                buffers[model.bufferViews[model.accessors[primitive.attributes[colorAttr]].bufferView].buffer],
-        };
-        std::vector<VkDeviceSize> offsets = {
-                model.bufferViews[model.accessors[primitive.attributes["POSITION"]].bufferView].byteOffset,
-                model.bufferViews[model.accessors[primitive.attributes[colorAttr]].bufferView].byteOffset,
-        };
+void Scene::renderPrimitiveInstances(int meshId, int primitiveId, VkCommandBuffer commandBuffer,
+    const PipelineDescription& descr, VkPipelineLayout pipelineLayout) {
+    if (meshTransforms.find(meshId) == meshTransforms.end()) return; // 0 instances. skip.
+                                                                     //
+    auto& primitive = model.meshes[meshId].primitives[primitiveId];
+    if (descr.vertexTexcoordsAccessor.has_value()) {
+        auto &material = model.materials[primitive.material];
+        auto it = material.values.find(BASE_COLOR_TEXTURE);
+        if (it != material.values.end()) {
+            // We have a texture here
+            const auto &textureIdx = it->second.TextureIndex();
+            const tinygltf::Texture &gTexture = model.textures[textureIdx];
 
-        vkCmdBindVertexBuffers(commandBuffer, 0, vertex_buffers.size(), vertex_buffers.data(), offsets.data());
-        if (primitive.indices >= 0) {
-            auto indexAccessorIndex = primitive.indices;
-            auto indexBufferViewIndex = model.accessors[indexAccessorIndex].bufferView;
-            auto indexBufferIndex = model.bufferViews[indexBufferViewIndex].buffer;
-            auto indexBuffer = buffers[indexBufferIndex];
-            auto indexBufferOffset = model.bufferViews[indexBufferViewIndex].byteOffset;
-            uint32_t numIndices = model.accessors[indexAccessorIndex].count;
-            auto indexBufferType = VulkanHelper::gltfTypeToVkIndexType(
-                    model.accessors[indexAccessorIndex].componentType);
-            vkCmdBindIndexBuffer(commandBuffer, indexBuffer, indexBufferOffset, indexBufferType);
+            if (!textures.count(gTexture.source)) {
+                throw std::runtime_error("Texture not found at runtime??");
+            }
 
-            vkCmdDrawIndexed(commandBuffer, numIndices, meshTransforms[mesh].size(), 0, 0, 0);
+            vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                pipelineLayout, 2, 1, &textures[gTexture.source].dSet, 0, nullptr);
         } else {
-            throw std::runtime_error("Non-indexed geometry is currently not supported.");
+            throw std::runtime_error("Material has texture coordinates but no base color?");
         }
+    }
+
+    std::vector<VkBuffer> vertexBuffers;
+    std::vector<VkDeviceSize> offsets;
+
+    const auto& addBufferOffset = [&](const char* attribute) {
+        const auto& bufferView = model.bufferViews[model.accessors[primitive.attributes[attribute]].bufferView];
+        vertexBuffers.push_back(buffers[bufferView.buffer]);
+        offsets.push_back(bufferView.byteOffset);
+    };
+
+    if (descr.vertexPosAccessor.has_value()) {
+        addBufferOffset(POSITION);
+    }
+    if (descr.vertexFixedColorAccessor.has_value()) {
+        addBufferOffset(FIXED_COLOR);
+    } else if (descr.vertexTexcoordsAccessor.has_value()) {
+        addBufferOffset(TEXCOORD0);
+    }
+
+    vkCmdBindVertexBuffers(commandBuffer, 0, vertexBuffers.size(), vertexBuffers.data(), offsets.data());
+
+    if (primitive.indices >= 0) {
+        auto indexAccessorIndex = primitive.indices;
+        auto indexBufferViewIndex = model.accessors[indexAccessorIndex].bufferView;
+        auto indexBufferIndex = model.bufferViews[indexBufferViewIndex].buffer;
+        auto indexBuffer = buffers[indexBufferIndex];
+        auto indexBufferOffset = model.bufferViews[indexBufferViewIndex].byteOffset;
+        uint32_t numIndices = model.accessors[indexAccessorIndex].count;
+        auto indexBufferType = VulkanHelper::gltfTypeToVkIndexType(
+            model.accessors[indexAccessorIndex].componentType);
+        vkCmdBindIndexBuffer(commandBuffer, indexBuffer, indexBufferOffset, indexBufferType);
+        vkCmdDrawIndexed(commandBuffer, numIndices, meshTransforms[meshId].size(), 0, 0, 0);
+    } else {
+        throw std::runtime_error("Non-indexed geometry is currently not supported.");
     }
 }
 
@@ -113,9 +156,9 @@ void Scene::drawPointLights(VkCommandBuffer commandBuffer) {
     }
 }
 
-void Scene::setupDescriptorSets(VkDevice device, VkDescriptorPool descriptorPool) {
+void Scene::setupDescriptorSets(VkDescriptorPool descriptorPool) {
     uboDescriptorSets = VulkanHelper::createDescriptorSetsFromLayout(
-        device, descriptorPool, uboDescriptorSetLayout, meshTransforms.size());
+        *device, descriptorPool, uboDescriptorSetLayout, meshTransforms.size());
 
     int i = 0;
     for (int mesh = 0; mesh < model.meshes.size(); mesh++) {
@@ -139,14 +182,14 @@ void Scene::setupDescriptorSets(VkDevice device, VkDescriptorPool descriptorPool
         descriptorWrite.pImageInfo = nullptr; // Optional
         descriptorWrite.pTexelBufferView = nullptr; // Optional
 
-        vkUpdateDescriptorSets(device, 1, &descriptorWrite, 0, nullptr);
+        vkUpdateDescriptorSets(*device, 1, &descriptorWrite, 0, nullptr);
     }
 
     if (textures.empty()) {
         return;
     }
 
-    auto textureDescriptorSets = VulkanHelper::createDescriptorSetsFromLayout(device, descriptorPool,
+    auto textureDescriptorSets = VulkanHelper::createDescriptorSetsFromLayout(*device, descriptorPool,
         textureDescriptorSetLayout, textures.size());
 
     i = 0;
@@ -164,7 +207,7 @@ void Scene::setupDescriptorSets(VkDevice device, VkDescriptorPool descriptorPool
         descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         descriptorWrite.descriptorCount = 1;
         descriptorWrite.pImageInfo = &imageInfo;
-        vkUpdateDescriptorSets(device, 1, &descriptorWrite, 0, nullptr);
+        vkUpdateDescriptorSets(*device, 1, &descriptorWrite, 0, nullptr);
 
         tex.dSet = textureDescriptorSets[i];
         ++i;
@@ -178,7 +221,7 @@ RequiredDescriptors Scene::getNumDescriptors() {
     };
 }
 
-void Scene::setupBuffers(VulkanDevice *device) {
+void Scene::setupBuffers() {
     unsigned long numBuffers = model.buffers.size();
     buffers.resize(model.buffers.size());
     bufferMemories.resize(model.buffers.size());
@@ -189,6 +232,7 @@ void Scene::setupBuffers(VulkanDevice *device) {
                                                                                 VK_BUFFER_USAGE_INDEX_BUFFER_BIT |
                                                                                 VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
                                    VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, buffers[i], bufferMemories[i]);
+
         VulkanHelper::uploadBuffer(*device, device->physicalDevice, bufferSize, buffers[i],
                                    gltfBuffer.data.data(), device->commandPool, device->graphicsQueue);
     }
@@ -214,7 +258,7 @@ void Scene::setupBuffers(VulkanDevice *device) {
         }
     }
 
-    setupUniformBuffers(device);
+    setupUniformBuffers();
 }
 
 bool Scene::addArtificialLight = false;
@@ -255,7 +299,7 @@ void Scene::generateTransforms(int nodeIndex, glm::mat4 oldTransform, int maxRec
     }
 }
 
-void Scene::setupUniformBuffers(VulkanDevice *device) {
+void Scene::setupUniformBuffers() {
     for (auto [mesh, transforms]: meshTransforms) {
         VkBuffer buffer;
         VkDeviceMemory bufferMemory;
@@ -288,9 +332,9 @@ void Scene::setupUniformBuffers(VulkanDevice *device) {
     }
 }
 
-void Scene::destroyBuffers(VkDevice device) {
-    for (auto buffer: buffers) vkDestroyBuffer(device, buffer, nullptr);
-    for (auto bufferMemory: bufferMemories) vkFreeMemory(device, bufferMemory, nullptr);
+void Scene::destroyBuffers() {
+    for (auto buffer: buffers) vkDestroyBuffer(*device, buffer, nullptr);
+    for (auto bufferMemory: bufferMemories) vkFreeMemory(*device, bufferMemory, nullptr);
 }
 
 std::tuple<std::vector<VkVertexInputAttributeDescription>, std::vector<VkVertexInputBindingDescription>>
@@ -328,57 +372,7 @@ Scene::getLightsAttributeAndBindingDescriptions() {
     return {attributeDescriptions, bindingDescriptions};
 }
 
-std::tuple<std::vector<VkVertexInputAttributeDescription>, std::vector<VkVertexInputBindingDescription>>
-Scene::getAttributeAndBindingDescriptions() {
-    std::vector<VkVertexInputAttributeDescription> attributeDescriptions;
-    std::vector<VkVertexInputBindingDescription> bindingDescriptions;
-
-    // TODO make this more dynamic: allow either for all meshes, use default values in case the attribute is not present
-    if (meshNeedsColor(model.meshes[0])) {
-        int colorAccessor = model.meshes[0].primitives[0].attributes[FIXED_COLOR];
-        VkVertexInputAttributeDescription colorAttributeDescription{};
-        colorAttributeDescription.binding = 1; // TODO can this really be hardcoded, when getVertexBindingDescription could in theory return a different binding?
-        colorAttributeDescription.location = 1;
-        colorAttributeDescription.format =
-                VulkanHelper::gltfTypeToVkFormat(model.accessors[colorAccessor].type,
-                                                 model.accessors[colorAccessor].componentType,
-                                                 model.accessors[colorAccessor].normalized);
-        colorAttributeDescription.offset = 0;
-        attributeDescriptions.push_back(colorAttributeDescription);
-        bindingDescriptions.push_back(getVertexBindingDescription(colorAccessor, 1));
-    } else if (meshNeedsTexcoords(model.meshes[0])) {
-        int texcoordAccessor = model.meshes[0].primitives[0].attributes[TEXCOORD0];
-        VkVertexInputAttributeDescription texcoordAttributeDescription{};
-        texcoordAttributeDescription.binding = 1;
-        texcoordAttributeDescription.location = 1;
-        texcoordAttributeDescription.format =
-                VulkanHelper::gltfTypeToVkFormat(model.accessors[texcoordAccessor].type,
-                                                 model.accessors[texcoordAccessor].componentType,
-                                                 model.accessors[texcoordAccessor].normalized);
-        texcoordAttributeDescription.offset = 0;
-        attributeDescriptions.push_back(texcoordAttributeDescription);
-        bindingDescriptions.push_back(getVertexBindingDescription(texcoordAccessor, 1));
-    }
-
-    int positionAccessor = model.meshes[0].primitives[0].attributes["POSITION"];
-    VkVertexInputAttributeDescription positionAttributeDescription{};
-    positionAttributeDescription.binding = 0;
-    positionAttributeDescription.location = 0;
-    positionAttributeDescription.format = VulkanHelper::gltfTypeToVkFormat(model.accessors[positionAccessor].type,
-                                                                           model.accessors[positionAccessor].componentType,
-                                                                           model.accessors[positionAccessor].normalized);
-    positionAttributeDescription.offset = 0;
-    attributeDescriptions.push_back(positionAttributeDescription);
-    bindingDescriptions.push_back(getVertexBindingDescription(positionAccessor, 0));
-
-    return {attributeDescriptions, bindingDescriptions};
-}
-
 VkVertexInputBindingDescription Scene::getVertexBindingDescription(int accessor, int bindingId) {
-    if (vertexBindingDescriptions.contains(accessor)) {
-        return vertexBindingDescriptions[accessor];
-    }
-
     VkVertexInputBindingDescription bindingDescription;
 
     bindingDescription.binding = bindingId;
@@ -387,14 +381,10 @@ VkVertexInputBindingDescription Scene::getVertexBindingDescription(int accessor,
             model.accessors[accessor].componentType,
             model.bufferViews[model.accessors[accessor].bufferView].byteStride);
     bindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-
-    vertexBindingDescriptions[accessor] = bindingDescription;
-
     return bindingDescription;
 }
 
-std::vector<VkDescriptorSetLayout> Scene::getDescriptorSetLayouts(VkDevice device) {
-
+void Scene::ensureDescriptorSetLayouts() {
     if (uboDescriptorSetLayout == VK_NULL_HANDLE) {
         VkDescriptorSetLayoutBinding uboLayoutBinding{};
         uboLayoutBinding.binding = 0;
@@ -408,7 +398,7 @@ std::vector<VkDescriptorSetLayout> Scene::getDescriptorSetLayouts(VkDevice devic
         layoutInfo.bindingCount = 1;
         layoutInfo.pBindings = &uboLayoutBinding;
 
-        VK_CHECK_RESULT(vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &uboDescriptorSetLayout))
+        VK_CHECK_RESULT(vkCreateDescriptorSetLayout(*device, &layoutInfo, nullptr, &uboDescriptorSetLayout))
     }
 
     if (textureDescriptorSetLayout == VK_NULL_HANDLE) {
@@ -424,15 +414,13 @@ std::vector<VkDescriptorSetLayout> Scene::getDescriptorSetLayouts(VkDevice devic
         layoutInfo.bindingCount = 1;
         layoutInfo.pBindings = &samplerLayoutBinding;
 
-        VK_CHECK_RESULT(vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &textureDescriptorSetLayout))
+        VK_CHECK_RESULT(vkCreateDescriptorSetLayout(*device, &layoutInfo, nullptr, &textureDescriptorSetLayout))
     }
-
-    return {uboDescriptorSetLayout, textureDescriptorSetLayout};
 }
 
-void Scene::destroyDescriptorSetLayout(VkDevice device) {
-    vkDestroyDescriptorSetLayout(device, uboDescriptorSetLayout, nullptr);
-    vkDestroyDescriptorSetLayout(device, textureDescriptorSetLayout, nullptr);
+void Scene::destroyDescriptorSetLayout() {
+    vkDestroyDescriptorSetLayout(*device, uboDescriptorSetLayout, nullptr);
+    vkDestroyDescriptorSetLayout(*device, textureDescriptorSetLayout, nullptr);
 }
 
 void calculateBoundingBox(const tinygltf::Model &model, glm::vec3 &minBounds, glm::vec3 &maxBounds) {
@@ -530,7 +518,7 @@ Scene::LoadedTexture uploadGLTFImage(VulkanDevice *device, const tinygltf::Image
     return loadedTex;
 }
 
-void Scene::setupTextures(VulkanDevice *device) {
+void Scene::setupTextures() {
     for (size_t i = 0; i < model.materials.size(); i++) {
         const auto &material = model.materials[i];
 
@@ -555,7 +543,7 @@ void Scene::setupTextures(VulkanDevice *device) {
     }
 }
 
-void Scene::destroyTextures(VulkanDevice *device) {
+void Scene::destroyTextures() {
     for (auto &[idx, tex]: textures) {
         vkDestroyImageView(*device, tex.imageView, nullptr);
         vkDestroyImage(*device, tex.image, nullptr);
@@ -564,6 +552,79 @@ void Scene::destroyTextures(VulkanDevice *device) {
     }
 }
 
-std::string Scene::queryShaderName() {
-    return meshNeedsColor(model.meshes[0]) ? "shaders/shader" : "shaders/simple-texture";
+void Scene::destroyAll() {
+    destroyDescriptorSetLayout();
+    destroyTextures();
+    destroyBuffers();
+    pipelines.clear();
+}
+
+void Scene::createPipelines(VkRenderPass renderPass, VkDescriptorSetLayout mvpLayout, bool forceRecompile)
+{
+    pipelines.clear();
+    for (auto& [descr, _] : meshPrimitivesWithPipeline) {
+        createPipelinesWithDescription(descr, renderPass, mvpLayout, forceRecompile);
+    }
+}
+
+static std::string queryShaderName(const PipelineDescription& descr) {
+    return descr.vertexFixedColorAccessor.has_value() ? "shaders/shader" : "shaders/simple-texture";
+}
+
+void Scene::createPipelinesWithDescription(PipelineDescription descr, VkRenderPass renderPass,
+    VkDescriptorSetLayout mvpLayout, bool forceRecompile)
+{
+    if (pipelines.count(descr)) {
+        return;
+    }
+
+    std::vector<VkVertexInputAttributeDescription> attributeDescriptions;
+    std::vector<VkVertexInputBindingDescription> bindingDescriptions;
+    const auto& addAttributeAndBinding = [&] (int location, int binding, int accessor) {
+        VkVertexInputAttributeDescription description{};
+        description.binding = binding;
+        description.location = location;
+        description.format = VulkanHelper::gltfTypeToVkFormat(model.accessors[accessor].type,
+            model.accessors[accessor].componentType, model.accessors[accessor].normalized);
+        description.offset = 0;
+        attributeDescriptions.push_back(description);
+        bindingDescriptions.push_back(getVertexBindingDescription(accessor, binding));
+    };
+
+    if (!descr.vertexPosAccessor) {
+        throw std::runtime_error("Unsupported mesh: we require vertex position for all vertices!");
+    }
+
+    ensureDescriptorSetLayouts();
+    std::vector<VkDescriptorSetLayout> descriptorSets{mvpLayout, uboDescriptorSetLayout};
+    addAttributeAndBinding(0, 0, *descr.vertexPosAccessor);
+    if (descr.vertexFixedColorAccessor.has_value()) {
+        addAttributeAndBinding(1, 1, *descr.vertexFixedColorAccessor);
+    } else if (descr.vertexTexcoordsAccessor.has_value()) {
+        addAttributeAndBinding(1, 1, *descr.vertexTexcoordsAccessor);
+        descriptorSets.push_back(textureDescriptorSetLayout);
+    } else {
+        throw std::runtime_error("Mesh primitive has neither color nor texcoords!");
+    }
+
+
+    PipelineParameters params;
+    std::string shaderNames = queryShaderName(descr);
+    params.shadersList = {
+        {VK_SHADER_STAGE_VERTEX_BIT, shaderNames + ".vert"},
+        {VK_SHADER_STAGE_FRAGMENT_BIT, shaderNames + ".frag"},
+    };
+
+    params.recompileShaders = forceRecompile;
+    params.vertexAttributeDescription = attributeDescriptions;
+    params.vertexInputDescription = bindingDescriptions;
+    params.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    params.extent = swapchain->swapChainExtent;
+
+    // One color attachment, no blending enabled for it
+    params.blending = {{}};
+    params.useDepthTest = true;
+
+    params.descriptorSetLayouts = descriptorSets;
+    pipelines[descr] = std::make_unique<GraphicsPipeline>(device, renderPass, 0, params);
 }

@@ -41,7 +41,7 @@ void JungleApp::setupRenderStageScene(const std::string& sceneName, bool recompi
     setupScene(sceneName);
     createScenePass();
     createMVPSetLayout();
-    createScenePipeline(recompileShaders);
+    scene.createPipelines(sceneRPass, mvpSetLayout, recompileShaders);
     setupGBuffer();
 }
 
@@ -112,7 +112,7 @@ void JungleApp::drawImGUI() {
         ImGui::ShowDemoWindow(&showDemoWindow);
     }
 
-    for (auto& [stage, msg] : scenePipeline->errorsFromShaderCompilation) {
+    for (auto& [stage, msg] : GraphicsPipeline::errorsFromShaderCompilation) {
         if (ImGui::Begin(stage.c_str())) {
             ImGui::Text("%s", msg.c_str());
         }
@@ -127,6 +127,7 @@ void JungleApp::drawFrame() {
     }
 
     if (forceReloadShaders) {
+        GraphicsPipeline::errorsFromShaderCompilation.clear();
         recreateGraphicsPipeline();
     }
 
@@ -144,7 +145,10 @@ void JungleApp::drawFrame() {
     beginInfo.pInheritanceInfo = nullptr; // Optional
     VK_CHECK_RESULT(vkBeginCommandBuffer(commandBuffer, &beginInfo))
 
-    recordSceneCommandBuffer(commandBuffer, swapchain->currentFrame);
+    startRenderPass(commandBuffer, swapchain->currentFrame, sceneRPass);
+    scene.recordCommandBuffer(commandBuffer, sceneDescriptorSets[swapchain->currentFrame]);
+    vkCmdEndRenderPass(commandBuffer);
+
     lighting->recordCommandBuffer(commandBuffer, sceneDescriptorSets[swapchain->currentFrame], &scene);
     tonemap->recordTonemapCommandBuffer(commandBuffer, swapchain->defaultTarget.framebuffers[*imageIndex]);
 
@@ -158,7 +162,7 @@ void JungleApp::drawFrame() {
 
         gBuffer.destroyAll();
         setupGBuffer();
-        createScenePipeline(false);
+        scene.createPipelines(sceneRPass, mvpSetLayout, false);
         lighting->handleResize(gBuffer, mvpSetLayout, &scene);
         tonemap->handleResize(lighting->compositedLight);
     } else {
@@ -248,40 +252,12 @@ void JungleApp::createSurface() {
     VK_CHECK_RESULT(glfwCreateWindowSurface(device.instance, window, nullptr, &surface))
 }
 
-void JungleApp::createScenePipeline(bool recompileShaders) {
-    PipelineParameters params;
-
-    std::string shaderNames = scene.queryShaderName();
-    params.shadersList = {
-        {VK_SHADER_STAGE_VERTEX_BIT, shaderNames + ".vert"},
-        {VK_SHADER_STAGE_FRAGMENT_BIT, shaderNames + ".frag"},
-    };
-
-    params.recompileShaders = recompileShaders;
-
-    auto [attributeDescriptions, bindingDescriptions] = scene.getAttributeAndBindingDescriptions();
-    params.vertexAttributeDescription = attributeDescriptions;
-    params.vertexInputDescription = bindingDescriptions;
-    params.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-    params.extent = swapchain->swapChainExtent;
-
-    // One color attachment, no blending enabled for it
-    params.blending = {{}};
-    params.useDepthTest = true;
-
-    params.descriptorSetLayouts = scene.getDescriptorSetLayouts(device);
-    params.descriptorSetLayouts.insert(params.descriptorSetLayouts.begin(), mvpSetLayout);
-    this->scenePipeline = std::make_unique<GraphicsPipeline>(&device, sceneRPass, 0, params);
-}
-
 void JungleApp::recreateGraphicsPipeline() {
     vkDeviceWaitIdle(device);
 
-    scenePipeline.reset();
-    createScenePipeline(true);
-
-    lighting->createPipeline(true, mvpSetLayout, &scene);
-    tonemap->createTonemapPipeline(true);
+    scene.createPipelines(sceneRPass, mvpSetLayout, true);
+    lighting->createPipeline(false, mvpSetLayout, &scene);
+    tonemap->createTonemapPipeline(false);
 }
 
 void JungleApp::createScenePass() {
@@ -375,16 +351,6 @@ void JungleApp::startRenderPass(VkCommandBuffer commandBuffer, uint32_t currentF
     renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
     renderPassInfo.pClearValues = clearValues.data();
     vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
-}
-
-void JungleApp::recordSceneCommandBuffer(VkCommandBuffer commandBuffer, uint32_t currentFrame) {
-    startRenderPass(commandBuffer, currentFrame, sceneRPass);
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, scenePipeline->pipeline);
-    VulkanHelper::setFullViewportScissor(commandBuffer, swapchain->swapChainExtent);
-
-    scene.render(commandBuffer, scenePipeline->layout, sceneDescriptorSets[swapchain->currentFrame]);
-
-    vkCmdEndRenderPass(commandBuffer);
 }
 
 void JungleApp::createMVPSetLayout() {
@@ -485,7 +451,7 @@ void JungleApp::createDescriptorSets() {
         vkUpdateDescriptorSets(device, 1, &descriptorWrite, 0, nullptr);
     }
 
-    scene.setupDescriptorSets(device, descriptorPool);
+    scene.setupDescriptorSets(descriptorPool);
     lighting->createDescriptorSets(descriptorPool, gBuffer);
     tonemap->createDescriptorSets(descriptorPool, lighting->compositedLight);
 }
@@ -504,10 +470,7 @@ void JungleApp::cleanup() {
 
     vkDestroyDescriptorSetLayout(device, mvpSetLayout, nullptr);
 
-    scene.destroyDescriptorSetLayout(device);
-    scene.destroyTextures(&device);
-    scene.destroyBuffers(device);
-    scenePipeline.reset();
+    scene.destroyAll();
     gBuffer.destroyAll();
 
     vkDestroyRenderPass(device, sceneRPass, nullptr);
@@ -518,8 +481,8 @@ void JungleApp::cleanup() {
 }
 
 void JungleApp::setupScene(const std::string& sceneName) {
-    scene = Scene(sceneName);
-    scene.setupBuffers(&device);
-    scene.setupTextures(&device);
+    scene = Scene(&device, swapchain.get(), sceneName);
+    scene.setupBuffers();
+    scene.setupTextures();
     scene.computeCameraPos(cameraLookAt, cameraPosition, cameraFOVY);
 }
