@@ -30,31 +30,30 @@ class Scene {
 public:
     explicit Scene() = default;
 
-    explicit Scene(std::string filename);
+    explicit Scene(VulkanDevice *device, Swapchain *swapchain, std::string filename);
 
-    void createPipelines(VulkanDevice* device, Swapchain* swapchain, VkRenderPass renderPass,
-        VkDescriptorSetLayout mvpLayout, bool forceRecompile);
+    void createPipelines(VkRenderPass renderPass, VkDescriptorSetLayout mvpLayout, bool forceRecompile);
 
     // free up all resources
-    void destroyAll(VulkanDevice *device);
+    void destroyAll();
 
-    void setupBuffers(VulkanDevice *device);
+    void setupBuffers();
 
-    void setupTextures(VulkanDevice* device);
-    void destroyTextures(VulkanDevice* device);
+    void setupTextures();
+    void destroyTextures();
     std::string queryShaderName();
 
-    void setupDescriptorSets(VkDevice device, VkDescriptorPool descriptorPool);
+    void setupDescriptorSets(VkDescriptorPool descriptorPool);
     void recordCommandBuffer(
-        VkCommandBuffer commandBuffer, VkDescriptorSet mvpSet, Swapchain *swapchain);
+        VkCommandBuffer commandBuffer, VkDescriptorSet mvpSet);
 
-    void destroyBuffers(VkDevice device);
+    void destroyBuffers();
     std::tuple<std::vector<VkVertexInputAttributeDescription>, std::vector<VkVertexInputBindingDescription>>
     getLightsAttributeAndBindingDescriptions();
 
     RequiredDescriptors getNumDescriptors();
 
-    void destroyDescriptorSetLayout(VkDevice device);
+    void destroyDescriptorSetLayout();
     void computeCameraPos(glm::vec3& lookAt, glm::vec3& cameraPos, float& fov);
 
     struct LoadedTexture
@@ -75,6 +74,8 @@ public:
   private:
     tinygltf::TinyGLTF loader;
     tinygltf::Model model;
+    VulkanDevice *device;
+    Swapchain *swapchain;
 
     std::vector<VkBuffer> buffers;
     std::vector<VkDeviceMemory> bufferMemories;
@@ -86,10 +87,10 @@ public:
 
     std::tuple<std::vector<VkVertexInputAttributeDescription>, std::vector<VkVertexInputBindingDescription>>
     getAttributeAndBindingDescriptions();
-    std::vector<VkDescriptorSetLayout> getDescriptorSetLayouts(VkDevice device);
+    std::vector<VkDescriptorSetLayout> getDescriptorSetLayouts();
 
     VkVertexInputBindingDescription getVertexBindingDescription(int accessor, int bindingId);
-    void setupUniformBuffers(VulkanDevice *device);
+    void setupUniformBuffers();
 
     std::map<std::vector<int>, int> transformBuffers;
 

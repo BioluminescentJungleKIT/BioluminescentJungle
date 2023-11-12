@@ -29,7 +29,10 @@ static bool meshNeedsTexcoords(const tinygltf::Mesh &mesh) {
     return mesh.primitives[0].attributes.contains(TEXCOORD0);
 }
 
-Scene::Scene(std::string filename) {
+Scene::Scene(VulkanDevice *device, Swapchain *swapchain, std::string filename) {
+    this->device = device;
+    this->swapchain = swapchain;
+
     std::string err, warn;
     loader.LoadASCIIFromFile(&model, &err, &warn, filename);
     if (!warn.empty()) {
@@ -107,9 +110,9 @@ void Scene::drawPointLights(VkCommandBuffer commandBuffer) {
     }
 }
 
-void Scene::setupDescriptorSets(VkDevice device, VkDescriptorPool descriptorPool) {
+void Scene::setupDescriptorSets(VkDescriptorPool descriptorPool) {
     uboDescriptorSets = VulkanHelper::createDescriptorSetsFromLayout(
-        device, descriptorPool, uboDescriptorSetLayout, meshTransforms.size());
+        *device, descriptorPool, uboDescriptorSetLayout, meshTransforms.size());
 
     int i = 0;
     for (int mesh = 0; mesh < model.meshes.size(); mesh++) {
@@ -133,14 +136,14 @@ void Scene::setupDescriptorSets(VkDevice device, VkDescriptorPool descriptorPool
         descriptorWrite.pImageInfo = nullptr; // Optional
         descriptorWrite.pTexelBufferView = nullptr; // Optional
 
-        vkUpdateDescriptorSets(device, 1, &descriptorWrite, 0, nullptr);
+        vkUpdateDescriptorSets(*device, 1, &descriptorWrite, 0, nullptr);
     }
 
     if (textures.empty()) {
         return;
     }
 
-    auto textureDescriptorSets = VulkanHelper::createDescriptorSetsFromLayout(device, descriptorPool,
+    auto textureDescriptorSets = VulkanHelper::createDescriptorSetsFromLayout(*device, descriptorPool,
         textureDescriptorSetLayout, textures.size());
 
     i = 0;
@@ -158,7 +161,7 @@ void Scene::setupDescriptorSets(VkDevice device, VkDescriptorPool descriptorPool
         descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         descriptorWrite.descriptorCount = 1;
         descriptorWrite.pImageInfo = &imageInfo;
-        vkUpdateDescriptorSets(device, 1, &descriptorWrite, 0, nullptr);
+        vkUpdateDescriptorSets(*device, 1, &descriptorWrite, 0, nullptr);
 
         tex.dSet = textureDescriptorSets[i];
         ++i;
@@ -172,7 +175,7 @@ RequiredDescriptors Scene::getNumDescriptors() {
     };
 }
 
-void Scene::setupBuffers(VulkanDevice *device) {
+void Scene::setupBuffers() {
     unsigned long numBuffers = model.buffers.size();
     buffers.resize(model.buffers.size());
     bufferMemories.resize(model.buffers.size());
@@ -208,7 +211,7 @@ void Scene::setupBuffers(VulkanDevice *device) {
         }
     }
 
-    setupUniformBuffers(device);
+    setupUniformBuffers();
 }
 
 bool Scene::addArtificialLight = false;
@@ -249,7 +252,7 @@ void Scene::generateTransforms(int nodeIndex, glm::mat4 oldTransform, int maxRec
     }
 }
 
-void Scene::setupUniformBuffers(VulkanDevice *device) {
+void Scene::setupUniformBuffers() {
     for (auto [mesh, transforms]: meshTransforms) {
         VkBuffer buffer;
         VkDeviceMemory bufferMemory;
@@ -282,9 +285,9 @@ void Scene::setupUniformBuffers(VulkanDevice *device) {
     }
 }
 
-void Scene::destroyBuffers(VkDevice device) {
-    for (auto buffer: buffers) vkDestroyBuffer(device, buffer, nullptr);
-    for (auto bufferMemory: bufferMemories) vkFreeMemory(device, bufferMemory, nullptr);
+void Scene::destroyBuffers() {
+    for (auto buffer: buffers) vkDestroyBuffer(*device, buffer, nullptr);
+    for (auto bufferMemory: bufferMemories) vkFreeMemory(*device, bufferMemory, nullptr);
 }
 
 std::tuple<std::vector<VkVertexInputAttributeDescription>, std::vector<VkVertexInputBindingDescription>>
@@ -365,7 +368,7 @@ VkVertexInputBindingDescription Scene::getVertexBindingDescription(int accessor,
     return bindingDescription;
 }
 
-std::vector<VkDescriptorSetLayout> Scene::getDescriptorSetLayouts(VkDevice device) {
+std::vector<VkDescriptorSetLayout> Scene::getDescriptorSetLayouts() {
 
     if (uboDescriptorSetLayout == VK_NULL_HANDLE) {
         VkDescriptorSetLayoutBinding uboLayoutBinding{};
@@ -380,7 +383,7 @@ std::vector<VkDescriptorSetLayout> Scene::getDescriptorSetLayouts(VkDevice devic
         layoutInfo.bindingCount = 1;
         layoutInfo.pBindings = &uboLayoutBinding;
 
-        VK_CHECK_RESULT(vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &uboDescriptorSetLayout))
+        VK_CHECK_RESULT(vkCreateDescriptorSetLayout(*device, &layoutInfo, nullptr, &uboDescriptorSetLayout))
     }
 
     if (textureDescriptorSetLayout == VK_NULL_HANDLE) {
@@ -396,15 +399,15 @@ std::vector<VkDescriptorSetLayout> Scene::getDescriptorSetLayouts(VkDevice devic
         layoutInfo.bindingCount = 1;
         layoutInfo.pBindings = &samplerLayoutBinding;
 
-        VK_CHECK_RESULT(vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &textureDescriptorSetLayout))
+        VK_CHECK_RESULT(vkCreateDescriptorSetLayout(*device, &layoutInfo, nullptr, &textureDescriptorSetLayout))
     }
 
     return {uboDescriptorSetLayout, textureDescriptorSetLayout};
 }
 
-void Scene::destroyDescriptorSetLayout(VkDevice device) {
-    vkDestroyDescriptorSetLayout(device, uboDescriptorSetLayout, nullptr);
-    vkDestroyDescriptorSetLayout(device, textureDescriptorSetLayout, nullptr);
+void Scene::destroyDescriptorSetLayout() {
+    vkDestroyDescriptorSetLayout(*device, uboDescriptorSetLayout, nullptr);
+    vkDestroyDescriptorSetLayout(*device, textureDescriptorSetLayout, nullptr);
 }
 
 void calculateBoundingBox(const tinygltf::Model &model, glm::vec3 &minBounds, glm::vec3 &maxBounds) {
@@ -502,7 +505,7 @@ Scene::LoadedTexture uploadGLTFImage(VulkanDevice *device, const tinygltf::Image
     return loadedTex;
 }
 
-void Scene::setupTextures(VulkanDevice *device) {
+void Scene::setupTextures() {
     for (size_t i = 0; i < model.materials.size(); i++) {
         const auto &material = model.materials[i];
 
@@ -527,7 +530,7 @@ void Scene::setupTextures(VulkanDevice *device) {
     }
 }
 
-void Scene::destroyTextures(VulkanDevice *device) {
+void Scene::destroyTextures() {
     for (auto &[idx, tex]: textures) {
         vkDestroyImageView(*device, tex.imageView, nullptr);
         vkDestroyImage(*device, tex.image, nullptr);
@@ -540,15 +543,14 @@ std::string Scene::queryShaderName() {
     return meshNeedsColor(model.meshes[0]) ? "shaders/shader" : "shaders/simple-texture";
 }
 
-void Scene::destroyAll(VulkanDevice *device) {
-    destroyDescriptorSetLayout(*device);
-    destroyTextures(device);
-    destroyBuffers(*device);
+void Scene::destroyAll() {
+    destroyDescriptorSetLayout();
+    destroyTextures();
+    destroyBuffers();
     pipeline.reset();
 }
 
-void Scene::createPipelines(VulkanDevice* device, Swapchain* swapchain, VkRenderPass renderPass,
-    VkDescriptorSetLayout mvpLayout, bool forceRecompile)
+void Scene::createPipelines(VkRenderPass renderPass, VkDescriptorSetLayout mvpLayout, bool forceRecompile)
 {
     PipelineParameters params;
 
@@ -570,12 +572,12 @@ void Scene::createPipelines(VulkanDevice* device, Swapchain* swapchain, VkRender
     params.blending = {{}};
     params.useDepthTest = true;
 
-    params.descriptorSetLayouts = getDescriptorSetLayouts(*device);
+    params.descriptorSetLayouts = getDescriptorSetLayouts();
     params.descriptorSetLayouts.insert(params.descriptorSetLayouts.begin(), mvpLayout);
     this->pipeline = std::make_unique<GraphicsPipeline>(device, renderPass, 0, params);
 }
 
-void Scene::recordCommandBuffer(VkCommandBuffer commandBuffer, VkDescriptorSet mvpSet, Swapchain *swapchain)
+void Scene::recordCommandBuffer(VkCommandBuffer commandBuffer, VkDescriptorSet mvpSet)
 {
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->pipeline);
     VulkanHelper::setFullViewportScissor(commandBuffer, swapchain->swapChainExtent);
