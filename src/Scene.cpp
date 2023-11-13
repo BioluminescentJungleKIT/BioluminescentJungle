@@ -66,6 +66,13 @@ Scene::Scene(VulkanDevice *device, Swapchain *swapchain, std::string filename) {
     for (size_t i = 0; i < model.meshes.size(); i++) {
         for (size_t j = 0; j < model.meshes[i].primitives.size(); j++) {
             auto descr = getPipelineDescriptionForPrimitive(model.meshes[i].primitives[j]);
+
+            if (!descr.vertexTexcoordsAccessor.has_value() && !descr.vertexFixedColorAccessor.has_value()) {
+                std::cout << "Unsupported primitive meshId=" << i << " primitiveId=" << j
+                    << ": no texture or vertex color specified." << std::endl;
+                continue;
+            }
+
             meshPrimitivesWithPipeline[descr][i].emplace_back(j);
         }
     }
@@ -618,7 +625,7 @@ void Scene::createPipelinesWithDescription(PipelineDescription descr, VkRenderPa
         addAttributeAndBinding(1, 1, *descr.vertexTexcoordsAccessor);
         descriptorSets.push_back(textureDescriptorSetLayout);
     } else {
-        throw std::runtime_error("Mesh primitive has neither color nor texcoords!");
+        throw std::runtime_error("Mesh primitive without color or texcoords is not supported by shaders!");
     }
 
     PipelineParameters params;
