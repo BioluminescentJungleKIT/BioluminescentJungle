@@ -4,6 +4,7 @@
 
 #include <iostream>
 #include "PhysicalDevice.h"
+#include "GBufferDescription.h"
 #include "Pipeline.h"
 #include "Scene.h"
 #include "VulkanHelper.h"
@@ -12,6 +13,7 @@
 #include <stdexcept>
 #include <vulkan/vulkan_core.h>
 #include <glm/gtc/type_ptr.hpp>
+#include <glm/gtx/quaternion.hpp>
 #include <random>
 #include <memory>
 
@@ -20,6 +22,7 @@
 #define BASE_COLOR_TEXTURE "baseColorTexture"
 #define FIXED_COLOR "COLOR_0"
 #define TEXCOORD0 "TEXCOORD_0"
+#define NORMAL "NORMAL"
 
 const int MAX_RECURSION = 10;
 
@@ -30,6 +33,10 @@ PipelineDescription Scene::getPipelineDescriptionForPrimitive(const tinygltf::Pr
 
     if (attributes.count(POSITION)) {
         descr.vertexPosAccessor = attributes.at(POSITION);
+    }
+
+    if (attributes.count(NORMAL)) {
+        descr.vertexNormalAccessor = attributes.at(NORMAL);
     }
 
     if (attributes.count(TEXCOORD0) && model.materials[primitive.material].values.count(BASE_COLOR_TEXTURE)) {
@@ -60,6 +67,13 @@ Scene::Scene(VulkanDevice *device, Swapchain *swapchain, std::string filename) {
     for (size_t i = 0; i < model.meshes.size(); i++) {
         for (size_t j = 0; j < model.meshes[i].primitives.size(); j++) {
             auto descr = getPipelineDescriptionForPrimitive(model.meshes[i].primitives[j]);
+
+            if (!descr.vertexTexcoordsAccessor.has_value() && !descr.vertexFixedColorAccessor.has_value()) {
+                std::cout << "Unsupported primitive meshId=" << i << " primitiveId=" << j
+                    << ": no texture or vertex color specified." << std::endl;
+                continue;
+            }
+
             meshPrimitivesWithPipeline[descr][i].emplace_back(j);
         }
     }
@@ -128,6 +142,9 @@ void Scene::renderPrimitiveInstances(int meshId, int primitiveId, VkCommandBuffe
         addBufferOffset(FIXED_COLOR);
     } else if (descr.vertexTexcoordsAccessor.has_value()) {
         addBufferOffset(TEXCOORD0);
+    }
+    if (descr.vertexNormalAccessor.has_value()) {
+        addBufferOffset(NORMAL);
     }
 
     vkCmdBindVertexBuffers(commandBuffer, 0, vertexBuffers.size(), vertexBuffers.data(), offsets.data());
@@ -245,16 +262,16 @@ void Scene::setupBuffers() {
         glm::vec3 lookAt, camera;
         computeCameraPos(lookAt, camera, fov);
 
-        float range = (camera - lookAt).length() * 0.1;
+        float range = (camera - lookAt).length();
 
         std::mt19937 mt(0);
         auto distX = std::uniform_real_distribution<float>(-range, range);
         auto distY = std::uniform_real_distribution<float>(-range, range);
-        auto distZ = std::uniform_real_distribution<float>(-range * 0.1, range * 0.1);
+        auto distZ = std::uniform_real_distribution<float>(-range * 0.2, range * 0.2);
 
-        for (int i = 0; i < 5; i++) {
+        for (int i = 1; i < 6; i++) {
             glm::vec3 delta{distX(mt), distY(mt), distZ(mt)};
-            lights.push_back({lookAt + delta, glm::vec3((i % 3) / 2.0, (i % 2) / 2.0, (i % 5) / 4.0), 5.0});
+            lights.push_back({lookAt + delta, glm::vec3((i % 3) / 2.0, (i % 2) / 2.0, (i % 5) / 4.0), 3.0});
         }
     }
 
@@ -456,9 +473,32 @@ std::ostream &operator<<(std::ostream &out, const glm::vec3 &value) {
 }
 
 void Scene::computeCameraPos(glm::vec3 &lookAt, glm::vec3 &cameraPos, float &fov) {
-    // TODO: if the scene has a camera, we ought to load the data from it
+    for (auto& node : model.nodes) {
+        if (node.camera >= 0) {
+            if (node.translation.size() != 3 || node.rotation.size() != 4) {
+                // TODO: handle the case where just node.matrix is set? Do we care about this?
+                continue;
+            }
 
-    // Compute bbox of the meshes
+            if (model.cameras[node.camera].type != "perspective") {
+                continue;
+            }
+
+            // TODO: add selection for cameras if we have multiple
+            glm::mat4 translationMatrix = glm::translate(glm::mat4(1.0f),
+                glm::vec3(node.translation[0], node.translation[1], node.translation[2]));
+            glm::mat4 rotationMatrix = glm::mat4_cast(glm::quat(node.rotation[3], node.rotation[0], node.rotation[1], node.rotation[2]));
+            glm::mat4 transformMatrix = translationMatrix * rotationMatrix;
+
+            glm::vec3 cameraPos = glm::vec3(transformMatrix * glm::vec4(0.0f, 0.0f, 0.0f, 1.0f));
+            glm::vec3 lookAt = glm::vec3(transformMatrix * glm::vec4(0.0f, 0.0f, -1.0f, 0.0f));
+            fov = glm::degrees(model.cameras[node.camera].perspective.yfov);
+            return;
+        }
+    }
+
+    // Compute bbox of the meshes, point to the middle and have a small distance
+    // This works only for small test models, for bigger models, export a camera!
     glm::vec3 min, max;
     calculateBoundingBox(model, min, max);
 
@@ -595,18 +635,22 @@ void Scene::createPipelinesWithDescription(PipelineDescription descr, VkRenderPa
         throw std::runtime_error("Unsupported mesh: we require vertex position for all vertices!");
     }
 
+    if (!descr.vertexNormalAccessor) {
+        throw std::runtime_error("Unsupported mesh: we require normals for all vertices!");
+    }
+
     ensureDescriptorSetLayouts();
     std::vector<VkDescriptorSetLayout> descriptorSets{mvpLayout, uboDescriptorSetLayout};
     addAttributeAndBinding(0, 0, *descr.vertexPosAccessor);
+    addAttributeAndBinding(2, 2, *descr.vertexNormalAccessor);
     if (descr.vertexFixedColorAccessor.has_value()) {
         addAttributeAndBinding(1, 1, *descr.vertexFixedColorAccessor);
     } else if (descr.vertexTexcoordsAccessor.has_value()) {
         addAttributeAndBinding(1, 1, *descr.vertexTexcoordsAccessor);
         descriptorSets.push_back(textureDescriptorSetLayout);
     } else {
-        throw std::runtime_error("Mesh primitive has neither color nor texcoords!");
+        throw std::runtime_error("Mesh primitive without color or texcoords is not supported by shaders!");
     }
-
 
     PipelineParameters params;
     std::string shaderNames = queryShaderName(descr);
@@ -621,8 +665,8 @@ void Scene::createPipelinesWithDescription(PipelineDescription descr, VkRenderPa
     params.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
     params.extent = swapchain->swapChainExtent;
 
-    // One color attachment, no blending enabled for it
-    params.blending = {{}};
+    // We don't want any blending for the color attachments (-1 for the depth attachment)
+    params.blending.assign(GBufferTarget::NumAttachments - 1, {});
     params.useDepthTest = true;
 
     params.descriptorSetLayouts = descriptorSets;

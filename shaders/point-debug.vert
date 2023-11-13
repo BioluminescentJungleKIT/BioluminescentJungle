@@ -11,11 +11,13 @@ vec2 positions[6] = vec2[](
 );
 
 // We need some fake variables for point-light.frag so that compilation succeeds
-layout(location = 0) out vec3 fPosition;
-layout(location = 1) out vec3 fIntensity;
+layout(location = 0) flat out vec3 fPosition;
+layout(location = 1) flat out vec3 fIntensity;
+layout(location = 2) flat out vec2 projPosition;
 
 void main() {
     fPosition = vec3(0.0);
     fIntensity = vec3(0.0);
+    projPosition = vec2(-20, -20);
     gl_Position = vec4(positions[gl_VertexIndex], 0.0, 1.0);
 }

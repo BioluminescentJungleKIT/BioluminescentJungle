@@ -1,3 +1,4 @@
+#include "GBufferDescription.h"
 #include "Lighting.h"
 #include "Pipeline.h"
 #include "Swapchain.h"
@@ -48,10 +49,18 @@ void JungleApp::setupRenderStageScene(const std::string& sceneName, bool recompi
 void JungleApp::setupGBuffer() {
     // The layout of the gBuffer needs to match GBufferTargets
     gBuffer.init(&device, MAX_FRAMES_IN_FLIGHT);
-    gBuffer.addAttachment(swapchain->swapChainExtent, LIGHT_ACCUMULATION_FORMAT,
-        VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
-    gBuffer.addAttachment(swapchain->swapChainExtent, swapchain->chooseDepthFormat(),
-        VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_IMAGE_ASPECT_DEPTH_BIT);
+
+    for (int i = 0; i < GBufferTarget::NumAttachments; i++) {
+        if (i == GBufferTarget::Depth) {
+            gBuffer.addAttachment(swapchain->swapChainExtent, swapchain->chooseDepthFormat(),
+                VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_IMAGE_ASPECT_DEPTH_BIT);
+        } else {
+            auto fmt = getGBufferAttachmentFormat(swapchain.get(), (GBufferTarget)i);
+            gBuffer.addAttachment(swapchain->swapChainExtent, fmt,
+                VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
+        }
+    }
+
     gBuffer.createFramebuffers(sceneRPass, swapchain->swapChainExtent);
 }
 
@@ -79,7 +88,7 @@ void JungleApp::drawImGUI() {
             }
         }
         if (ImGui::CollapsingHeader("Debug Settings")) {
-            ImGui::Combo("G-Buffer Visualization", &lighting->debug.compositionMode, "None\0Albedo\0Depth\0Position\0\0");
+            ImGui::Combo("G-Buffer Visualization", &lighting->debug.compositionMode, "None\0Albedo\0Depth\0Position\0Normal\0\0");
             ImGui::Checkbox("Show Light BBoxes", (bool*)&lighting->debug.showLightBoxes);
             ImGui::SliderFloat("Light bbox log size", &lighting->lightRadiusLog, -5.f, 5.f);
         }
@@ -128,7 +137,7 @@ void JungleApp::drawFrame() {
 
     if (forceReloadShaders) {
         GraphicsPipeline::errorsFromShaderCompilation.clear();
-        recreateGraphicsPipeline();
+        recompileShaders();
     }
 
     drawImGUI();
@@ -252,47 +261,47 @@ void JungleApp::createSurface() {
     VK_CHECK_RESULT(glfwCreateWindowSurface(device.instance, window, nullptr, &surface))
 }
 
-void JungleApp::recreateGraphicsPipeline() {
+void JungleApp::recompileShaders() {
     vkDeviceWaitIdle(device);
 
     scene.createPipelines(sceneRPass, mvpSetLayout, true);
-    lighting->createPipeline(false, mvpSetLayout, &scene);
-    tonemap->createTonemapPipeline(false);
+    lighting->createPipeline(true, mvpSetLayout, &scene);
+    tonemap->createTonemapPipeline(true);
 }
 
 void JungleApp::createScenePass() {
-    VkAttachmentDescription colorAttachment{};
-    colorAttachment.format = LIGHT_ACCUMULATION_FORMAT;
-    colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
-    colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-    colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    colorAttachment.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    std::vector<VkAttachmentDescription> attachments;
+    std::vector<VkAttachmentReference> colorAttachments;
+    VkAttachmentReference depthAttachmentRef;
 
-    VkAttachmentReference colorAttachmentRef{};
-    colorAttachmentRef.attachment = 0;
-    colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    for (int i = 0; i < GBufferTarget::NumAttachments; i++) {
+        auto fmt = getGBufferAttachmentFormat(swapchain.get(), (GBufferTarget)i);
+        VkAttachmentDescription attachment{};
+        attachment.format = fmt;
+        attachment.samples = VK_SAMPLE_COUNT_1_BIT;
+        attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        attachment.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        attachments.push_back(attachment);
 
-    VkAttachmentDescription depthAttachment{};
-    depthAttachment.format = swapchain->chooseDepthFormat();
-    depthAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
-    depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-    depthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    depthAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    depthAttachment.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
-    VkAttachmentReference depthAttachmentRef{};
-    depthAttachmentRef.attachment = 1;
-    depthAttachmentRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+        if (i == GBufferTarget::Depth) {
+            depthAttachmentRef.attachment = i;
+            depthAttachmentRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+        } else {
+            VkAttachmentReference ref{};
+            ref.attachment = i;
+            ref.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+            colorAttachments.push_back(ref);
+        }
+    }
 
     VkSubpassDescription subpass{};
     subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-    subpass.colorAttachmentCount = 1;
-    subpass.pColorAttachments = &colorAttachmentRef;
+    subpass.colorAttachmentCount = colorAttachments.size();
+    subpass.pColorAttachments = colorAttachments.data();
     subpass.pDepthStencilAttachment = &depthAttachmentRef;
 
     // We need to first transition the attachments to ATTACHMENT_WRITE, then transition back to READ for the
@@ -313,7 +322,6 @@ void JungleApp::createScenePass() {
     dependencies[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
     dependencies[1].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
     dependencies[1].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
-    std::array<VkAttachmentDescription, 2> attachments = {colorAttachment, depthAttachment};
 
     VkRenderPassCreateInfo renderPassInfo{};
     renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
@@ -345,9 +353,15 @@ void JungleApp::startRenderPass(VkCommandBuffer commandBuffer, uint32_t currentF
     renderPassInfo.renderArea.offset = {0, 0};
     renderPassInfo.renderArea.extent = swapchain->swapChainExtent;
 
-    std::array<VkClearValue, 2> clearValues{};
-    clearValues[0].color = {{0.0f, 0.0f, 0.0f, 1.0f}};
-    clearValues[1].depthStencil = {1.0f, 0};
+    std::array<VkClearValue, GBufferTarget::NumAttachments> clearValues{};
+    for (int i = 0; i < GBufferTarget::NumAttachments; i++) {
+        if (i == GBufferTarget::Depth) {
+            clearValues[i].depthStencil = {1.0f, 0};
+        } else {
+            clearValues[i].color = {{0.0f, 0.0f, 0.0f, 1.0f}};
+        }
+    }
+
     renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
     renderPassInfo.pClearValues = clearValues.data();
     vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);

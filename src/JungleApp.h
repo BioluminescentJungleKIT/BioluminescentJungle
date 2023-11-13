@@ -121,7 +121,7 @@ private:
     bool spinScene = true;
     float fixedRotation = 0.0;
 
-    void recreateGraphicsPipeline();
+    void recompileShaders();
     void setupGBuffer();
 
     MusicPlayer mplayer{"scenes/loop.wav"};

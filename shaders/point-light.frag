@@ -1,12 +1,14 @@
 #version 450
 
-layout(location = 0) in vec3 fPosition;
-layout(location = 1) in vec3 fIntensity;
+layout(location = 0) flat in vec3 fPosition;
+layout(location = 1) flat in vec3 fIntensity;
+layout(location = 2) flat in vec2 projPosition;
 
 layout(location = 0) out vec4 outColor;
 
 layout(set = 1, binding = 0) uniform sampler2D albedo;
 layout(set = 1, binding = 1) uniform sampler2D depth;
+layout(set = 1, binding = 2) uniform sampler2D normal;
 
 layout(set = 2, binding = 0, std140) uniform DebugOptions {
     int showLightBoxes;
@@ -29,7 +31,7 @@ vec3 calculatePosition() {
     vec4 ndc = vec4(
             (gl_FragCoord.x / info.viewportWidth - 0.5) * 2.0,
             (gl_FragCoord.y / info.viewportHeight - 0.5) * 2.0,
-            (depth - 0.5) * 2.0, 1.0);
+            depth, 1.0);
 
     // Convert NDC throuch inverse clip coordinates to view coordinates
     vec4 clip = info.inverseMVP * ndc;
@@ -44,22 +46,40 @@ vec3 rndColor(vec3 pos) {
 void main() {
     if (debug.showLightBoxes > 0) {
         outColor = vec4(rndColor(fPosition) * 0.2, 1.0);
+        if (length(gl_FragCoord.xy - projPosition) < 7) {
+            // Draw the point lights themselves
+            // TODO: we might want to remove this, I doubt this is very performant, but it is useful for debugging.
+            outColor = vec4(fIntensity, 1.0);
+        }
         return;
     }
 
     if (debug.compositionMode == 0) {
-        vec3 albedo = texelFetch(albedo, ivec2(gl_FragCoord), 0).rgb;
-
         vec3 L = fPosition - calculatePosition();
-        float dist = dot(L, L);
+        float dist = length(L);
+        L /= dist;
+        float f = max(min(1.0 - pow(dist / debug.radius, 4), 1), 0 ) / (dist * dist);
 
-        // TODO: actual shading
-        outColor = vec4(albedo * fIntensity / dist, 1.0);
+        if (f > 0.0) {
+            vec3 albedo = texelFetch(albedo, ivec2(gl_FragCoord), 0).rgb;
+            vec3 N = texelFetch(normal, ivec2(gl_FragCoord), 0).xyz;
+            outColor = vec4(fIntensity * f * albedo * max(0.0, dot(L, N)), 1.0);
+        } else {
+            outColor = vec4(0.0, 0.0, 0.0, 1.0);
+        }
+
+        if (length(gl_FragCoord.xy - projPosition) < 7) {
+            // Draw the point lights themselves
+            // TODO: we might want to remove this, I doubt this is very performant, but it is useful for debugging.
+            outColor = vec4(fIntensity, 1.0);
+        }
     } else if (debug.compositionMode == 1) {
         outColor = vec4(texelFetch(albedo, ivec2(gl_FragCoord), 0).rgb, 1.0);
     } else if (debug.compositionMode == 2) {
         outColor = vec4(vec3(texelFetch(depth, ivec2(gl_FragCoord), 0).r), 1.0);
-    } else {
+    } else if (debug.compositionMode == 3) {
         outColor = vec4(calculatePosition(), 1.0);
+    } else if (debug.compositionMode == 4) {
+        outColor = vec4(texelFetch(normal, ivec2(gl_FragCoord), 0).xyz, 1.0);
     }
 }

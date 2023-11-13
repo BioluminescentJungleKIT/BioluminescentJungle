@@ -31,6 +31,7 @@ struct PipelineDescription {
     std::optional<int> vertexPosAccessor;
     std::optional<int> vertexTexcoordsAccessor;
     std::optional<int> vertexFixedColorAccessor;
+    std::optional<int> vertexNormalAccessor;
 
     auto toTuple() const {
         return std::make_tuple(vertexPosAccessor, vertexTexcoordsAccessor, vertexFixedColorAccessor);
