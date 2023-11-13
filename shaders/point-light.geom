@@ -46,8 +46,8 @@ void main() {
 
     float off_y = abs(edge.y - center.y);
     float off_x = off_y * info.viewportHeight / info.viewportWidth;
-    off_x *= 1.3;
-    off_y *= 1.3;
+    off_x *= 1.5;
+    off_y *= 1.5;
 
     gl_Position = vec4(center.x - off_x,  center.y - off_y, 0, 1); EmitVertex();
     gl_Position = vec4(center.x - off_x,  center.y + off_y, 0, 1); EmitVertex();

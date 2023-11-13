@@ -49,12 +49,18 @@ void main() {
     }
 
     if (debug.compositionMode == 0) {
-        vec3 albedo = texelFetch(albedo, ivec2(gl_FragCoord), 0).rgb;
-
         vec3 L = fPosition - calculatePosition();
-        float dist = dot(L, L);
-        float f = max(0.0, 1.0 / dist - 1.0 / (debug.radius * debug.radius));
-        outColor = vec4(albedo * fIntensity * f, 1.0);
+        float dist = sqrt(dot(L, L));
+        L /= dist;
+        float f = max(min(1.0 - pow(dist / debug.radius, 4), 1), 0 ) / (dist * dist);
+
+        if (f > 0.0) {
+            vec3 albedo = texelFetch(albedo, ivec2(gl_FragCoord), 0).rgb;
+            vec3 N = texelFetch(normal, ivec2(gl_FragCoord), 0).xyz;
+            outColor = vec4(fIntensity * f * albedo * max(0.0, dot(L, N)), 1.0);
+        } else {
+            outColor = vec4(0.0, 0.0, 0.0, 1.0);
+        }
     } else if (debug.compositionMode == 1) {
         outColor = vec4(texelFetch(albedo, ivec2(gl_FragCoord), 0).rgb, 1.0);
     } else if (debug.compositionMode == 2) {
