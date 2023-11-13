@@ -245,16 +245,16 @@ void Scene::setupBuffers() {
         glm::vec3 lookAt, camera;
         computeCameraPos(lookAt, camera, fov);
 
-        float range = (camera - lookAt).length() * 0.1;
+        float range = (camera - lookAt).length();
 
         std::mt19937 mt(0);
         auto distX = std::uniform_real_distribution<float>(-range, range);
         auto distY = std::uniform_real_distribution<float>(-range, range);
-        auto distZ = std::uniform_real_distribution<float>(-range * 0.1, range * 0.1);
+        auto distZ = std::uniform_real_distribution<float>(-range * 0.2, range * 0.2);
 
-        for (int i = 0; i < 5; i++) {
+        for (int i = 1; i < 6; i++) {
             glm::vec3 delta{distX(mt), distY(mt), distZ(mt)};
-            lights.push_back({lookAt + delta, glm::vec3((i % 3) / 2.0, (i % 2) / 2.0, (i % 5) / 4.0), 5.0});
+            lights.push_back({lookAt + delta, glm::vec3((i % 3) / 2.0, (i % 2) / 2.0, (i % 5) / 4.0), 3.0});
         }
     }
 
