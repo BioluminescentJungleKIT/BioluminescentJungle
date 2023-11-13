@@ -4,6 +4,7 @@
 
 #include <iostream>
 #include "PhysicalDevice.h"
+#include "GBufferDescription.h"
 #include "Pipeline.h"
 #include "Scene.h"
 #include "VulkanHelper.h"
@@ -20,6 +21,7 @@
 #define BASE_COLOR_TEXTURE "baseColorTexture"
 #define FIXED_COLOR "COLOR_0"
 #define TEXCOORD0 "TEXCOORD_0"
+#define NORMAL "NORMAL"
 
 const int MAX_RECURSION = 10;
 
@@ -30,6 +32,10 @@ PipelineDescription Scene::getPipelineDescriptionForPrimitive(const tinygltf::Pr
 
     if (attributes.count(POSITION)) {
         descr.vertexPosAccessor = attributes.at(POSITION);
+    }
+
+    if (attributes.count(NORMAL)) {
+        descr.vertexNormalAccessor = attributes.at(NORMAL);
     }
 
     if (attributes.count(TEXCOORD0) && model.materials[primitive.material].values.count(BASE_COLOR_TEXTURE)) {
@@ -128,6 +134,9 @@ void Scene::renderPrimitiveInstances(int meshId, int primitiveId, VkCommandBuffe
         addBufferOffset(FIXED_COLOR);
     } else if (descr.vertexTexcoordsAccessor.has_value()) {
         addBufferOffset(TEXCOORD0);
+    }
+    if (descr.vertexNormalAccessor.has_value()) {
+        addBufferOffset(NORMAL);
     }
 
     vkCmdBindVertexBuffers(commandBuffer, 0, vertexBuffers.size(), vertexBuffers.data(), offsets.data());
@@ -595,9 +604,14 @@ void Scene::createPipelinesWithDescription(PipelineDescription descr, VkRenderPa
         throw std::runtime_error("Unsupported mesh: we require vertex position for all vertices!");
     }
 
+    if (!descr.vertexNormalAccessor) {
+        throw std::runtime_error("Unsupported mesh: we require normals for all vertices!");
+    }
+
     ensureDescriptorSetLayouts();
     std::vector<VkDescriptorSetLayout> descriptorSets{mvpLayout, uboDescriptorSetLayout};
     addAttributeAndBinding(0, 0, *descr.vertexPosAccessor);
+    addAttributeAndBinding(2, 2, *descr.vertexNormalAccessor);
     if (descr.vertexFixedColorAccessor.has_value()) {
         addAttributeAndBinding(1, 1, *descr.vertexFixedColorAccessor);
     } else if (descr.vertexTexcoordsAccessor.has_value()) {
@@ -606,7 +620,6 @@ void Scene::createPipelinesWithDescription(PipelineDescription descr, VkRenderPa
     } else {
         throw std::runtime_error("Mesh primitive has neither color nor texcoords!");
     }
-
 
     PipelineParameters params;
     std::string shaderNames = queryShaderName(descr);
@@ -621,8 +634,8 @@ void Scene::createPipelinesWithDescription(PipelineDescription descr, VkRenderPa
     params.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
     params.extent = swapchain->swapChainExtent;
 
-    // One color attachment, no blending enabled for it
-    params.blending = {{}};
+    // We don't want any blending for the color attachments (-1 for the depth attachment)
+    params.blending.assign(GBufferTarget::NumAttachments - 1, {});
     params.useDepthTest = true;
 
     params.descriptorSetLayouts = descriptorSets;

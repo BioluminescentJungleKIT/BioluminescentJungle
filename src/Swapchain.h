@@ -1,7 +1,6 @@
 #ifndef JUNGLE_SWAPCHAIN
 #define JUNGLE_SWAPCHAIN
 
-#include <vulkan/vulkan_core.h>
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 #include <array>
@@ -35,14 +34,6 @@ class RenderTarget {
     std::vector<VkDeviceMemory> deviceMemories;
 
     int framesInFlight;
-};
-
-// Must match the creation order in JungleApp.cpp
-enum GBufferTargets {
-    Albedo = 0,
-    Depth = 1,
-
-    NumAttachments = 2,
 };
 
 /**

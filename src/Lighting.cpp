@@ -2,6 +2,7 @@
 #include "Pipeline.h"
 #include "Swapchain.h"
 #include "VulkanHelper.h"
+#include "GBufferDescription.h"
 #include <vulkan/vulkan_core.h>
 
 struct LightingBuffer {
@@ -140,8 +141,8 @@ void DeferredLighting::setup(bool recompileShaders, Scene *scene, VkDescriptorSe
 
     samplers.resize(MAX_FRAMES_IN_FLIGHT);
     for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-        samplers[i].resize((int)GBufferTargets::NumAttachments);
-        for (int j = 0; j < (int)GBufferTargets::NumAttachments; j++) {
+        samplers[i].resize(GBufferTarget::NumAttachments);
+        for (int j = 0; j < GBufferTarget::NumAttachments; j++) {
             samplers[i][j] = VulkanHelper::createSampler(device);
         }
     }
@@ -188,18 +189,14 @@ void DeferredLighting::recordCommandBuffer(VkCommandBuffer commandBuffer, VkDesc
 
 void DeferredLighting::createDescriptorSetLayout() {
     {
-        std::array<VkDescriptorSetLayoutBinding, 2> samplers;
-        samplers[0].binding = 0;
-        samplers[0].descriptorCount = 1;
-        samplers[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        samplers[0].pImmutableSamplers = nullptr;
-        samplers[0].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-
-        samplers[1].binding = 1;
-        samplers[1].descriptorCount = 1;
-        samplers[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        samplers[1].pImmutableSamplers = nullptr;
-        samplers[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        std::array<VkDescriptorSetLayoutBinding, GBufferTarget::NumAttachments> samplers;
+        for (int i = 0; i < GBufferTarget::NumAttachments; i++) {
+            samplers[i].binding = i;
+            samplers[i].descriptorCount = 1;
+            samplers[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            samplers[i].pImmutableSamplers = nullptr;
+            samplers[i].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        }
 
         VkDescriptorSetLayoutCreateInfo layoutInfo{};
         layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
@@ -242,8 +239,8 @@ void DeferredLighting::createDescriptorSets(VkDescriptorPool pool, const RenderT
 
 void DeferredLighting::updateSamplerBindings(const RenderTarget& gBuffer) {
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-        std::vector<VkWriteDescriptorSet> descriptorWrites((int)GBufferTargets::NumAttachments);
-        std::vector<VkDescriptorImageInfo> imageInfos((int)GBufferTargets::NumAttachments);
+        std::vector<VkWriteDescriptorSet> descriptorWrites((int)GBufferTarget::NumAttachments);
+        std::vector<VkDescriptorImageInfo> imageInfos((int)GBufferTarget::NumAttachments);
 
         for (size_t j = 0; j < descriptorWrites.size(); j++) {
             imageInfos[j].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
@@ -315,7 +312,7 @@ void DeferredLighting::updateBuffers(glm::mat4 vp, glm::vec3 cameraPos, glm::vec
 RequiredDescriptors DeferredLighting::getNumDescriptors() {
     return {
         .requireUniformBuffers = MAX_FRAMES_IN_FLIGHT,
-        .requireSamplers = MAX_FRAMES_IN_FLIGHT * GBufferTargets::NumAttachments,
+        .requireSamplers = MAX_FRAMES_IN_FLIGHT * GBufferTarget::NumAttachments,
     };
 }
 
