@@ -38,7 +38,7 @@ void main() {
     fIntensity = intensity[0];
 
     // Idea taken from InCG exercise 4
-    mat4 VP = ubo.proj * ubo.view * ubo.model;
+    mat4 VP = ubo.proj * ubo.view;
     vec4 center = VP * vec4(position[0], 1.0);
     vec4 edge = VP * vec4(position[0] + radius * info.cameraUp, 1.0);
     center /= center.w;

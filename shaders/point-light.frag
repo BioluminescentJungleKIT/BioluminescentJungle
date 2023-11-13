@@ -52,9 +52,8 @@ void main() {
 
         vec3 L = fPosition - calculatePosition();
         float dist = dot(L, L);
-
-        // TODO: actual shading
-        outColor = vec4(albedo * fIntensity / dist, 1.0);
+        float f = max(0.0, 1.0 / dist - 1.0 / (debug.radius * debug.radius));
+        outColor = vec4(albedo * fIntensity * f, 1.0);
     } else if (debug.compositionMode == 1) {
         outColor = vec4(texelFetch(albedo, ivec2(gl_FragCoord), 0).rgb, 1.0);
     } else if (debug.compositionMode == 2) {
