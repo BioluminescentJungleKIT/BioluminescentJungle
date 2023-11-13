@@ -128,7 +128,7 @@ void JungleApp::drawFrame() {
 
     if (forceReloadShaders) {
         GraphicsPipeline::errorsFromShaderCompilation.clear();
-        recreateGraphicsPipeline();
+        recompileShaders();
     }
 
     drawImGUI();
@@ -252,12 +252,12 @@ void JungleApp::createSurface() {
     VK_CHECK_RESULT(glfwCreateWindowSurface(device.instance, window, nullptr, &surface))
 }
 
-void JungleApp::recreateGraphicsPipeline() {
+void JungleApp::recompileShaders() {
     vkDeviceWaitIdle(device);
 
     scene.createPipelines(sceneRPass, mvpSetLayout, true);
-    lighting->createPipeline(false, mvpSetLayout, &scene);
-    tonemap->createTonemapPipeline(false);
+    lighting->createPipeline(true, mvpSetLayout, &scene);
+    tonemap->createTonemapPipeline(true);
 }
 
 void JungleApp::createScenePass() {
