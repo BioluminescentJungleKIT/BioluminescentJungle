@@ -26,8 +26,9 @@ layout(set = 2, binding = 1, std140) uniform LightInfo {
 layout(location = 0) in vec3 position[];
 layout(location = 1) in vec3 intensity[];
 
-layout(location = 0) out vec3 fPosition;
-layout(location = 1) out vec3 fIntensity;
+layout(location = 0) flat out vec3 fPosition;
+layout(location = 1) flat out vec3 fIntensity;
+layout(location = 2) flat out vec2 projPosition;
 
 void main() {
     fPosition = position[0];
@@ -37,17 +38,27 @@ void main() {
     fPosition = position[0];
     fIntensity = intensity[0];
 
-    // Idea taken from InCG exercise 4
     mat4 VP = ubo.proj * ubo.view;
     vec4 center = VP * vec4(position[0], 1.0);
-    vec4 edge = VP * vec4(position[0] + radius * info.cameraUp, 1.0);
     center /= center.w;
-    edge /= edge.w;
+    projPosition = (center.xy * 0.5 + 0.5) * vec2(info.viewportWidth, info.viewportHeight);
 
-    float off_y = abs(edge.y - center.y);
-    float off_x = off_y * info.viewportHeight / info.viewportWidth;
-    off_x *= 1.5;
-    off_y *= 1.5;
+    float off_x = 0.0;
+    float off_y = 0.0;
+
+    // Project all 8 corners of the bbox of the sphere to screen space
+    // TODO: can we do that more efficiently?
+    for (int dx = -1; dx <= 1; dx += 2) {
+        for (int dy = -1; dy <= 1; dy += 2) {
+            for (int dz = -1; dz <= 1; dz += 2) {
+                vec4 corner = VP * vec4(position[0] + vec3(dx, dy, dz) * radius, 1.0);
+                corner /= corner.w;
+
+                off_x = max(off_x, abs(corner.x - center.x));
+                off_y = max(off_y, abs(corner.y - center.y));
+            }
+        }
+    }
 
     gl_Position = vec4(center.x - off_x,  center.y - off_y, 0, 1); EmitVertex();
     gl_Position = vec4(center.x - off_x,  center.y + off_y, 0, 1); EmitVertex();
