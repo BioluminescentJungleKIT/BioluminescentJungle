@@ -13,6 +13,7 @@
 #include <stdexcept>
 #include <vulkan/vulkan_core.h>
 #include <glm/gtc/type_ptr.hpp>
+#include <glm/gtx/quaternion.hpp>
 #include <random>
 #include <memory>
 
@@ -472,9 +473,32 @@ std::ostream &operator<<(std::ostream &out, const glm::vec3 &value) {
 }
 
 void Scene::computeCameraPos(glm::vec3 &lookAt, glm::vec3 &cameraPos, float &fov) {
-    // TODO: if the scene has a camera, we ought to load the data from it
+    for (auto& node : model.nodes) {
+        if (node.camera >= 0) {
+            if (node.translation.size() != 3 || node.rotation.size() != 4) {
+                // TODO: handle the case where just node.matrix is set? Do we care about this?
+                continue;
+            }
 
-    // Compute bbox of the meshes
+            if (model.cameras[node.camera].type != "perspective") {
+                continue;
+            }
+
+            // TODO: add selection for cameras if we have multiple
+            glm::mat4 translationMatrix = glm::translate(glm::mat4(1.0f),
+                glm::vec3(node.translation[0], node.translation[1], node.translation[2]));
+            glm::mat4 rotationMatrix = glm::mat4_cast(glm::quat(node.rotation[3], node.rotation[0], node.rotation[1], node.rotation[2]));
+            glm::mat4 transformMatrix = translationMatrix * rotationMatrix;
+
+            glm::vec3 cameraPos = glm::vec3(transformMatrix * glm::vec4(0.0f, 0.0f, 0.0f, 1.0f));
+            glm::vec3 lookAt = glm::vec3(transformMatrix * glm::vec4(0.0f, 0.0f, -1.0f, 0.0f));
+            fov = glm::degrees(model.cameras[node.camera].perspective.yfov);
+            return;
+        }
+    }
+
+    // Compute bbox of the meshes, point to the middle and have a small distance
+    // This works only for small test models, for bigger models, export a camera!
     glm::vec3 min, max;
     calculateBoundingBox(model, min, max);
 
