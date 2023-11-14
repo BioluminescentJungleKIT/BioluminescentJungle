@@ -26,7 +26,7 @@
 
 const int MAX_RECURSION = 10;
 
-PipelineDescription Scene::getPipelineDescriptionForPrimitive(const tinygltf::Primitive& primitive) {
+PipelineDescription Scene::getPipelineDescriptionForPrimitive(const tinygltf::Primitive &primitive) {
     PipelineDescription descr;
 
     const auto &attributes = primitive.attributes;
@@ -70,7 +70,7 @@ Scene::Scene(VulkanDevice *device, Swapchain *swapchain, std::string filename) {
 
             if (!descr.vertexTexcoordsAccessor.has_value() && !descr.vertexFixedColorAccessor.has_value()) {
                 std::cout << "Unsupported primitive meshId=" << i << " primitiveId=" << j
-                    << ": no texture or vertex color specified." << std::endl;
+                          << ": no texture or vertex color specified." << std::endl;
                 continue;
             }
 
@@ -81,20 +81,20 @@ Scene::Scene(VulkanDevice *device, Swapchain *swapchain, std::string filename) {
 
 void Scene::recordCommandBuffer(VkCommandBuffer commandBuffer, VkDescriptorSet mvpSet) {
     // Draw all primitives with all available pipelines.
-    for (auto& [programDescr, meshMap] : meshPrimitivesWithPipeline) {
-        auto& pipeline = pipelines[programDescr];
+    for (auto &[programDescr, meshMap]: meshPrimitivesWithPipeline) {
+        auto &pipeline = pipelines[programDescr];
         vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->pipeline);
         VulkanHelper::setFullViewportScissor(commandBuffer, swapchain->swapChainExtent);
 
-        for (auto& [meshId, primitivesList] : meshMap) {
+        for (auto &[meshId, primitivesList]: meshMap) {
             // bind transformations for each mesh
             bindingDescriptorSets.clear();
             bindingDescriptorSets.push_back(mvpSet);
             bindingDescriptorSets.push_back(uboDescriptorSets[descriptorSetsMap[meshId]]);
             vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->layout, 0,
-                bindingDescriptorSets.size(), bindingDescriptorSets.data(), 0, nullptr);
+                                    bindingDescriptorSets.size(), bindingDescriptorSets.data(), 0, nullptr);
 
-            for (auto& primitiveId : primitivesList) {
+            for (auto &primitiveId: primitivesList) {
                 // Bind the specific texture for each primitive
                 renderPrimitiveInstances(meshId, primitiveId, commandBuffer, programDescr, pipeline->layout);
             }
@@ -103,10 +103,10 @@ void Scene::recordCommandBuffer(VkCommandBuffer commandBuffer, VkDescriptorSet m
 }
 
 void Scene::renderPrimitiveInstances(int meshId, int primitiveId, VkCommandBuffer commandBuffer,
-    const PipelineDescription& descr, VkPipelineLayout pipelineLayout) {
+                                     const PipelineDescription &descr, VkPipelineLayout pipelineLayout) {
     if (meshTransforms.find(meshId) == meshTransforms.end()) return; // 0 instances. skip.
-                                                                     //
-    auto& primitive = model.meshes[meshId].primitives[primitiveId];
+    //
+    auto &primitive = model.meshes[meshId].primitives[primitiveId];
     if (descr.vertexTexcoordsAccessor.has_value()) {
         auto &material = model.materials[primitive.material];
         auto it = material.values.find(BASE_COLOR_TEXTURE);
@@ -120,7 +120,7 @@ void Scene::renderPrimitiveInstances(int meshId, int primitiveId, VkCommandBuffe
             }
 
             vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                pipelineLayout, 2, 1, &textures[gTexture.source].dSet, 0, nullptr);
+                                    pipelineLayout, 2, 1, &textures[gTexture.source].dSet, 0, nullptr);
         } else {
             throw std::runtime_error("Material has texture coordinates but no base color?");
         }
@@ -129,8 +129,8 @@ void Scene::renderPrimitiveInstances(int meshId, int primitiveId, VkCommandBuffe
     std::vector<VkBuffer> vertexBuffers;
     std::vector<VkDeviceSize> offsets;
 
-    const auto& addBufferOffset = [&](const char* attribute) {
-        const auto& bufferView = model.bufferViews[model.accessors[primitive.attributes[attribute]].bufferView];
+    const auto &addBufferOffset = [&](const char *attribute) {
+        const auto &bufferView = model.bufferViews[model.accessors[primitive.attributes[attribute]].bufferView];
         vertexBuffers.push_back(buffers[bufferView.buffer]);
         offsets.push_back(bufferView.byteOffset);
     };
@@ -157,7 +157,7 @@ void Scene::renderPrimitiveInstances(int meshId, int primitiveId, VkCommandBuffe
         auto indexBufferOffset = model.bufferViews[indexBufferViewIndex].byteOffset;
         uint32_t numIndices = model.accessors[indexAccessorIndex].count;
         auto indexBufferType = VulkanHelper::gltfTypeToVkIndexType(
-            model.accessors[indexAccessorIndex].componentType);
+                model.accessors[indexAccessorIndex].componentType);
         vkCmdBindIndexBuffer(commandBuffer, indexBuffer, indexBufferOffset, indexBufferType);
         vkCmdDrawIndexed(commandBuffer, numIndices, meshTransforms[meshId].size(), 0, 0, 0);
     } else {
@@ -175,7 +175,7 @@ void Scene::drawPointLights(VkCommandBuffer commandBuffer) {
 
 void Scene::setupDescriptorSets(VkDescriptorPool descriptorPool) {
     uboDescriptorSets = VulkanHelper::createDescriptorSetsFromLayout(
-        *device, descriptorPool, uboDescriptorSetLayout, meshTransforms.size());
+            *device, descriptorPool, uboDescriptorSetLayout, meshTransforms.size());
 
     int i = 0;
     for (int mesh = 0; mesh < model.meshes.size(); mesh++) {
@@ -207,7 +207,8 @@ void Scene::setupDescriptorSets(VkDescriptorPool descriptorPool) {
     }
 
     auto textureDescriptorSets = VulkanHelper::createDescriptorSetsFromLayout(*device, descriptorPool,
-        textureDescriptorSetLayout, textures.size());
+                                                                              textureDescriptorSetLayout,
+                                                                              textures.size());
 
     i = 0;
     for (auto &[texId, tex]: textures) {
@@ -232,9 +233,9 @@ void Scene::setupDescriptorSets(VkDescriptorPool descriptorPool) {
 }
 
 RequiredDescriptors Scene::getNumDescriptors() {
-    return RequiredDescriptors {
-        .requireUniformBuffers = (int)meshTransforms.size(),
-        .requireSamplers = (int)textures.size(),
+    return RequiredDescriptors{
+            .requireUniformBuffers = (int) meshTransforms.size(),
+            .requireSamplers = (int) textures.size(),
     };
 }
 
@@ -260,7 +261,7 @@ void Scene::setupBuffers() {
     if (addArtificialLight && lights.empty()) {
         float fov;
         glm::vec3 lookAt, camera;
-        computeCameraPos(lookAt, camera, fov);
+        computeDefaultCameraPos(lookAt, camera, fov);
 
         float range = (camera - lookAt).length();
 
@@ -308,6 +309,17 @@ void Scene::generateTransforms(int nodeIndex, glm::mat4 oldTransform, int maxRec
             lights.push_back({glm::make_vec3(newTransform[3]), light_color, light_intensity});
         } else {
             std::cout << "[lights] WARN: Detected unsupported light of type " << type << std::endl;
+        }
+    } else if (node.camera >= 0) {
+        if (model.cameras[node.camera].type == "perspective") {
+            auto perspective = model.cameras[node.camera].perspective;
+            cameras.push_back({
+                                      node.name,
+                                      newTransform,
+                                      static_cast<float>(perspective.yfov),
+                                      static_cast<float>(perspective.znear),
+                                      static_cast<float>(perspective.zfar)
+                              });
         }
     }
 
@@ -472,31 +484,7 @@ std::ostream &operator<<(std::ostream &out, const glm::vec3 &value) {
     return out;
 }
 
-void Scene::computeCameraPos(glm::vec3 &lookAt, glm::vec3 &cameraPos, float &fov) {
-    for (auto& node : model.nodes) {
-        if (node.camera >= 0) {
-            if (node.translation.size() != 3 || node.rotation.size() != 4) {
-                // TODO: handle the case where just node.matrix is set? Do we care about this?
-                continue;
-            }
-
-            if (model.cameras[node.camera].type != "perspective") {
-                continue;
-            }
-
-            // TODO: add selection for cameras if we have multiple
-            glm::mat4 translationMatrix = glm::translate(glm::mat4(1.0f),
-                glm::vec3(node.translation[0], node.translation[1], node.translation[2]));
-            glm::mat4 rotationMatrix = glm::mat4_cast(glm::quat(node.rotation[3], node.rotation[0], node.rotation[1], node.rotation[2]));
-            glm::mat4 transformMatrix = translationMatrix * rotationMatrix;
-
-            glm::vec3 cameraPos = glm::vec3(transformMatrix * glm::vec4(0.0f, 0.0f, 0.0f, 1.0f));
-            glm::vec3 lookAt = glm::vec3(transformMatrix * glm::vec4(0.0f, 0.0f, -1.0f, 0.0f));
-            fov = glm::degrees(model.cameras[node.camera].perspective.yfov);
-            return;
-        }
-    }
-
+void Scene::computeDefaultCameraPos(glm::vec3 &lookAt, glm::vec3 &cameraPos, float &fov) {
     // Compute bbox of the meshes, point to the middle and have a small distance
     // This works only for small test models, for bigger models, export a camera!
     glm::vec3 min, max;
@@ -599,33 +587,32 @@ void Scene::destroyAll() {
     pipelines.clear();
 }
 
-void Scene::createPipelines(VkRenderPass renderPass, VkDescriptorSetLayout mvpLayout, bool forceRecompile)
-{
+void Scene::createPipelines(VkRenderPass renderPass, VkDescriptorSetLayout mvpLayout, bool forceRecompile) {
     pipelines.clear();
-    for (auto& [descr, _] : meshPrimitivesWithPipeline) {
+    for (auto &[descr, _]: meshPrimitivesWithPipeline) {
         createPipelinesWithDescription(descr, renderPass, mvpLayout, forceRecompile);
     }
 }
 
-static std::string queryShaderName(const PipelineDescription& descr) {
+static std::string queryShaderName(const PipelineDescription &descr) {
     return descr.vertexFixedColorAccessor.has_value() ? "shaders/shader" : "shaders/simple-texture";
 }
 
 void Scene::createPipelinesWithDescription(PipelineDescription descr, VkRenderPass renderPass,
-    VkDescriptorSetLayout mvpLayout, bool forceRecompile)
-{
+                                           VkDescriptorSetLayout mvpLayout, bool forceRecompile) {
     if (pipelines.count(descr)) {
         return;
     }
 
     std::vector<VkVertexInputAttributeDescription> attributeDescriptions;
     std::vector<VkVertexInputBindingDescription> bindingDescriptions;
-    const auto& addAttributeAndBinding = [&] (int location, int binding, int accessor) {
+    const auto &addAttributeAndBinding = [&](int location, int binding, int accessor) {
         VkVertexInputAttributeDescription description{};
         description.binding = binding;
         description.location = location;
         description.format = VulkanHelper::gltfTypeToVkFormat(model.accessors[accessor].type,
-            model.accessors[accessor].componentType, model.accessors[accessor].normalized);
+                                                              model.accessors[accessor].componentType,
+                                                              model.accessors[accessor].normalized);
         description.offset = 0;
         attributeDescriptions.push_back(description);
         bindingDescriptions.push_back(getVertexBindingDescription(accessor, binding));
@@ -655,8 +642,8 @@ void Scene::createPipelinesWithDescription(PipelineDescription descr, VkRenderPa
     PipelineParameters params;
     std::string shaderNames = queryShaderName(descr);
     params.shadersList = {
-        {VK_SHADER_STAGE_VERTEX_BIT, shaderNames + ".vert"},
-        {VK_SHADER_STAGE_FRAGMENT_BIT, shaderNames + ".frag"},
+            {VK_SHADER_STAGE_VERTEX_BIT,   shaderNames + ".vert"},
+            {VK_SHADER_STAGE_FRAGMENT_BIT, shaderNames + ".frag"},
     };
 
     params.recompileShaders = forceRecompile;
@@ -671,4 +658,17 @@ void Scene::createPipelinesWithDescription(PipelineDescription descr, VkRenderPa
 
     params.descriptorSetLayouts = descriptorSets;
     pipelines[descr] = std::make_unique<GraphicsPipeline>(device, renderPass, 0, params);
+}
+
+void Scene::cameraButtons(glm::vec3 &lookAt, glm::vec3 &position, glm::vec3 &up, float &fovy, float &near, float &far) {
+    for (auto const &camera: cameras) {
+        if (ImGui::Button(camera.name.c_str())) {
+            lookAt = glm::vec3(camera.view * glm::vec4(0.0f, 0.0f, -1.0f, 1.0f));
+            position = glm::vec3(camera.view * glm::vec4(0.0f, 0.0f, 0.0f, 1.0f));
+            up = glm::vec3(camera.view * glm::vec4(0.0f, 1.0f, 0.0f, 0.0f));
+            fovy = glm::degrees(camera.yfov);
+            near = camera.znear;
+            far = camera.zfar;
+        }
+    }
 }
