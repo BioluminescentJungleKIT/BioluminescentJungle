@@ -44,13 +44,21 @@ void main() {
     light_pos_screen /= light_pos_screen.w;
     vec2 pp = (light_pos_screen.xy * 0.5 + 0.5) * vec2(info.viewportWidth, info.viewportHeight);
 
-    vec3 up = normalize(transpose(ubo.view)[1].xyz);
-    vec4 radius_pos_screen = VP * vec4(position[0] + up * radius, 1.0);
-    radius_pos_screen /= radius_pos_screen.w;
+    // Project all 8 corners of the bbox of the sphere to screen space
+    // TODO: can we do that more efficiently?
+    float radius_screen_x = 0;
+    float radius_screen_y = 0;
+    for (int dx = -1; dx <= 1; dx += 2) {
+        for (int dy = -1; dy <= 1; dy += 2) {
+            for (int dz = -1; dz <= 1; dz += 2) {
+                vec4 corner = VP * vec4(position[0] + vec3(dx, dy, dz) * radius, 1.0);
+                corner /= corner.w;
 
-    float aspect = info.viewportHeight/info.viewportWidth;
-    float radius_screen_y = length(light_pos_screen - radius_pos_screen);
-    float radius_screen_x = radius_screen_y * aspect;
+                radius_screen_x = max(radius_screen_x, abs(corner.x - light_pos_screen.x));
+                radius_screen_y = max(radius_screen_y, abs(corner.y - light_pos_screen.y));
+            }
+        }
+    }
 
     fPosition = position[0];
     fIntensity = intensity[0];
