@@ -14,6 +14,7 @@
 #include "Swapchain.h"
 #include "tiny_gltf.h"
 #include "PhysicalDevice.h"
+#include "imgui.h"
 
 
 struct ModelTransform {
@@ -23,6 +24,13 @@ struct LightData {
     glm::vec3 position;
     glm::vec3 color;
     glm::float32 intensity;
+};
+struct CameraData{
+    std::string name;
+    glm::mat4 view;
+    float yfov;
+    float znear;
+    float zfar;
 };
 
 // We may need multiple pipelines for the various parts of the different meshes in the scene.
@@ -74,7 +82,7 @@ public:
     RequiredDescriptors getNumDescriptors();
 
     void destroyDescriptorSetLayout();
-    void computeCameraPos(glm::vec3& lookAt, glm::vec3& cameraPos, float& fov);
+    void computeDefaultCameraPos(glm::vec3& lookAt, glm::vec3& cameraPos, float& fov);
 
     struct LoadedTexture
     {
@@ -88,7 +96,9 @@ public:
     void drawPointLights(VkCommandBuffer buffer);
     static bool addArtificialLight;
 
-  private:
+    void cameraButtons(glm::vec3 &lookAt, glm::vec3 &position, glm::vec3 &up, float &fovy, float &near, float &far);
+
+private:
     tinygltf::TinyGLTF loader;
     tinygltf::Model model;
     VulkanDevice *device;
@@ -129,6 +139,7 @@ public:
     std::map<int, LoadedTexture> textures;
     std::vector<LightData> lights;
     int lightsBuffer{-1};
+    std::vector<CameraData> cameras;
 };
 
 

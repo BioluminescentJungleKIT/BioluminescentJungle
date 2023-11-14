@@ -101,6 +101,7 @@ void JungleApp::drawImGUI() {
             ImGui::DragFloat3("Camera PoI", &cameraLookAt.x, 0.01f);
             ImGui::DragFloat3("Camera PoV", &cameraPosition.x, 0.01f);
             ImGui::DragFloat3("Camera Up", &cameraUpVector.x, 0.01f);
+            scene.cameraButtons(cameraLookAt, cameraPosition, cameraUpVector, cameraFOVY, nearPlane, farPlane);
         }
         if (ImGui::CollapsingHeader("Scene Settings")) {
             ImGui::Checkbox("Spin", &spinScene);
@@ -498,5 +499,5 @@ void JungleApp::setupScene(const std::string& sceneName) {
     scene = Scene(&device, swapchain.get(), sceneName);
     scene.setupBuffers();
     scene.setupTextures();
-    scene.computeCameraPos(cameraLookAt, cameraPosition, cameraFOVY);
+    scene.computeDefaultCameraPos(cameraLookAt, cameraPosition, cameraFOVY);
 }
