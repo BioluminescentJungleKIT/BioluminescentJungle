@@ -16,6 +16,5 @@ layout(location = 1) out vec3 intensity;
 void main() {
     position = (ubo.model * vec4(inPosition, 1.0)).xyz;
 
-    // what do we do with inIntensity? Multiplication seems the wrong thing to do, based on the results I am getting ...
-    intensity = inColor;
+    intensity = inColor * inIntensity/55;
 }
