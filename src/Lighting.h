@@ -11,7 +11,7 @@
 #include "Pipeline.h"
 #include <memory>
 
-#define LIGHT_ACCUMULATION_FORMAT VK_FORMAT_R8G8B8A8_SRGB
+#define LIGHT_ACCUMULATION_FORMAT VK_FORMAT_R32G32B32A32_SFLOAT
 
 struct DebugOptions {
     // 0 - don't show light boxes, 1 - show light bbox as an overlay

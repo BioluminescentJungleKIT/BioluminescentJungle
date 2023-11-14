@@ -43,6 +43,10 @@ vec3 rndColor(vec3 pos) {
     return abs(normalize(pos));
 }
 
+float max3 (vec3 v) {
+    return max (max (v.x, v.y), v.z);
+}
+
 void main() {
     if (debug.showLightBoxes > 0) {
         outColor = vec4(rndColor(fPosition) * 0.2, 1.0);
@@ -58,7 +62,7 @@ void main() {
         vec3 L = fPosition - calculatePosition();
         float dist = length(L);
         L /= dist;
-        float f = max(min(1.0 - pow(dist / debug.radius, 4), 1), 0 ) / (dist * dist);
+        float f = max(min(1.0 - pow(dist / (debug.radius * sqrt(max3(fIntensity))), 4), 1), 0 ) / (dist * dist);
 
         if (f > 0.0) {
             vec3 albedo = texelFetch(albedo, ivec2(gl_FragCoord), 0).rgb;
@@ -66,12 +70,6 @@ void main() {
             outColor = vec4(fIntensity * f * albedo * max(0.0, dot(L, N)), 1.0);
         } else {
             outColor = vec4(0.0, 0.0, 0.0, 1.0);
-        }
-
-        if (length(gl_FragCoord.xy - projPosition) < 7) {
-            // Draw the point lights themselves
-            // TODO: we might want to remove this, I doubt this is very performant, but it is useful for debugging.
-            outColor = vec4(fIntensity, 1.0);
         }
     } else if (debug.compositionMode == 1) {
         outColor = vec4(texelFetch(albedo, ivec2(gl_FragCoord), 0).rgb, 1.0);

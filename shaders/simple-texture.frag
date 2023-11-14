@@ -8,8 +8,14 @@ layout(location = 1) out vec3 outNormal;
 
 layout(set = 2, binding = 0) uniform sampler2D texSampler;
 
+float rand(vec2 co){
+    return fract(sin(dot(co, vec2(12.9898, 78.233))) * 43758.5453);
+}
+
 void main() {
     vec4 color = texture(texSampler, uv);
+    // alpha hashing
+    if ( color.a <= rand(uv + gl_FragCoord.xy) ) discard;
     outColor = color;
     outNormal = normalize(normal);
 }
