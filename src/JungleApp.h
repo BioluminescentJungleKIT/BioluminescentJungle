@@ -5,20 +5,13 @@
 #ifndef VULKANBASICS_PLANETAPP_H
 #define VULKANBASICS_PLANETAPP_H
 
-#include <iostream>
-#include <stdexcept>
-#include <cstdlib>
-#include <cstring>
-#include <fstream>
 #include <memory>
-#include <array>
 #include <shaderc/shaderc.hpp>
 #include "Lighting.h"
 #include "Scene.h"
 #include "PhysicalDevice.h"
 #include "Swapchain.h"
 #include "MusicPlayer.h"
-#include "Pipeline.h"
 #include "Tonemap.h"
 
 const uint32_t WIDTH = 1800;
@@ -81,10 +74,10 @@ private:
     void drawFrame();
     void drawImGUI();
 
-    static void framebufferResizeCallback(GLFWwindow *window, int width, int height) {
-        auto app = reinterpret_cast<JungleApp *>(glfwGetWindowUserPointer(window));
-        app->framebufferResized = true;
-    }
+    std::optional<float> lastMouseX, lastMouseY;
+    static void handleGLFWResize(GLFWwindow* window, int width, int height);
+    static void handleGLFWKey(GLFWwindow* window, int key, int scancode, int action, int mods);
+    static void handleGLFWMouse(GLFWwindow *window, double x, double y);
 
     void createMVPSetLayout();
 
@@ -118,7 +111,19 @@ private:
     glm::vec3 cameraLookAt = glm::vec3(0.0f, 0.0f, 0.0f);
     glm::vec3 cameraPosition = glm::vec3(5.0f, 5.0f, 5.0f);
     glm::vec3 cameraUpVector = glm::vec3(0.0f, 0.0f, 1.0f);
-    bool spinScene = true;
+
+    // The *Final* members indicate what is the current target for the camera (while the animation is running)
+    glm::vec3 cameraFinalPosition = glm::vec3(5.0f, 5.0f, 5.0f);
+    glm::vec3 cameraFinalLookAt = glm::vec3(5.0f, 5.0f, 5.0f);
+
+    // Parameters while computing the animation for the camera
+    glm::vec3 cameraAnimStartPos = cameraFinalPosition;
+    glm::vec3 cameraAnimEndPos = cameraFinalPosition;
+
+    std::optional<double> lastCameraChange;
+    void cameraMotion();
+
+    bool spinScene = false;
     float fixedRotation = 0.0;
 
     void recompileShaders();
