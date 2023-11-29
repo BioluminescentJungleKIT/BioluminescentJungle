@@ -44,6 +44,9 @@ add_executable(Jungle src/main.cpp
         src/VulkanHelper.cpp
         src/MusicPlayer.cpp
         src/MusicPlayer.h
+        src/PostProcessing.h
+        src/PostProcessing.cpp
+        src/PostProcessingStep.h
 )
 
 target_include_directories(Jungle PRIVATE lib/imgui lib/imgui/backends lib/imgui/misc/cpp/)

@@ -20,6 +20,7 @@
 #include "MusicPlayer.h"
 #include "Pipeline.h"
 #include "Tonemap.h"
+#include "PostProcessing.h"
 
 const uint32_t WIDTH = 1800;
 const uint32_t HEIGHT = 1200;
@@ -63,7 +64,7 @@ private:
 
     void setupRenderStageScene(const std::string& sceneName, bool recompileShaders);
 
-    std::unique_ptr<Tonemap> tonemap;
+    std::unique_ptr<Tonemap> tonemapping;
     std::unique_ptr<DeferredLighting> lighting;
 
     VkRenderPass sceneRPass;

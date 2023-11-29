@@ -29,8 +29,8 @@ void JungleApp::initVulkan(const std::string& sceneName, bool recompileShaders) 
     lighting = std::make_unique<DeferredLighting>(&device, swapchain.get());
     lighting->setup(recompileShaders, &scene, mvpSetLayout);
 
-    tonemap = std::make_unique<Tonemap>(&device, swapchain.get());
-    tonemap->setupRenderStageTonemap(recompileShaders);
+    tonemapping = std::make_unique<Tonemap>(&device, swapchain.get());
+    tonemapping->setupRenderStage(recompileShaders);
 
     createUniformBuffers();
     createDescriptorPool();
@@ -108,9 +108,9 @@ void JungleApp::drawImGUI() {
             ImGui::SliderFloat("Fixed spin", &fixedRotation, 0.0f, 360.0f);
         }
         if (ImGui::CollapsingHeader("Color Settings")) {
-            ImGui::SliderFloat("Exposure", &tonemap->exposure, -10, 10);
-            ImGui::SliderFloat("Gamma", &tonemap->gamma, 0, 4);
-            ImGui::Combo("Tonemapping", &tonemap->tonemappingMode, "None\0Hable\0AgX\0\0");
+            ImGui::SliderFloat("Exposure", &tonemapping->exposure, -10, 10);
+            ImGui::SliderFloat("Gamma", &tonemapping->gamma, 0, 4);
+            ImGui::Combo("Tonemapping", &tonemapping->tonemappingMode, "None\0Hable\0AgX\0\0");
         }
     }
     ImGui::End();
@@ -160,7 +160,7 @@ void JungleApp::drawFrame() {
     vkCmdEndRenderPass(commandBuffer);
 
     lighting->recordCommandBuffer(commandBuffer, sceneDescriptorSets[swapchain->currentFrame], &scene);
-    tonemap->recordTonemapCommandBuffer(commandBuffer, swapchain->defaultTarget.framebuffers[*imageIndex]);
+    tonemapping->recordCommandBuffer(commandBuffer, swapchain->defaultTarget.framebuffers[*imageIndex]);
 
     VK_CHECK_RESULT(vkEndCommandBuffer(commandBuffer))
 
@@ -168,13 +168,13 @@ void JungleApp::drawFrame() {
     if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || framebufferResized || forceRecreateSwapchain) {
         framebufferResized = false;
         forceRecreateSwapchain = false;
-        swapchain->recreateSwapChain(tonemap->tonemapRPass);
+        swapchain->recreateSwapChain(tonemapping->getRenderPass());
 
         gBuffer.destroyAll();
         setupGBuffer();
         scene.createPipelines(sceneRPass, mvpSetLayout, false);
         lighting->handleResize(gBuffer, mvpSetLayout, &scene);
-        tonemap->handleResize(lighting->compositedLight);
+        tonemapping->handleResize(lighting->compositedLight);
     } else {
         VK_CHECK_RESULT(result)
     }
@@ -234,7 +234,7 @@ void JungleApp::initImGui() {
     init_info.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
     // init_info.Allocator = YOUR_ALLOCATOR;
     // init_info.CheckVkResultFn = check_vk_result;
-    ImGui_ImplVulkan_Init(&init_info, tonemap->tonemapRPass);
+    ImGui_ImplVulkan_Init(&init_info, tonemapping->getRenderPass());
 
     VkCommandPool command_pool = device.commandPool;
     VkCommandBuffer command_buffer = commandBuffers[0];
@@ -267,7 +267,7 @@ void JungleApp::recompileShaders() {
 
     scene.createPipelines(sceneRPass, mvpSetLayout, true);
     lighting->createPipeline(true, mvpSetLayout, &scene);
-    tonemap->createTonemapPipeline(true);
+    tonemapping->createPipeline(true);
 }
 
 void JungleApp::createScenePass() {
@@ -387,7 +387,7 @@ void JungleApp::createUniformBuffers() {
     VkDeviceSize bufferSize = sizeof(UniformBufferObject);
     mvpUBO.allocate(&device, bufferSize, MAX_FRAMES_IN_FLIGHT);
     lighting->setupBuffers();
-    tonemap->setupBuffers();
+    tonemapping->setupBuffers();
 }
 
 void JungleApp::updateUniformBuffers(uint32_t currentImage) {
@@ -409,9 +409,11 @@ void JungleApp::updateUniformBuffers(uint32_t currentImage) {
 
     // TODO: is there a better way to integrate this somehow? Too lazy to skip the tonemapping render pass completely.
     if (lighting->debug.compositionMode != 0) {
-        tonemap->tonemappingMode = 0;
+        tonemapping->disable();
+    } else {
+        tonemapping->enable();
     }
-    tonemap->updateBuffers();
+    tonemapping->updateBuffers();
 }
 
 void JungleApp::createDescriptorPool() {
@@ -421,7 +423,7 @@ void JungleApp::createDescriptorPool() {
     poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 
     std::vector<RequiredDescriptors> requirements = {
-        scene.getNumDescriptors(), lighting->getNumDescriptors(), tonemap->getNumDescriptors()
+            scene.getNumDescriptors(), lighting->getNumDescriptors(), tonemapping->getNumDescriptors()
     };
 
     // Descriptors required in JungleApp itself
@@ -468,7 +470,7 @@ void JungleApp::createDescriptorSets() {
 
     scene.setupDescriptorSets(descriptorPool);
     lighting->createDescriptorSets(descriptorPool, gBuffer);
-    tonemap->createDescriptorSets(descriptorPool, lighting->compositedLight);
+    tonemapping->createDescriptorSets(descriptorPool, lighting->compositedLight);
 }
 
 void JungleApp::cleanup() {
@@ -479,7 +481,7 @@ void JungleApp::cleanup() {
 
     mvpUBO.destroy(&device);
     lighting.reset();
-    tonemap.reset();
+    tonemapping.reset();
     vkDestroyDescriptorPool(device, descriptorPool, nullptr);
     vkDestroyDescriptorPool(device, imguiDescriptorPool, nullptr);
 
