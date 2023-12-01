@@ -500,7 +500,7 @@ void JungleApp::setupScene(const std::string& sceneName) {
     scene = Scene(&device, swapchain.get(), sceneName);
     scene.setupBuffers();
     scene.setupTextures();
-    scene.computeDefaultCameraPos(cameraFinalLookAt, cameraFinalPosition, cameraFOVY);
+    scene.computeDefaultCameraPos(cameraFinalLookAt, cameraFinalPosition, cameraUpVector, cameraFOVY, nearPlane, farPlane);
 }
 
 void JungleApp::handleGLFWKey(GLFWwindow* window, int key, int scancode, int action, int mods) {

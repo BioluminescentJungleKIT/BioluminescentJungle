@@ -82,7 +82,7 @@ public:
     RequiredDescriptors getNumDescriptors();
 
     void destroyDescriptorSetLayout();
-    void computeDefaultCameraPos(glm::vec3& lookAt, glm::vec3& cameraPos, float& fov);
+    void computeDefaultCameraPos(glm::vec3 &lookAt, glm::vec3 &position, glm::vec3 &up, float &fovy, float &near, float &far);
 
     struct LoadedTexture
     {
@@ -94,8 +94,6 @@ public:
     };
 
     void drawPointLights(VkCommandBuffer buffer);
-    static bool addArtificialLight;
-
     void cameraButtons(glm::vec3 &lookAt, glm::vec3 &position, glm::vec3 &up, float &fovy, float &near, float &far);
 
 private:

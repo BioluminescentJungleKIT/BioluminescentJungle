@@ -20,10 +20,6 @@ int main(int argc, char **argv) {
         if (!strcmp(argv[i], "--crash-on-validation-message")) {
             crashOnValidationWarning = true;
         }
-
-        if (!strcmp(argv[i], "--artificial-light")) {
-            Scene::addArtificialLight = true;
-        }
     }
 
     try {

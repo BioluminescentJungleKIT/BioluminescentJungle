@@ -14,7 +14,6 @@
 #include <vulkan/vulkan_core.h>
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/gtx/quaternion.hpp>
-#include <random>
 #include <memory>
 
 // Definitions of standard names in gltf
@@ -258,28 +257,8 @@ void Scene::setupBuffers() {
         generateTransforms(node, glm::mat4(1.f), MAX_RECURSION);
     }
 
-    if (addArtificialLight && lights.empty()) {
-        float fov;
-        glm::vec3 lookAt, camera;
-        computeDefaultCameraPos(lookAt, camera, fov);
-
-        float range = (camera - lookAt).length();
-
-        std::mt19937 mt(0);
-        auto distX = std::uniform_real_distribution<float>(-range, range);
-        auto distY = std::uniform_real_distribution<float>(-range, range);
-        auto distZ = std::uniform_real_distribution<float>(-range * 0.2, range * 0.2);
-
-        for (int i = 1; i < 6; i++) {
-            glm::vec3 delta{distX(mt), distY(mt), distZ(mt)};
-            lights.push_back({lookAt + delta, glm::vec3((i % 3) / 2.0, (i % 2) / 2.0, (i % 5) / 4.0), 3.0});
-        }
-    }
-
     setupUniformBuffers();
 }
-
-bool Scene::addArtificialLight = false;
 
 void Scene::generateTransforms(int nodeIndex, glm::mat4 oldTransform, int maxRecursion) {
     if (maxRecursion <= 0) return;
@@ -484,18 +463,30 @@ std::ostream &operator<<(std::ostream &out, const glm::vec3 &value) {
     return out;
 }
 
-void Scene::computeDefaultCameraPos(glm::vec3 &lookAt, glm::vec3 &cameraPos, float &fov) {
+static void setFromCamera(glm::vec3& lookAt, glm::vec3& position, glm::vec3& up,
+    float& fovy, float& near, float& far, CameraData const& camera);
+
+void Scene::computeDefaultCameraPos(glm::vec3 &lookAt, glm::vec3 &position, glm::vec3 &up, float &fovy, float &near, float &far) {
+    if (!this->cameras.empty()) {
+        setFromCamera(lookAt, position, up, fovy, near, far, cameras[0]);
+        return;
+    }
+
     // Compute bbox of the meshes, point to the middle and have a small distance
     // This works only for small test models, for bigger models, export a camera!
     glm::vec3 min, max;
     calculateBoundingBox(model, min, max);
 
-    fov = 45.0f;
+    fovy = 45.0f;
     lookAt = (min + max) / 2.0f;
     float R = glm::length(max - min);
-    R /= std::tan(fov * M_PI / 360);
+    R /= std::tan(fovy * M_PI / 360);
     R *= 0.6;
-    cameraPos = glm::vec3(lookAt.x, lookAt.y + R, lookAt.z + R);
+
+    position = glm::vec3(lookAt.x, lookAt.y + R, lookAt.z + R);
+    near = 0.1f;
+    far = 1000.f;
+    up = glm::vec3(0, 0, 1);
 }
 
 void copyBufferToImage(VulkanDevice *device, VkBuffer buffer, VkImage image, uint32_t width, uint32_t height) {
@@ -660,15 +651,23 @@ void Scene::createPipelinesWithDescription(PipelineDescription descr, VkRenderPa
     pipelines[descr] = std::make_unique<GraphicsPipeline>(device, renderPass, 0, params);
 }
 
-void Scene::cameraButtons(glm::vec3 &lookAt, glm::vec3 &position, glm::vec3 &up, float &fovy, float &near, float &far) {
+static void setFromCamera(glm::vec3& lookAt, glm::vec3& position, glm::vec3& up,
+    float& fovy, float& near, float& far, CameraData const& camera)
+{
+    lookAt = glm::vec3(camera.view * glm::vec4(0.0f, 0.0f, -1.0f, 1.0f));
+    position = glm::vec3(camera.view * glm::vec4(0.0f, 0.0f, 0.0f, 1.0f));
+    up = glm::vec3(camera.view * glm::vec4(0.0f, 1.0f, 0.0f, 0.0f));
+    fovy = glm::degrees(camera.yfov);
+    near = camera.znear;
+    far = camera.zfar;
+}
+
+void Scene::cameraButtons(glm::vec3& lookAt, glm::vec3& position, glm::vec3& up,
+    float& fovy, float& near, float& far)
+{
     for (auto const &camera: cameras) {
         if (ImGui::Button(camera.name.c_str())) {
-            lookAt = glm::vec3(camera.view * glm::vec4(0.0f, 0.0f, -1.0f, 1.0f));
-            position = glm::vec3(camera.view * glm::vec4(0.0f, 0.0f, 0.0f, 1.0f));
-            up = glm::vec3(camera.view * glm::vec4(0.0f, 1.0f, 0.0f, 0.0f));
-            fovy = glm::degrees(camera.yfov);
-            near = camera.znear;
-            far = camera.zfar;
+            setFromCamera(lookAt, position, up, fovy, near, far, camera);
         }
     }
 }
