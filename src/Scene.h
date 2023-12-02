@@ -14,8 +14,6 @@
 #include "Swapchain.h"
 #include "tiny_gltf.h"
 #include "PhysicalDevice.h"
-#include "imgui.h"
-
 
 struct ModelTransform {
     glm::mat4 model;
@@ -40,9 +38,10 @@ struct PipelineDescription {
     std::optional<int> vertexTexcoordsAccessor;
     std::optional<int> vertexFixedColorAccessor;
     std::optional<int> vertexNormalAccessor;
+    bool useDisplacement = false;
 
     auto toTuple() const {
-        return std::make_tuple(vertexPosAccessor, vertexTexcoordsAccessor, vertexFixedColorAccessor);
+        return std::make_tuple(vertexPosAccessor, vertexTexcoordsAccessor, vertexFixedColorAccessor, useDisplacement);
     }
 
     bool operator < (const PipelineDescription& other) const {
@@ -90,7 +89,7 @@ public:
         VkDeviceMemory memory;
         VkImageView imageView;
         VkSampler sampler;
-        VkDescriptorSet dSet;
+        bool isNormalMap = false;
     };
 
     void drawPointLights(VkCommandBuffer buffer);
@@ -126,7 +125,9 @@ private:
     std::map<std::vector<int>, int> transformBuffers;
 
     VkDescriptorSetLayout uboDescriptorSetLayout{VK_NULL_HANDLE};
-    VkDescriptorSetLayout textureDescriptorSetLayout{VK_NULL_HANDLE};
+
+    VkDescriptorSetLayout albedoDSLayout{VK_NULL_HANDLE};
+    VkDescriptorSetLayout albedoDisplacementDSLayout{VK_NULL_HANDLE};
 
     std::vector<VkDescriptorSet> uboDescriptorSets;
 
@@ -134,7 +135,10 @@ private:
     std::map<int, int> descriptorSetsMap;
     std::map<int, std::vector<ModelTransform>> meshTransforms;
     std::vector<VkDescriptorSet> bindingDescriptorSets;
+
     std::map<int, LoadedTexture> textures;
+    std::map<int, VkDescriptorSet> materialDSet;
+
     std::vector<LightData> lights;
     int lightsBuffer{-1};
     std::vector<CameraData> cameras;

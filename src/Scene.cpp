@@ -8,6 +8,7 @@
 #include "Pipeline.h"
 #include "Scene.h"
 #include "VulkanHelper.h"
+#include "imgui.h"
 #include <glm/gtc/matrix_transform.hpp>
 #include <iomanip>
 #include <stdexcept>
@@ -25,6 +26,22 @@
 
 const int MAX_RECURSION = 10;
 
+static bool string_contains(std::string a, std::string b) {
+    return a.find(b) != a.npos;
+}
+
+static bool materialUsesDisplacedTexture(const tinygltf::Material& material) {
+    if (material.normalTexture.index >= 0 && string_contains(material.name, "Displaced")) {
+        return true;
+    }
+
+    return false;
+}
+
+static bool materialUsesBaseTexture(const tinygltf::Material& material) {
+    return material.values.count(BASE_COLOR_TEXTURE);
+}
+
 PipelineDescription Scene::getPipelineDescriptionForPrimitive(const tinygltf::Primitive &primitive) {
     PipelineDescription descr;
 
@@ -38,10 +55,17 @@ PipelineDescription Scene::getPipelineDescriptionForPrimitive(const tinygltf::Pr
         descr.vertexNormalAccessor = attributes.at(NORMAL);
     }
 
-    if (attributes.count(TEXCOORD0) && model.materials[primitive.material].values.count(BASE_COLOR_TEXTURE)) {
-        descr.vertexTexcoordsAccessor = attributes.at(TEXCOORD0);
+    bool has_texcoords = attributes.count(TEXCOORD0);
+    auto& material = model.materials[primitive.material];
+
+    if (has_texcoords && materialUsesBaseTexture(material)) {
+            descr.vertexTexcoordsAccessor = attributes.at(TEXCOORD0);
     } else if (attributes.count(FIXED_COLOR)) {
         descr.vertexFixedColorAccessor = attributes.at(FIXED_COLOR);
+    }
+
+    if (has_texcoords && materialUsesDisplacedTexture(material)) {
+        descr.useDisplacement = true;
     }
 
     return descr;
@@ -106,28 +130,13 @@ void Scene::renderPrimitiveInstances(int meshId, int primitiveId, VkCommandBuffe
     if (meshTransforms.find(meshId) == meshTransforms.end()) return; // 0 instances. skip.
     //
     auto &primitive = model.meshes[meshId].primitives[primitiveId];
-    if (descr.vertexTexcoordsAccessor.has_value()) {
-        auto &material = model.materials[primitive.material];
-        auto it = material.values.find(BASE_COLOR_TEXTURE);
-        if (it != material.values.end()) {
-            // We have a texture here
-            const auto &textureIdx = it->second.TextureIndex();
-            const tinygltf::Texture &gTexture = model.textures[textureIdx];
-
-            if (!textures.count(gTexture.source)) {
-                throw std::runtime_error("Texture not found at runtime??");
-            }
-
-            vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                    pipelineLayout, 2, 1, &textures[gTexture.source].dSet, 0, nullptr);
-        } else {
-            throw std::runtime_error("Material has texture coordinates but no base color?");
-        }
+    if (materialDSet.contains(primitive.material)) {
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+            pipelineLayout, 2, 1, &materialDSet[primitive.material], 0, nullptr);
     }
 
     std::vector<VkBuffer> vertexBuffers;
     std::vector<VkDeviceSize> offsets;
-
     const auto &addBufferOffset = [&](const char *attribute) {
         const auto &bufferView = model.bufferViews[model.accessors[primitive.attributes[attribute]].bufferView];
         vertexBuffers.push_back(buffers[bufferView.buffer]);
@@ -201,33 +210,32 @@ void Scene::setupDescriptorSets(VkDescriptorPool descriptorPool) {
         vkUpdateDescriptorSets(*device, 1, &descriptorWrite, 0, nullptr);
     }
 
-    if (textures.empty()) {
-        return;
-    }
+    for (size_t i = 0; i < model.materials.size(); i++) {
+        if (materialUsesDisplacedTexture(model.materials[i])) {
+            auto dset = VulkanHelper::createDescriptorSetsFromLayout(*device, descriptorPool,
+                albedoDisplacementDSLayout, 1)[0];
 
-    auto textureDescriptorSets = VulkanHelper::createDescriptorSetsFromLayout(*device, descriptorPool,
-                                                                              textureDescriptorSetLayout,
-                                                                              textures.size());
+            auto& albedo = textures[model.materials[i].values.find(BASE_COLOR_TEXTURE)->second.TextureIndex()];
+            auto& disp = textures[model.materials[i].normalTexture.index];
+            auto albedoImageInfo = vkutil::createDescriptorImageInfo(albedo.imageView, albedo.sampler);
+            auto dispImageInfo = vkutil::createDescriptorImageInfo(disp.imageView, disp.sampler);
+            device->writeDescriptorSets({
+                vkutil::createDescriptorWriteSampler(albedoImageInfo, dset, 0),
+                vkutil::createDescriptorWriteSampler(dispImageInfo, dset, 1),
+            });
 
-    i = 0;
-    for (auto &[texId, tex]: textures) {
-        VkDescriptorImageInfo imageInfo{};
-        imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        imageInfo.imageView = tex.imageView;
-        imageInfo.sampler = tex.sampler;
+            materialDSet[i] = dset;
+        } else if (materialUsesBaseTexture(model.materials[i])) {
+            auto dset = VulkanHelper::createDescriptorSetsFromLayout(*device, descriptorPool,
+                albedoDSLayout, 1)[0];
 
-        VkWriteDescriptorSet descriptorWrite{};
-        descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrite.dstSet = textureDescriptorSets[i];
-        descriptorWrite.dstBinding = 0;
-        descriptorWrite.dstArrayElement = 0;
-        descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        descriptorWrite.descriptorCount = 1;
-        descriptorWrite.pImageInfo = &imageInfo;
-        vkUpdateDescriptorSets(*device, 1, &descriptorWrite, 0, nullptr);
-
-        tex.dSet = textureDescriptorSets[i];
-        ++i;
+            auto& albedo = textures[model.materials[i].values.find(BASE_COLOR_TEXTURE)->second.TextureIndex()];
+            auto albedoImageInfo = vkutil::createDescriptorImageInfo(albedo.imageView, albedo.sampler);
+            device->writeDescriptorSets({
+                vkutil::createDescriptorWriteSampler(albedoImageInfo, dset, 0),
+            });
+            materialDSet[i] = dset;
+        }
     }
 }
 
@@ -394,41 +402,29 @@ VkVertexInputBindingDescription Scene::getVertexBindingDescription(int accessor,
 
 void Scene::ensureDescriptorSetLayouts() {
     if (uboDescriptorSetLayout == VK_NULL_HANDLE) {
-        VkDescriptorSetLayoutBinding uboLayoutBinding{};
-        uboLayoutBinding.binding = 0;
-        uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        uboLayoutBinding.descriptorCount = 1;
-        uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-        uboLayoutBinding.pImmutableSamplers = nullptr; // Optional
-
-        VkDescriptorSetLayoutCreateInfo layoutInfo{};
-        layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-        layoutInfo.bindingCount = 1;
-        layoutInfo.pBindings = &uboLayoutBinding;
-
-        VK_CHECK_RESULT(vkCreateDescriptorSetLayout(*device, &layoutInfo, nullptr, &uboDescriptorSetLayout))
+        uboDescriptorSetLayout = device->createDescriptorSetLayout({
+            vkutil::createSetLayoutBinding(0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_VERTEX_BIT),
+        });
     }
 
-    if (textureDescriptorSetLayout == VK_NULL_HANDLE) {
-        VkDescriptorSetLayoutBinding samplerLayoutBinding{};
-        samplerLayoutBinding.binding = 0;
-        samplerLayoutBinding.descriptorCount = 1;
-        samplerLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        samplerLayoutBinding.pImmutableSamplers = nullptr;
-        samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    if (albedoDSLayout == VK_NULL_HANDLE) {
+        albedoDSLayout = device->createDescriptorSetLayout({
+            vkutil::createSetLayoutBinding(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT),
+        });
+    }
 
-        VkDescriptorSetLayoutCreateInfo layoutInfo{};
-        layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-        layoutInfo.bindingCount = 1;
-        layoutInfo.pBindings = &samplerLayoutBinding;
-
-        VK_CHECK_RESULT(vkCreateDescriptorSetLayout(*device, &layoutInfo, nullptr, &textureDescriptorSetLayout))
+    if (albedoDisplacementDSLayout == VK_NULL_HANDLE) {
+        albedoDisplacementDSLayout = device->createDescriptorSetLayout({
+            vkutil::createSetLayoutBinding(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT),
+            vkutil::createSetLayoutBinding(1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT),
+        });
     }
 }
 
 void Scene::destroyDescriptorSetLayout() {
     vkDestroyDescriptorSetLayout(*device, uboDescriptorSetLayout, nullptr);
-    vkDestroyDescriptorSetLayout(*device, textureDescriptorSetLayout, nullptr);
+    vkDestroyDescriptorSetLayout(*device, albedoDSLayout, nullptr);
+    vkDestroyDescriptorSetLayout(*device, albedoDisplacementDSLayout, nullptr);
 }
 
 void calculateBoundingBox(const tinygltf::Model &model, glm::vec3 &minBounds, glm::vec3 &maxBounds) {
@@ -538,27 +534,33 @@ Scene::LoadedTexture uploadGLTFImage(VulkanDevice *device, const tinygltf::Image
 }
 
 void Scene::setupTextures() {
+    const auto& loadTexture = [&] (int textureIdx, bool isNormalMap) {
+        // We have a texture here
+        const tinygltf::Texture &gTexture = model.textures[textureIdx];
+        if (textures.count(gTexture.source)) {
+            return;
+        }
+
+        textures[gTexture.source] = uploadGLTFImage(device, model.images[gTexture.source]);
+        textures[gTexture.source].imageView =
+            device->createImageView(textures[gTexture.source].image, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_ASPECT_COLOR_BIT);
+        textures[gTexture.source].sampler = VulkanHelper::createSampler(device);
+        textures[gTexture.source].isNormalMap = isNormalMap;
+    };
+
     for (size_t i = 0; i < model.materials.size(); i++) {
         const auto &material = model.materials[i];
 
         auto it = material.values.find(BASE_COLOR_TEXTURE);
-        if (it == material.values.end()) {
-            continue;
+        if (it != material.values.end()) {
+            loadTexture(it->second.TextureIndex(), false);
         }
 
-        // We have a texture here
-        const auto &textureIdx = it->second.TextureIndex();
-        const tinygltf::Texture &gTexture = model.textures[textureIdx];
-
-        if (textures.count(gTexture.source)) {
+        int nIdx = material.normalTexture.index;
+        if (nIdx >= 0) {
+            loadTexture(nIdx, true);
             continue;
         }
-
-        textures[gTexture.source] = uploadGLTFImage(device, model.images[gTexture.source]);
-        textures[gTexture.source].imageView = device->createImageView(textures[gTexture.source].image,
-                                                                      VK_FORMAT_R8G8B8A8_SRGB,
-                                                                      VK_IMAGE_ASPECT_COLOR_BIT);
-        textures[gTexture.source].sampler = VulkanHelper::createSampler(device);
     }
 }
 
@@ -585,8 +587,25 @@ void Scene::createPipelines(VkRenderPass renderPass, VkDescriptorSetLayout mvpLa
     }
 }
 
-static std::string queryShaderName(const PipelineDescription &descr) {
-    return descr.vertexFixedColorAccessor.has_value() ? "shaders/shader" : "shaders/simple-texture";
+static ShaderList selectShaders(const PipelineDescription &descr) {
+    if (descr.vertexFixedColorAccessor.has_value()) {
+        return ShaderList {
+            {VK_SHADER_STAGE_VERTEX_BIT,   "shaders/shader.vert"},
+            {VK_SHADER_STAGE_FRAGMENT_BIT, "shaders/shader.frag"},
+        };
+    }
+
+    if (descr.useDisplacement) {
+        return ShaderList {
+            {VK_SHADER_STAGE_VERTEX_BIT,   "shaders/simple-texture.vert"},
+            {VK_SHADER_STAGE_FRAGMENT_BIT, "shaders/displacement.frag"},
+        };
+    }
+
+    return ShaderList {
+        {VK_SHADER_STAGE_VERTEX_BIT,   "shaders/simple-texture.vert"},
+        {VK_SHADER_STAGE_FRAGMENT_BIT, "shaders/simple-texture.frag"},
+    };
 }
 
 void Scene::createPipelinesWithDescription(PipelineDescription descr, VkRenderPass renderPass,
@@ -625,18 +644,13 @@ void Scene::createPipelinesWithDescription(PipelineDescription descr, VkRenderPa
         addAttributeAndBinding(1, 1, *descr.vertexFixedColorAccessor);
     } else if (descr.vertexTexcoordsAccessor.has_value()) {
         addAttributeAndBinding(1, 1, *descr.vertexTexcoordsAccessor);
-        descriptorSets.push_back(textureDescriptorSetLayout);
+        descriptorSets.push_back(descr.useDisplacement ? albedoDisplacementDSLayout : albedoDSLayout);
     } else {
         throw std::runtime_error("Mesh primitive without color or texcoords is not supported by shaders!");
     }
 
     PipelineParameters params;
-    std::string shaderNames = queryShaderName(descr);
-    params.shadersList = {
-            {VK_SHADER_STAGE_VERTEX_BIT,   shaderNames + ".vert"},
-            {VK_SHADER_STAGE_FRAGMENT_BIT, shaderNames + ".frag"},
-    };
-
+    params.shadersList = selectShaders(descr);
     params.recompileShaders = forceRecompile;
     params.vertexAttributeDescription = attributeDescriptions;
     params.vertexInputDescription = bindingDescriptions;

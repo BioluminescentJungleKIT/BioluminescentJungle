@@ -168,5 +168,40 @@ public:
                                     std::vector<double> translation);
 };
 
+namespace vkutil {
+inline VkDescriptorSetLayoutBinding createSetLayoutBinding(int bindingId, VkDescriptorType type, VkShaderStageFlags stages) {
+    VkDescriptorSetLayoutBinding samplerLayoutBinding{};
+    samplerLayoutBinding.binding = bindingId;
+    samplerLayoutBinding.descriptorCount = 1;
+    samplerLayoutBinding.descriptorType = type;
+    samplerLayoutBinding.pImmutableSamplers = nullptr;
+    samplerLayoutBinding.stageFlags = stages;
+    return samplerLayoutBinding;
+}
+
+inline VkDescriptorImageInfo createDescriptorImageInfo(VkImageView imageView, VkSampler sampler,
+    VkImageLayout layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
+{
+    VkDescriptorImageInfo imageInfo{};
+    imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    imageInfo.imageView = imageView;
+    imageInfo.sampler = sampler;
+    return imageInfo;
+}
+
+inline VkWriteDescriptorSet createDescriptorWriteSampler(
+    VkDescriptorImageInfo& imageInfo, VkDescriptorSet dset, int bindingId)
+{
+    VkWriteDescriptorSet descriptorWrite{};
+    descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    descriptorWrite.dstSet = dset;
+    descriptorWrite.dstBinding = bindingId;
+    descriptorWrite.dstArrayElement = 0;
+    descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    descriptorWrite.descriptorCount = 1;
+    descriptorWrite.pImageInfo = &imageInfo;
+    return descriptorWrite;
+}
+}
 
 #endif //JUNGLE_VULKANHELPER_H
