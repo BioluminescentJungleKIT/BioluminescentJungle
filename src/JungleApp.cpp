@@ -94,6 +94,7 @@ void JungleApp::drawImGUI() {
         }
         if (ImGui::CollapsingHeader("Video Settings")) {
             forceRecreateSwapchain = ImGui::Checkbox("VSync", &swapchain->enableVSync);
+            ImGui::Checkbox("Enable TAA Jitter", &doJitter);
         }
         if (ImGui::CollapsingHeader("Camera Settings")) {
             ImGui::DragFloatRange2("Clipping Planes", &nearPlane, &farPlane, 0.07f, .01f, 100000.f);
@@ -398,11 +399,19 @@ void JungleApp::updateUniformBuffers(uint32_t currentImage) {
     float rotation = spinScene ? time * glm::radians(90.0f) : glm::radians(fixedRotation);
 
     UniformBufferObject ubo{};
-    ubo.model = glm::rotate(glm::mat4(1.0f), rotation, glm::vec3(0.0f, 0.0f, 1.0f));
+    ubo.modl = glm::rotate(glm::mat4(1.0f), rotation, glm::vec3(0.0f, 0.0f, 1.0f));
     ubo.view = glm::lookAt(cameraPosition, cameraLookAt, cameraUpVector);
     ubo.proj = glm::perspective(glm::radians(cameraFOVY),
         (float) swapchain->swapChainExtent.width / (float) swapchain->swapChainExtent.height, nearPlane, farPlane);
     ubo.proj[1][1] *= -1;  // because GLM generates OpenGL projections
+    if (doJitter) {
+        ubo.jitt = halton23norm(jitterSequence);
+        ubo.jitt *= glm::vec2(1.f / swapchain->swapChainExtent.width, 1.f / swapchain->swapChainExtent.height);
+        jitterSequence++;
+    } else {
+        ubo.jitt = glm::vec2(0,0);
+    }
+    //jitterSequence %= jitters.size();
 
     mvpUBO.update(&ubo, sizeof(ubo), currentImage);
     lighting->updateBuffers(ubo.proj * ubo.view, cameraPosition, cameraUpVector);
@@ -502,4 +511,20 @@ void JungleApp::setupScene(const std::string& sceneName) {
     scene.setupBuffers();
     scene.setupTextures();
     scene.computeDefaultCameraPos(cameraLookAt, cameraPosition, cameraFOVY);
+}
+
+float JungleApp::halton(uint32_t b, uint32_t n) {
+    // from wikipedia
+    float f = 1;
+    float r = 0;
+    while (n > 0) {
+        f = f/b;
+        r = r + f * (n % b);
+        n /= b;
+    }
+    return r;
+}
+
+glm::vec2 JungleApp::halton23norm(uint32_t n) {
+    return glm::vec2(halton(2, n), halton(3, n)) * 2.f - 1.f;
 }

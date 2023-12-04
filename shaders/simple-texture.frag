@@ -15,7 +15,7 @@ float rand(vec2 co){
 void main() {
     vec4 color = texture(texSampler, uv);
     // alpha hashing
-    if ( color.a <= rand(uv + gl_FragCoord.xy) ) discard;
+    if ( color.a <= rand(uv * 10000 + gl_FragCoord.xy) ) discard;
     outColor = color;
     outNormal = normalize(normal);
 }

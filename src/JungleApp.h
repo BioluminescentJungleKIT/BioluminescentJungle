@@ -65,7 +65,7 @@ private:
 
     void setupRenderStageScene(const std::string &sceneName, bool recompileShaders);
 
-    std::unique_ptr<Tonemap> tonemapping;
+    std::unique_ptr<PostProcessing> postprocessing;
     std::unique_ptr<DeferredLighting> lighting;
 
     VkRenderPass sceneRPass;
@@ -129,8 +129,13 @@ private:
 
     void setupGBuffer();
 
+    float halton(uint32_t b, uint32_t n);
+    glm::vec2 halton23norm(uint32_t n);
+
     MusicPlayer mplayer{"scenes/loop.wav"};
     bool playMusic;
+    uint32_t jitterSequence = 0;
+    bool doJitter = true;
 };
 
 
