@@ -26,14 +26,15 @@ const uint32_t WIDTH = 1800;
 const uint32_t HEIGHT = 1200;
 
 struct UniformBufferObject {
-    glm::mat4 model;
+    glm::mat4 modl;
     glm::mat4 view;
     glm::mat4 proj;
+    glm::vec2 jitt;
 };
 
 class JungleApp {
 public:
-    void run(const std::string& sceneName, bool recompileShaders) {
+    void run(const std::string &sceneName, bool recompileShaders) {
         initWindow();
         initVulkan(sceneName, recompileShaders);
         initImGui();
@@ -46,7 +47,7 @@ public:
 private:
     void initWindow();
 
-    void initVulkan(const std::string& sceneName, bool recompileShaders);
+    void initVulkan(const std::string &sceneName, bool recompileShaders);
 
     void initImGui();
 
@@ -62,7 +63,7 @@ private:
 
     void createSurface();
 
-    void setupRenderStageScene(const std::string& sceneName, bool recompileShaders);
+    void setupRenderStageScene(const std::string &sceneName, bool recompileShaders);
 
     std::unique_ptr<Tonemap> tonemapping;
     std::unique_ptr<DeferredLighting> lighting;
@@ -75,11 +76,13 @@ private:
     std::vector<VkCommandBuffer> commandBuffers;
 
     void createCommandBuffers();
+
     void startRenderPass(VkCommandBuffer commandBuffer, uint32_t currentFrame, VkRenderPass renderPass);
 
     bool framebufferResized = false;
 
     void drawFrame();
+
     void drawImGUI();
 
     static void framebufferResizeCallback(GLFWwindow *window, int width, int height) {
@@ -105,7 +108,7 @@ private:
 
     std::vector<VkDescriptorSet> sceneDescriptorSets;
 
-    void setupScene(const std::string& sceneName);
+    void setupScene(const std::string &sceneName);
 
     Scene scene;
 
@@ -119,10 +122,11 @@ private:
     glm::vec3 cameraLookAt = glm::vec3(0.0f, 0.0f, 0.0f);
     glm::vec3 cameraPosition = glm::vec3(5.0f, 5.0f, 5.0f);
     glm::vec3 cameraUpVector = glm::vec3(0.0f, 0.0f, 1.0f);
-    bool spinScene = true;
+    bool spinScene = false;
     float fixedRotation = 0.0;
 
     void recompileShaders();
+
     void setupGBuffer();
 
     MusicPlayer mplayer{"scenes/loop.wav"};

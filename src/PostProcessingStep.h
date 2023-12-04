@@ -15,6 +15,8 @@
 #include "VulkanHelper.h"
 #include <memory>
 
+#define POST_PROCESSING_FORMAT VK_FORMAT_R32G32B32A32_SFLOAT
+
 /**
  * A helper class which manages resources for a post processing step
  */
@@ -61,9 +63,9 @@ public:
         this->pipeline = std::make_unique<GraphicsPipeline>(device, renderPass, 0, params);
     };
 
-    void createRenderPass() {
-        VkAttachmentDescription colorAttachment;
-        colorAttachment.format = swapchain->swapChainImageFormat;
+    void createRenderPass(bool isFinalPass) {
+        VkAttachmentDescription colorAttachment{};
+        colorAttachment.format = isFinalPass ? swapchain->swapChainImageFormat : POST_PROCESSING_FORMAT;
         colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
         colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
         colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -72,7 +74,7 @@ public:
         colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
         colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 
-        VkAttachmentReference colorAttachmentRef;
+        VkAttachmentReference colorAttachmentRef{};
         colorAttachmentRef.attachment = 0;
         colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
@@ -101,8 +103,8 @@ public:
         VK_CHECK_RESULT(vkCreateRenderPass(*device, &renderPassInfo, nullptr, &renderPass))
     };
 
-    void setupRenderStage(bool recompileShaders) {
-        createRenderPass();
+    void setupRenderStage(bool recompileShaders, bool isFinalPass) {
+        createRenderPass(isFinalPass);
         swapchain->createFramebuffersForRender(renderPass);
 
         samplers.resize(MAX_FRAMES_IN_FLIGHT);
@@ -110,7 +112,7 @@ public:
             samplers[i] = VulkanHelper::createSampler(device);
         }
 
-        createPostProcessingStepSetLayout();
+        createDescriptorSetLayout();
         createPipeline(recompileShaders);
     };
 
@@ -118,7 +120,7 @@ public:
         return renderPass;
     }
 
-    void recordCommandBuffer(VkCommandBuffer commandBuffer, VkFramebuffer target) {
+    void recordCommandBuffer(VkCommandBuffer commandBuffer, VkFramebuffer target, bool renderImGUI) {
         VkRenderPassBeginInfo renderPassInfo{};
         renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
         renderPassInfo.renderPass = renderPass;
@@ -137,12 +139,15 @@ public:
                                 pipeline->layout, 0, 1, &descriptorSets[swapchain->currentFrame], 0, nullptr);
         vkCmdDraw(commandBuffer, 6, 1, 0, 0);
 
-        ImGui::Render();  //todo move to global post processing
-        ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), commandBuffer);
+        if (renderImGUI) {
+            ImGui::Render();
+            ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), commandBuffer);
+        }
+
         vkCmdEndRenderPass(commandBuffer);
     };
 
-    void createPostProcessingStepSetLayout() {
+    void createDescriptorSetLayout() {
         VkDescriptorSetLayoutBinding samplerLayoutBinding{};
         samplerLayoutBinding.binding = 0;
         samplerLayoutBinding.descriptorCount = 1;
