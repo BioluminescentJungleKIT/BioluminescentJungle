@@ -37,6 +37,7 @@ TAA::getAdditionalSamplers(std::vector<VkWriteDescriptorSet> &descriptorWrites,
                            std::vector<VkDescriptorImageInfo> &imageInfos, int frameIndex,
                            const RenderTarget &sourceBuffer) {
     VkDescriptorImageInfo imageInfo{};
+    // TODO fix validation error, because it is actually VK_IMAGE_LAYOUT_UNDEFINED for the first frame
     imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     imageInfo.imageView = taaTarget->imageViews[(frameIndex + MAX_FRAMES_IN_FLIGHT - 1) % MAX_FRAMES_IN_FLIGHT].at(0);
     imageInfo.sampler = samplers[frameIndex][5];
