@@ -9,6 +9,7 @@ layout(location = 0) out vec4 outColor;
 layout(set = 1, binding = 0) uniform sampler2D albedo;
 layout(set = 1, binding = 1) uniform sampler2D depth;
 layout(set = 1, binding = 2) uniform sampler2D normal;
+layout(set = 1, binding = 3) uniform sampler2D motion;
 
 layout(set = 2, binding = 0, std140) uniform DebugOptions {
     int showLightBoxes;
@@ -79,5 +80,7 @@ void main() {
         outColor = vec4(calculatePosition(), 1.0);
     } else if (debug.compositionMode == 4) {
         outColor = vec4(texelFetch(normal, ivec2(gl_FragCoord), 0).xyz, 1.0);
+    } else if (debug.compositionMode == 5) {
+        outColor = vec4(texelFetch(motion, ivec2(gl_FragCoord), 0).rg, 0.0, 1.0);
     }
 }

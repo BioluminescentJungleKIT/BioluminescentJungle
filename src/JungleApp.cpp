@@ -88,13 +88,14 @@ void JungleApp::drawImGUI() {
             }
         }
         if (ImGui::CollapsingHeader("Debug Settings")) {
-            ImGui::Combo("G-Buffer Visualization", &lighting->debug.compositionMode, "None\0Albedo\0Depth\0Position\0Normal\0\0");
+            ImGui::Combo("G-Buffer Visualization", &lighting->debug.compositionMode, "None\0Albedo\0Depth\0Position\0Normal\0Motion\0\0");
             ImGui::Checkbox("Show Light BBoxes", (bool*)&lighting->debug.showLightBoxes);
             ImGui::SliderFloat("Light bbox log size", &lighting->lightRadiusLog, -5.f, 5.f);
         }
         if (ImGui::CollapsingHeader("Video Settings")) {
             forceRecreateSwapchain = ImGui::Checkbox("VSync", &swapchain->enableVSync);
             ImGui::Checkbox("Enable TAA Jitter", &doJitter);
+            ImGui::SliderFloat("TAA alpha", &postprocessing->getTAAPointer()->alpha, 0.f, 1.f);
         }
         if (ImGui::CollapsingHeader("Camera Settings")) {
             ImGui::DragFloatRange2("Clipping Planes", &nearPlane, &farPlane, 0.07f, .01f, 100000.f);
@@ -175,7 +176,7 @@ void JungleApp::drawFrame() {
         setupGBuffer();
         scene.createPipelines(sceneRPass, mvpSetLayout, false);
         lighting->handleResize(gBuffer, mvpSetLayout, &scene);
-        postprocessing->handleResize(lighting->compositedLight);
+        postprocessing->handleResize(lighting->compositedLight, gBuffer);
     } else {
         VK_CHECK_RESULT(result)
     }
@@ -370,17 +371,21 @@ void JungleApp::startRenderPass(VkCommandBuffer commandBuffer, uint32_t currentF
 }
 
 void JungleApp::createMVPSetLayout() {
+    std::vector<VkDescriptorSetLayoutBinding> layoutBindings;
     VkDescriptorSetLayoutBinding uboLayoutBinding{};
     uboLayoutBinding.binding = 0;
     uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     uboLayoutBinding.descriptorCount = 1;
     uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_GEOMETRY_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
     uboLayoutBinding.pImmutableSamplers = nullptr; // Optional
+    layoutBindings.push_back(uboLayoutBinding);
+    uboLayoutBinding.binding = 1;
+    layoutBindings.push_back(uboLayoutBinding);
 
     VkDescriptorSetLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    layoutInfo.bindingCount = 1;
-    layoutInfo.pBindings = &uboLayoutBinding;
+    layoutInfo.bindingCount = layoutBindings.size();
+    layoutInfo.pBindings = layoutBindings.data();
     VK_CHECK_RESULT(vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &mvpSetLayout))
 }
 
@@ -418,8 +423,10 @@ void JungleApp::updateUniformBuffers(uint32_t currentImage) {
 
     // TODO: is there a better way to integrate this somehow? Too lazy to skip the tonemapping render pass completely.
     if (lighting->debug.compositionMode != 0) {
+        postprocessing->getTAAPointer()->disable();
         postprocessing->getTonemappingPointer()->disable();
     } else {
+        postprocessing->getTAAPointer()->enable();
         postprocessing->getTonemappingPointer()->enable();
     }
     postprocessing->updateBuffers();
@@ -459,10 +466,14 @@ void JungleApp::createDescriptorSets() {
         mvpSetLayout, MAX_FRAMES_IN_FLIGHT);
 
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+        std::vector<VkDescriptorBufferInfo> bufferInfos;
         VkDescriptorBufferInfo bufferInfo{};
         bufferInfo.buffer = mvpUBO.buffers[i];
         bufferInfo.offset = 0;
         bufferInfo.range = sizeof(UniformBufferObject);
+        bufferInfos.push_back(bufferInfo);
+        bufferInfo.buffer = mvpUBO.buffers[(i + MAX_FRAMES_IN_FLIGHT - 1) % MAX_FRAMES_IN_FLIGHT];
+        bufferInfos.push_back(bufferInfo);
 
         VkWriteDescriptorSet descriptorWrite{};
         descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -470,8 +481,8 @@ void JungleApp::createDescriptorSets() {
         descriptorWrite.dstBinding = 0;
         descriptorWrite.dstArrayElement = 0;
         descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        descriptorWrite.descriptorCount = 1;
-        descriptorWrite.pBufferInfo = &bufferInfo;
+        descriptorWrite.descriptorCount = bufferInfos.size();
+        descriptorWrite.pBufferInfo = bufferInfos.data();
         descriptorWrite.pImageInfo = nullptr; // Optional
         descriptorWrite.pTexelBufferView = nullptr; // Optional
         vkUpdateDescriptorSets(device, 1, &descriptorWrite, 0, nullptr);
@@ -479,7 +490,7 @@ void JungleApp::createDescriptorSets() {
 
     scene.setupDescriptorSets(descriptorPool);
     lighting->createDescriptorSets(descriptorPool, gBuffer);
-    postprocessing->createDescriptorSets(descriptorPool, lighting->compositedLight);
+    postprocessing->createDescriptorSets(descriptorPool, lighting->compositedLight, gBuffer);
 }
 
 void JungleApp::cleanup() {

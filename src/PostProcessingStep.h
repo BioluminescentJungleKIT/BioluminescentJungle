@@ -14,6 +14,7 @@
 #include "Pipeline.h"
 #include "VulkanHelper.h"
 #include <memory>
+#include "GBufferDescription.h"
 
 #define POST_PROCESSING_FORMAT VK_FORMAT_R32G32B32A32_SFLOAT
 
@@ -33,8 +34,10 @@ public:
         vkDestroyRenderPass(*device, renderPass, nullptr);
         vkDestroyDescriptorSetLayout(*device, descriptorSetLayout, nullptr);
 
-        for (auto &sampler: this->samplers) {
-            vkDestroySampler(*device, sampler, nullptr);
+        for (auto &samplerRow: this->samplers) {
+            for (auto &sampler: samplerRow) {
+                vkDestroySampler(*device, sampler, nullptr);
+            }
         }
     };
 
@@ -103,13 +106,22 @@ public:
         VK_CHECK_RESULT(vkCreateRenderPass(*device, &renderPassInfo, nullptr, &renderPass))
     };
 
+    virtual unsigned int getAdditionalSamplersCount() {
+        return 0;
+    }
+
     void setupRenderStage(bool recompileShaders, bool isFinalPass) {
         createRenderPass(isFinalPass);
-        swapchain->createFramebuffersForRender(renderPass);
+        if (isFinalPass) {
+            swapchain->createFramebuffersForRender(renderPass);
+        }
 
         samplers.resize(MAX_FRAMES_IN_FLIGHT);
         for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-            samplers[i] = VulkanHelper::createSampler(device);
+            samplers[i].resize(GBufferTarget::NumAttachments + 1 + getAdditionalSamplersCount());
+            for (int j = 0; j < GBufferTarget::NumAttachments + 1 + getAdditionalSamplersCount(); j++) {
+                samplers[i][j] = VulkanHelper::createSampler(device);
+            }
         }
 
         createDescriptorSetLayout();
@@ -155,14 +167,24 @@ public:
         samplerLayoutBinding.pImmutableSamplers = nullptr;
         samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
-        VkDescriptorSetLayoutBinding PostProcessingSteppingLayoutBinding{};
-        PostProcessingSteppingLayoutBinding.binding = 1;
-        PostProcessingSteppingLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        PostProcessingSteppingLayoutBinding.descriptorCount = 1;
-        PostProcessingSteppingLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-        PostProcessingSteppingLayoutBinding.pImmutableSamplers = nullptr;
+        VkDescriptorSetLayoutBinding bufferLayoutBinding{};
+        bufferLayoutBinding.binding = 1;
+        bufferLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        bufferLayoutBinding.descriptorCount = 1;
+        bufferLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        bufferLayoutBinding.pImmutableSamplers = nullptr;
 
-        std::vector<VkDescriptorSetLayoutBinding> bindings{samplerLayoutBinding, PostProcessingSteppingLayoutBinding};
+        std::vector<VkDescriptorSetLayoutBinding> bindings{samplerLayoutBinding, bufferLayoutBinding};
+
+        for (int i = 0; i < GBufferTarget::NumAttachments + getAdditionalSamplersCount(); i++) {
+            VkDescriptorSetLayoutBinding extraLayoutBinding{};
+            extraLayoutBinding.binding = i+2;
+            extraLayoutBinding.descriptorCount = 1;
+            extraLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            extraLayoutBinding.pImmutableSamplers = nullptr;
+            extraLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+            bindings.push_back(extraLayoutBinding);
+        }
 
         VkDescriptorSetLayoutCreateInfo layoutInfo{};
         layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
@@ -172,45 +194,77 @@ public:
 
     };
 
-    void handleResize(const RenderTarget &sourceBuffer) {
-        updateSamplerBindings(sourceBuffer);
+    void handleResize(const RenderTarget &sourceBuffer, const RenderTarget &gBuffer) {
+        updateSamplerBindings(sourceBuffer, gBuffer);
         createPipeline(false);
     };
 
-    void updateSamplerBindings(const RenderTarget &sourceBuffer) {
+    virtual void
+    getAdditionalSamplers(std::vector<VkWriteDescriptorSet> &descriptorWrites,
+                          std::vector<VkDescriptorImageInfo> &imageInfos, int frameIndex,
+                          const RenderTarget &sourceBuffer) {}
+
+    void updateSamplerBindings(const RenderTarget &sourceBuffer, const RenderTarget &gBuffer) {
         for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
             VkDescriptorImageInfo imageInfo{};
             imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
             imageInfo.imageView = sourceBuffer.imageViews[i].at(0);
-            imageInfo.sampler = samplers[i];
+            imageInfo.sampler = samplers[i][0];
 
-            VkWriteDescriptorSet descriptorWrite{};
-            descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            descriptorWrite.dstSet = descriptorSets[i];
-            descriptorWrite.dstBinding = 0;
-            descriptorWrite.dstArrayElement = 0;
-            descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-            descriptorWrite.descriptorCount = 1;
-            descriptorWrite.pImageInfo = &imageInfo;
-            descriptorWrite.pNext = NULL;
+            VkWriteDescriptorSet descriptorWriteSampler{};
+            descriptorWriteSampler.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            descriptorWriteSampler.dstSet = descriptorSets[i];
+            descriptorWriteSampler.dstBinding = 0;
+            descriptorWriteSampler.dstArrayElement = 0;
+            descriptorWriteSampler.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            descriptorWriteSampler.descriptorCount = 1;
+            descriptorWriteSampler.pImageInfo = &imageInfo;
+            descriptorWriteSampler.pNext = NULL;
 
-            VkDescriptorBufferInfo PostProcessingSteppingBufferInfo{};
-            PostProcessingSteppingBufferInfo.buffer = uniformBuffer.buffers[0];
-            PostProcessingSteppingBufferInfo.offset = 0;
-            PostProcessingSteppingBufferInfo.range = sizeof(UBOType);
+            VkDescriptorBufferInfo DescriptorBufferInfo{};
+            DescriptorBufferInfo.buffer = uniformBuffer.buffers[0];
+            DescriptorBufferInfo.offset = 0;
+            DescriptorBufferInfo.range = sizeof(UBOType);
 
-            VkWriteDescriptorSet PostProcessingSteppingDescriptorWrite{};
-            PostProcessingSteppingDescriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            PostProcessingSteppingDescriptorWrite.dstSet = descriptorSets[i];
-            PostProcessingSteppingDescriptorWrite.dstBinding = 1;
-            PostProcessingSteppingDescriptorWrite.dstArrayElement = 0;
-            PostProcessingSteppingDescriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-            PostProcessingSteppingDescriptorWrite.descriptorCount = 1;
-            PostProcessingSteppingDescriptorWrite.pBufferInfo = &PostProcessingSteppingBufferInfo;
-            PostProcessingSteppingDescriptorWrite.pImageInfo = nullptr; // Optional
-            PostProcessingSteppingDescriptorWrite.pTexelBufferView = nullptr; // Optional
+            VkWriteDescriptorSet descriptorWriteBuffer{};
+            descriptorWriteBuffer.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            descriptorWriteBuffer.dstSet = descriptorSets[i];
+            descriptorWriteBuffer.dstBinding = 1;
+            descriptorWriteBuffer.dstArrayElement = 0;
+            descriptorWriteBuffer.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+            descriptorWriteBuffer.descriptorCount = 1;
+            descriptorWriteBuffer.pBufferInfo = &DescriptorBufferInfo;
+            descriptorWriteBuffer.pImageInfo = nullptr; // Optional
+            descriptorWriteBuffer.pTexelBufferView = nullptr; // Optional
 
-            std::vector<VkWriteDescriptorSet> descriptorWrites{descriptorWrite, PostProcessingSteppingDescriptorWrite};
+            std::vector<VkWriteDescriptorSet> descriptorWrites{descriptorWriteSampler, descriptorWriteBuffer};
+
+            //add gbuffer
+
+
+            std::vector<VkDescriptorImageInfo> gBufferImageInfos((int) GBufferTarget::NumAttachments);
+
+            for (size_t j = 0; j < gBufferImageInfos.size(); j++) {
+                gBufferImageInfos[j].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                gBufferImageInfos[j].imageView = gBuffer.imageViews[i][j];
+                gBufferImageInfos[j].sampler = samplers[i][j + 1];
+
+                VkWriteDescriptorSet descriptorWriteGBuffer{};
+                descriptorWriteGBuffer.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+                descriptorWriteGBuffer.dstSet = descriptorSets[i];
+                descriptorWriteGBuffer.dstBinding = j + 2;
+                descriptorWriteGBuffer.dstArrayElement = 0;
+                descriptorWriteGBuffer.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+                descriptorWriteGBuffer.descriptorCount = 1;
+                descriptorWriteGBuffer.pImageInfo = &gBufferImageInfos[j];
+                descriptorWriteGBuffer.pNext = NULL;
+
+                descriptorWrites.push_back(descriptorWriteGBuffer);
+            }
+
+            std::vector<VkDescriptorImageInfo> imageInfos;
+            getAdditionalSamplers(descriptorWrites, imageInfos, i, sourceBuffer);
+
             vkUpdateDescriptorSets(*device, descriptorWrites.size(), descriptorWrites.data(), 0, nullptr);
         }
     };
@@ -225,11 +279,11 @@ public:
         uniformBuffer.update(&ubo, sizeof(UBOType), 0);
     };
 
-    void createDescriptorSets(VkDescriptorPool pool, const RenderTarget &sourceBuffer) {
+    void createDescriptorSets(VkDescriptorPool pool, const RenderTarget &sourceBuffer, const RenderTarget &gBuffer) {
         descriptorSets = VulkanHelper::createDescriptorSetsFromLayout(*device, pool, descriptorSetLayout,
                                                                       MAX_FRAMES_IN_FLIGHT);
 
-        updateSamplerBindings(sourceBuffer);
+        updateSamplerBindings(sourceBuffer, gBuffer);
     };
 
     RequiredDescriptors getNumDescriptors() {
@@ -246,18 +300,17 @@ protected:
 
     UBOType ubo{};
 
+    std::vector<std::vector<VkSampler>> samplers;
+    std::vector<VkDescriptorSet> descriptorSets;
+    Swapchain *swapchain;
 private:
     VulkanDevice *device;
-    Swapchain *swapchain;
     UniformBuffer uniformBuffer;
 
     VkRenderPass renderPass;
     std::unique_ptr<GraphicsPipeline> pipeline;
 
     VkDescriptorSetLayout descriptorSetLayout;
-
-    std::vector<VkDescriptorSet> descriptorSets;
-    std::vector<VkSampler> samplers;
 
 };
 

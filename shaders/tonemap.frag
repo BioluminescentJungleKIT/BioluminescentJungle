@@ -10,10 +10,6 @@ layout(set = 0, binding = 1) uniform TonemappingUBO {
     int mode;
 } tonemapping;
 
-layout(set = 0, binding = 2) buffer LUT {
-    float[64*64*64] values;
-} lut;
-
 vec3 hable_function(vec3 x)// from https://64.github.io/tonemapping/
 {
     float A = 0.15f;

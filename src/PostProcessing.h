@@ -9,6 +9,7 @@
 #include <glm/glm.hpp>
 #include "Pipeline.h"
 #include "Tonemap.h"
+#include "TAA.h"
 #include <memory>
 
 /**
@@ -25,19 +26,24 @@ class PostProcessing {
     std::vector<VkDescriptorSet> PostProcessingDescriptorSets;
     std::vector<VkSampler> PostProcessingSamplers;
     void setupRenderStages(bool recompileShaders);
-    void recordCommandBuffer(VkCommandBuffer commandBuffer, VkFramebuffer finalTarget);
+    void recordCommandBuffer(VkCommandBuffer commandBuffer, VkFramebuffer_T *finalTarget);
 
-    void handleResize(const RenderTarget& sourceBuffer);
+    void handleResize(const RenderTarget &sourceBuffer, const RenderTarget &gBuffer);
 
     void setupBuffers();
     void updateBuffers();
 
-    void createDescriptorSets(VkDescriptorPool pool, const RenderTarget& sourceBuffer);
+    void createDescriptorSets(VkDescriptorPool pool, const RenderTarget &sourceBuffer,
+                              const RenderTarget &gBuffer);
 
     RequiredDescriptors getNumDescriptors();
 
     Tonemap* getTonemappingPointer() {
         return &tonemap;
+    }
+
+    TAA* getTAAPointer() {
+        return &taa;
     }
 
     VkRenderPass getFinalRenderPass() {
@@ -49,6 +55,9 @@ class PostProcessing {
     Swapchain *swapchain;
 
     Tonemap tonemap;
+    TAA taa;
+
+    RenderTarget taaTarget;
 };
 
 #endif /* end of include guard: POSTPROCESSING_H */
