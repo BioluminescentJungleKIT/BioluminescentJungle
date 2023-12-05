@@ -24,7 +24,7 @@ inline VkFormat getGBufferAttachmentFormat(Swapchain *swapChain, GBufferTarget t
         case Normal:
             return VK_FORMAT_R8G8B8A8_SRGB;
         case Motion:
-            return VK_FORMAT_R16G16_SNORM;
+            return VK_FORMAT_R32G32_SFLOAT;
         case Depth:
             return swapChain->chooseDepthFormat();
         default:

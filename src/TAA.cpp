@@ -20,7 +20,8 @@ void TAA::enable() {
 
 void TAA::updateUBOContent() {
     ubo.alpha = enabled ? alpha : 1;
-    ubo.widht = swapchain->swapChainExtent.width;
+    ubo.mode = enabled ? mode : 0;
+    ubo.width = swapchain->swapChainExtent.width;
     ubo.height = swapchain->swapChainExtent.height;
 }
 

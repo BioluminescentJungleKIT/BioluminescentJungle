@@ -15,7 +15,8 @@
 
 struct TAAUBO {
     glm::float32 alpha;
-    glm::uint widht;
+    glm::int32 mode;
+    glm::uint width;
     glm::uint height;
 };
 
@@ -41,6 +42,7 @@ public:
     void enable();
 
     float alpha{0.1};
+    int mode{2};
     bool enabled{true};
     RenderTarget *taaTarget;
 };

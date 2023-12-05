@@ -34,7 +34,7 @@ void main() {
 
     currpos = gl_Position;
     lastpos = lastubo.proj * lastubo.view * lastubo.modl * model.model[gl_InstanceIndex] * vec4(inPosition, 1.0);
-    lastpos += lastpos.w * vec4(lastubo.jitt.x, lastubo.jitt.y, 0, 0);
+    lastpos += lastpos.w * vec4(ubo.jitt.x, ubo.jitt.y, 0, 0);
 
     uv = inUV;
     normal = (transpose(inverse(ubo.modl * model.model[gl_InstanceIndex])) * vec4(inNormal, 0.0)).xyz;

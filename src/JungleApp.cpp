@@ -96,6 +96,7 @@ void JungleApp::drawImGUI() {
             forceRecreateSwapchain = ImGui::Checkbox("VSync", &swapchain->enableVSync);
             ImGui::Checkbox("Enable TAA Jitter", &doJitter);
             ImGui::SliderFloat("TAA alpha", &postprocessing->getTAAPointer()->alpha, 0.f, 1.f);
+            ImGui::Combo("TAA Neighborhood Clamping", &postprocessing->getTAAPointer()->mode, "Off\0Min-Max\0Moment-Based\0\0");
         }
         if (ImGui::CollapsingHeader("Camera Settings")) {
             ImGui::DragFloatRange2("Clipping Planes", &nearPlane, &farPlane, 0.07f, .01f, 100000.f);

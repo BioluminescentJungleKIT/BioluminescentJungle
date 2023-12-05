@@ -81,6 +81,6 @@ void main() {
     } else if (debug.compositionMode == 4) {
         outColor = vec4(texelFetch(normal, ivec2(gl_FragCoord), 0).xyz, 1.0);
     } else if (debug.compositionMode == 5) {
-        outColor = vec4(texelFetch(motion, ivec2(gl_FragCoord), 0).rg, 0.0, 1.0);
+        outColor = vec4(texelFetch(motion, ivec2(gl_FragCoord), 0).rg, 0.0, 1.0) * 100;
     }
 }
