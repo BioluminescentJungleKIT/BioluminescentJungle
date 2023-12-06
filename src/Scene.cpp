@@ -567,7 +567,7 @@ void Scene::setupTextures() {
         textures[gTexture.source].imageView = device->createImageView(textures[gTexture.source].image,
                                                                       VK_FORMAT_R8G8B8A8_SRGB,
                                                                       VK_IMAGE_ASPECT_COLOR_BIT);
-        textures[gTexture.source].sampler = VulkanHelper::createSampler(device);
+        textures[gTexture.source].sampler = VulkanHelper::createSampler(device, true);
     }
 }
 

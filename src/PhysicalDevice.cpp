@@ -200,8 +200,13 @@ bool VulkanDevice::isDeviceSuitable(VkPhysicalDevice const& device, VkSurfaceKHR
 
     QueueFamilyIndices indices = findQueueFamilies(device, surface);
 
+    VkBool32 surfaceSupported = VK_FALSE;
+    if (indices.presentFamily.has_value()) {
+        vkGetPhysicalDeviceSurfaceSupportKHR(device, indices.presentFamily.value(), surface, &surfaceSupported);
+    }
+
     bool swapChainAdequate = false;
-    if (extensionsSupported) {
+    if (extensionsSupported && surfaceSupported == VK_TRUE) {
         SwapChainSupportDetails swapChainSupport = querySwapChainSupport(device, surface);
         swapChainAdequate = !swapChainSupport.formats.empty() && !swapChainSupport.presentModes.empty();
     }
@@ -210,7 +215,8 @@ bool VulkanDevice::isDeviceSuitable(VkPhysicalDevice const& device, VkSurfaceKHR
            deviceFeatures.geometryShader &&
            indices.isComplete() &&
            extensionsSupported &&
-           swapChainAdequate;
+           swapChainAdequate &&
+           surfaceSupported == VK_TRUE;
 }
 
 const std::vector<const char *> deviceExtensions = {

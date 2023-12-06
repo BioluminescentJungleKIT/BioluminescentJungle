@@ -15,7 +15,7 @@ void UniformBuffer::allocate(VulkanDevice* device, size_t size, size_t copies) {
     }
 }
 
-void UniformBuffer::update(void* data, size_t size, int copyIdx) {
+void UniformBuffer::update(void* data, size_t size, uint32_t copyIdx) {
     memcpy(mappedPointer[copyIdx], data, size);
 }
 
@@ -27,4 +27,8 @@ void UniformBuffer::destroy(VulkanDevice *device) {
     for (auto& mem : memories) {
         vkFreeMemory(*device, mem, nullptr);
     }
+}
+
+void UniformBuffer::copyTo(UniformBuffer dstBuffer, uint32_t srcIndex, uint32_t dstIndex, size_t size) {
+    dstBuffer.update(mappedPointer[srcIndex], size, dstIndex);
 }
