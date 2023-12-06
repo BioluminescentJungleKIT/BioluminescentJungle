@@ -75,7 +75,8 @@ public:
         colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
         colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
         colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        colorAttachment.finalLayout = isFinalPass ? VK_IMAGE_LAYOUT_PRESENT_SRC_KHR : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        colorAttachment.finalLayout = isFinalPass ? VK_IMAGE_LAYOUT_PRESENT_SRC_KHR
+                                                  : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
         VkAttachmentReference colorAttachmentRef{};
         colorAttachmentRef.attachment = 0;
@@ -178,7 +179,7 @@ public:
 
         for (int i = 0; i < GBufferTarget::NumAttachments + getAdditionalSamplersCount(); i++) {
             VkDescriptorSetLayoutBinding extraLayoutBinding{};
-            extraLayoutBinding.binding = i+2;
+            extraLayoutBinding.binding = i + 2;
             extraLayoutBinding.descriptorCount = 1;
             extraLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
             extraLayoutBinding.pImmutableSamplers = nullptr;
@@ -289,7 +290,8 @@ public:
     RequiredDescriptors getNumDescriptors() {
         return {
                 .requireUniformBuffers = MAX_FRAMES_IN_FLIGHT,
-                .requireSamplers = MAX_FRAMES_IN_FLIGHT,
+                .requireSamplers = MAX_FRAMES_IN_FLIGHT *
+                                   (1 + GBufferTarget::NumAttachments + getAdditionalSamplersCount()),
         };
     };
 

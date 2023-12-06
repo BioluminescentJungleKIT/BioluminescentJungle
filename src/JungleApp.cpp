@@ -459,7 +459,7 @@ void JungleApp::createDescriptorPool() {
 
     // Descriptors required in JungleApp itself
     requirements.push_back({
-                                   .requireUniformBuffers = MAX_FRAMES_IN_FLIGHT,
+                                   .requireUniformBuffers = MAX_FRAMES_IN_FLIGHT * 2,
                                    .requireSamplers = 0,
                            });
 
