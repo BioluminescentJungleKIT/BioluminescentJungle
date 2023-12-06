@@ -115,6 +115,12 @@ void JungleApp::drawImGUI() {
             ImGui::Checkbox("Spin", &spinScene);
             ImGui::SliderFloat("Fixed spin", &fixedRotation, 0.0f, 360.0f);
         }
+        if (ImGui::CollapsingHeader("Fog Settings")) {
+            ImGui::ColorEdit3("Color", &postprocessing->getFogPointer()->color.r);
+            ImGui::SliderFloat("Brightness", &postprocessing->getFogPointer()->brightness, 0.f, 10.f);
+            ImGui::SliderFloat("Ambient Effect", &postprocessing->getFogPointer()->ambientFactor, 0.f, 10.f);
+            ImGui::SliderFloat("Absorption Coefficient", &postprocessing->getFogPointer()->absorption, 0.f, 10.f);
+        }
         if (ImGui::CollapsingHeader("Color Settings")) {
             ImGui::SliderFloat("Exposure", &postprocessing->getTonemappingPointer()->exposure, -10, 10);
             ImGui::SliderFloat("Gamma", &postprocessing->getTonemappingPointer()->gamma, 0, 4);
@@ -438,11 +444,9 @@ void JungleApp::updateUniformBuffers(uint32_t currentImage) {
 
     // TODO: is there a better way to integrate this somehow? Too lazy to skip the tonemapping render pass completely.
     if (lighting->debug.compositionMode != 0) {
-        postprocessing->getTAAPointer()->disable();
-        postprocessing->getTonemappingPointer()->disable();
+        postprocessing->disable();
     } else {
-        postprocessing->getTAAPointer()->enable();
-        postprocessing->getTonemappingPointer()->enable();
+        postprocessing->enable();
     }
     postprocessing->updateBuffers();
 }

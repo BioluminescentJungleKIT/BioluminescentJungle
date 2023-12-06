@@ -10,8 +10,13 @@
 PostProcessing::PostProcessing(VulkanDevice *device, Swapchain *swapChain) :
         tonemap(Tonemap(device, swapChain)),
         taa(TAA(device, swapChain, &taaTarget)),
+        fog(GlobalFog(device, swapChain)),
         device(device),
         swapchain(swapChain) {
+    fogTarget.init(device, MAX_FRAMES_IN_FLIGHT);
+    fogTarget.addAttachment(swapchain->swapChainExtent, POST_PROCESSING_FORMAT,
+                            VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+                            VK_IMAGE_ASPECT_COLOR_BIT);
     taaTarget.init(device, MAX_FRAMES_IN_FLIGHT);
     taaTarget.addAttachment(swapchain->swapChainExtent, POST_PROCESSING_FORMAT,
                             VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
@@ -20,48 +25,72 @@ PostProcessing::PostProcessing(VulkanDevice *device, Swapchain *swapChain) :
 
 PostProcessing::~PostProcessing() {
     taaTarget.destroyAll();
+    fogTarget.destroyAll();
 }
 
 void PostProcessing::setupRenderStages(bool recompileShaders) {
+    fog.setupRenderStage(recompileShaders, false);
+    fogTarget.createFramebuffers(fog.getRenderPass(), swapchain->swapChainExtent);
     taa.setupRenderStage(recompileShaders, false);
     taaTarget.createFramebuffers(taa.getRenderPass(), swapchain->swapChainExtent);
     tonemap.setupRenderStage(recompileShaders, true);
 }
 
 void PostProcessing::createPipeline(bool recompileShaders) {
+    fog.createPipeline(recompileShaders);
     taa.createPipeline(recompileShaders);
     tonemap.createPipeline(recompileShaders);
 }
 
 void PostProcessing::recordCommandBuffer(VkCommandBuffer commandBuffer, VkFramebuffer_T *finalTarget) {
+    fog.recordCommandBuffer(commandBuffer, fogTarget.framebuffers[swapchain->currentFrame], false);
     taa.recordCommandBuffer(commandBuffer, taaTarget.framebuffers[swapchain->currentFrame], false);
     tonemap.recordCommandBuffer(commandBuffer, finalTarget, true);
 }
 
 void PostProcessing::setupBuffers() {
+    fog.setupBuffers();
     taa.setupBuffers();
     tonemap.setupBuffers();
 }
 
 void PostProcessing::updateBuffers() {
+    fog.updateBuffers();
     taa.updateBuffers();
     tonemap.updateBuffers();
 }
 
 void PostProcessing::createDescriptorSets(VkDescriptorPool pool, const RenderTarget &sourceBuffer,
                                           const RenderTarget &gBuffer) {
-    taa.createDescriptorSets(pool, sourceBuffer, gBuffer);
+    fog.createDescriptorSets(pool, sourceBuffer, gBuffer);
+    taa.createDescriptorSets(pool, fogTarget, gBuffer);
     tonemap.createDescriptorSets(pool, taaTarget, gBuffer);
 }
 
 RequiredDescriptors PostProcessing::getNumDescriptors() {
+    auto fogDescriptors = fog.getNumDescriptors();
     auto taaDescriptors = taa.getNumDescriptors();
     auto tonemapDescriptors = tonemap.getNumDescriptors();
-    return {taaDescriptors.requireUniformBuffers + tonemapDescriptors.requireUniformBuffers,
-            taaDescriptors.requireSamplers + tonemapDescriptors.requireSamplers};
+
+    RequiredDescriptors requiredDescriptors{};
+
+    for (auto requirements: {fogDescriptors, taaDescriptors, tonemapDescriptors}) {
+        requiredDescriptors.requireUniformBuffers += requirements.requireUniformBuffers;
+        requiredDescriptors.requireSamplers += requirements.requireSamplers;
+    }
+
+    return requiredDescriptors;
 }
 
 void PostProcessing::handleResize(const RenderTarget &sourceBuffer, const RenderTarget &gBuffer) {
+    fogTarget.destroyAll();
+    fogTarget.init(device, MAX_FRAMES_IN_FLIGHT);
+    fogTarget.addAttachment(swapchain->swapChainExtent, POST_PROCESSING_FORMAT,
+                            VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+                            VK_IMAGE_ASPECT_COLOR_BIT);
+    fogTarget.createFramebuffers(fog.getRenderPass(), swapchain->swapChainExtent);
+    fog.handleResize(sourceBuffer, gBuffer);
+
     taaTarget.destroyAll();
     taaTarget.init(device, MAX_FRAMES_IN_FLIGHT);
     taaTarget.addAttachment(swapchain->swapChainExtent, POST_PROCESSING_FORMAT,
@@ -69,5 +98,18 @@ void PostProcessing::handleResize(const RenderTarget &sourceBuffer, const Render
                             VK_IMAGE_ASPECT_COLOR_BIT);
     taaTarget.createFramebuffers(taa.getRenderPass(), swapchain->swapChainExtent);
     taa.handleResize(sourceBuffer, gBuffer);
+
     tonemap.handleResize(taaTarget, gBuffer);
+}
+
+void PostProcessing::enable() {
+    fog.enable();
+    taa.enable();
+    tonemap.enable();
+}
+
+void PostProcessing::disable() {
+    fog.disable();
+    taa.disable();
+    tonemap.disable();
 }

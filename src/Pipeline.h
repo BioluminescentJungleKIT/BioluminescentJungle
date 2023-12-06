@@ -16,8 +16,8 @@ struct BasicBlending {
 };
 
 struct RequiredDescriptors {
-    int requireUniformBuffers = 0;
-    int requireSamplers = 0;
+    unsigned int requireUniformBuffers = 0;
+    unsigned int requireSamplers = 0;
 };
 
 struct PipelineParameters {

@@ -10,6 +10,7 @@
 #include "Pipeline.h"
 #include "Tonemap.h"
 #include "TAA.h"
+#include "GlobalFog.h"
 #include <memory>
 
 /**
@@ -46,17 +47,26 @@ class PostProcessing {
         return &taa;
     }
 
+    GlobalFog* getFogPointer() {
+        return &fog;
+    }
+
     VkRenderPass getFinalRenderPass() {
         return tonemap.getRenderPass();
     }
+
+    void enable();
+    void disable();
 
   private:
     VulkanDevice *device;
     Swapchain *swapchain;
 
+    GlobalFog fog;
     Tonemap tonemap;
     TAA taa;
 
+    RenderTarget fogTarget;
     RenderTarget taaTarget;
 };
 
