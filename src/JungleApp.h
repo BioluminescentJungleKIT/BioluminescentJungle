@@ -93,6 +93,7 @@ private:
     void createMVPSetLayout();
 
     VkDescriptorSetLayout mvpSetLayout;
+    UniformBuffer lastmvpUBO;
     UniformBuffer mvpUBO;
 
     void createUniformBuffers();

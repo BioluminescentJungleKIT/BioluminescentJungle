@@ -42,7 +42,7 @@ public:
     void enable();
 
     float alpha{0.1};
-    int mode{2};
+    int mode{1};
     bool enabled{true};
     RenderTarget *taaTarget;
 };

@@ -3,6 +3,7 @@
 #include "Pipeline.h"
 #include "Swapchain.h"
 #include <vulkan/vulkan_core.h>
+
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 
@@ -18,7 +19,7 @@
 #include "imgui_impl_vulkan.h"
 #include "VulkanHelper.h"
 
-void JungleApp::initVulkan(const std::string& sceneName, bool recompileShaders) {
+void JungleApp::initVulkan(const std::string &sceneName, bool recompileShaders) {
     device.initInstance();
     createSurface();
     device.initDeviceForSurface(surface);
@@ -38,7 +39,7 @@ void JungleApp::initVulkan(const std::string& sceneName, bool recompileShaders) 
     createCommandBuffers();
 }
 
-void JungleApp::setupRenderStageScene(const std::string& sceneName, bool recompileShaders) {
+void JungleApp::setupRenderStageScene(const std::string &sceneName, bool recompileShaders) {
     setupScene(sceneName);
     createScenePass();
     createMVPSetLayout();
@@ -53,11 +54,13 @@ void JungleApp::setupGBuffer() {
     for (int i = 0; i < GBufferTarget::NumAttachments; i++) {
         if (i == GBufferTarget::Depth) {
             gBuffer.addAttachment(swapchain->swapChainExtent, swapchain->chooseDepthFormat(),
-                VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_IMAGE_ASPECT_DEPTH_BIT);
+                                  VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+                                  VK_IMAGE_ASPECT_DEPTH_BIT);
         } else {
-            auto fmt = getGBufferAttachmentFormat(swapchain.get(), (GBufferTarget)i);
+            auto fmt = getGBufferAttachmentFormat(swapchain.get(), (GBufferTarget) i);
             gBuffer.addAttachment(swapchain->swapChainExtent, fmt,
-                VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
+                                  VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+                                  VK_IMAGE_ASPECT_COLOR_BIT);
         }
     }
 
@@ -88,15 +91,17 @@ void JungleApp::drawImGUI() {
             }
         }
         if (ImGui::CollapsingHeader("Debug Settings")) {
-            ImGui::Combo("G-Buffer Visualization", &lighting->debug.compositionMode, "None\0Albedo\0Depth\0Position\0Normal\0Motion\0\0");
-            ImGui::Checkbox("Show Light BBoxes", (bool*)&lighting->debug.showLightBoxes);
+            ImGui::Combo("G-Buffer Visualization", &lighting->debug.compositionMode,
+                         "None\0Albedo\0Depth\0Position\0Normal\0Motion\0\0");
+            ImGui::Checkbox("Show Light BBoxes", (bool *) &lighting->debug.showLightBoxes);
             ImGui::SliderFloat("Light bbox log size", &lighting->lightRadiusLog, -5.f, 5.f);
         }
         if (ImGui::CollapsingHeader("Video Settings")) {
             forceRecreateSwapchain = ImGui::Checkbox("VSync", &swapchain->enableVSync);
             ImGui::Checkbox("Enable TAA Jitter", &doJitter);
             ImGui::SliderFloat("TAA alpha", &postprocessing->getTAAPointer()->alpha, 0.f, 1.f);
-            ImGui::Combo("TAA Neighborhood Clamping", &postprocessing->getTAAPointer()->mode, "Off\0Min-Max\0Moment-Based\0\0");
+            ImGui::Combo("TAA Neighborhood Clamping", &postprocessing->getTAAPointer()->mode,
+                         "Off\0Min-Max\0Moment-Based\0\0");
         }
         if (ImGui::CollapsingHeader("Camera Settings")) {
             ImGui::DragFloatRange2("Clipping Planes", &nearPlane, &farPlane, 0.07f, .01f, 100000.f);
@@ -113,7 +118,8 @@ void JungleApp::drawImGUI() {
         if (ImGui::CollapsingHeader("Color Settings")) {
             ImGui::SliderFloat("Exposure", &postprocessing->getTonemappingPointer()->exposure, -10, 10);
             ImGui::SliderFloat("Gamma", &postprocessing->getTonemappingPointer()->gamma, 0, 4);
-            ImGui::Combo("Tonemapping", &postprocessing->getTonemappingPointer()->tonemappingMode, "None\0Hable\0AgX\0\0");
+            ImGui::Combo("Tonemapping", &postprocessing->getTonemappingPointer()->tonemappingMode,
+                         "None\0Hable\0AgX\0\0");
         }
     }
     ImGui::End();
@@ -125,7 +131,7 @@ void JungleApp::drawImGUI() {
         ImGui::ShowDemoWindow(&showDemoWindow);
     }
 
-    for (auto& [stage, msg] : GraphicsPipeline::errorsFromShaderCompilation) {
+    for (auto &[stage, msg]: GraphicsPipeline::errorsFromShaderCompilation) {
         if (ImGui::Begin(stage.c_str())) {
             ImGui::Text("%s", msg.c_str());
         }
@@ -148,7 +154,7 @@ void JungleApp::drawFrame() {
 
     updateUniformBuffers(swapchain->currentFrame);
 
-    auto& commandBuffer = commandBuffers[swapchain->currentFrame];
+    auto &commandBuffer = commandBuffers[swapchain->currentFrame];
 
     vkResetCommandBuffer(commandBuffer, 0);
 
@@ -168,7 +174,8 @@ void JungleApp::drawFrame() {
     VK_CHECK_RESULT(vkEndCommandBuffer(commandBuffer))
 
     auto result = swapchain->queuePresent(commandBuffers[swapchain->currentFrame], *imageIndex);
-    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || framebufferResized || forceRecreateSwapchain) {
+    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || framebufferResized ||
+        forceRecreateSwapchain) {
         framebufferResized = false;
         forceRecreateSwapchain = false;
         swapchain->recreateSwapChain(postprocessing->getFinalRenderPass());
@@ -209,15 +216,15 @@ void JungleApp::initImGui() {
     // AMD iGPU does not. Source:
     // https://github.com/ocornut/imgui/blob/master/examples/example_glfw_vulkan/main.cpp
     VkDescriptorPoolSize poolSizes[] =
-    {
-        { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1 },
-    };
+            {
+                    {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1},
+            };
 
     VkDescriptorPoolCreateInfo poolInfo = {};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
     poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
     poolInfo.maxSets = 1;
-    poolInfo.poolSizeCount = (uint32_t)IM_ARRAYSIZE(poolSizes);
+    poolInfo.poolSizeCount = (uint32_t) IM_ARRAYSIZE(poolSizes);
     poolInfo.pPoolSizes = poolSizes;
     VK_CHECK_RESULT(vkCreateDescriptorPool(device, &poolInfo, nullptr, &imguiDescriptorPool));
 
@@ -279,7 +286,7 @@ void JungleApp::createScenePass() {
     VkAttachmentReference depthAttachmentRef;
 
     for (int i = 0; i < GBufferTarget::NumAttachments; i++) {
-        auto fmt = getGBufferAttachmentFormat(swapchain.get(), (GBufferTarget)i);
+        auto fmt = getGBufferAttachmentFormat(swapchain.get(), (GBufferTarget) i);
         VkAttachmentDescription attachment{};
         attachment.format = fmt;
         attachment.samples = VK_SAMPLE_COUNT_1_BIT;
@@ -321,7 +328,9 @@ void JungleApp::createScenePass() {
 
     dependencies[1].srcSubpass = 0;
     dependencies[1].dstSubpass = VK_SUBPASS_EXTERNAL;
-    dependencies[1].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+    dependencies[1].srcStageMask =
+            VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT |
+            VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
     dependencies[1].dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
     dependencies[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
     dependencies[1].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
@@ -377,7 +386,8 @@ void JungleApp::createMVPSetLayout() {
     uboLayoutBinding.binding = 0;
     uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     uboLayoutBinding.descriptorCount = 1;
-    uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_GEOMETRY_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+    uboLayoutBinding.stageFlags =
+            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_GEOMETRY_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
     uboLayoutBinding.pImmutableSamplers = nullptr; // Optional
     layoutBindings.push_back(uboLayoutBinding);
     uboLayoutBinding.binding = 1;
@@ -393,6 +403,7 @@ void JungleApp::createMVPSetLayout() {
 void JungleApp::createUniformBuffers() {
     VkDeviceSize bufferSize = sizeof(UniformBufferObject);
     mvpUBO.allocate(&device, bufferSize, MAX_FRAMES_IN_FLIGHT);
+    lastmvpUBO.allocate(&device, bufferSize, MAX_FRAMES_IN_FLIGHT);
     lighting->setupBuffers();
     postprocessing->setupBuffers();
 }
@@ -408,18 +419,20 @@ void JungleApp::updateUniformBuffers(uint32_t currentImage) {
     ubo.modl = glm::rotate(glm::mat4(1.0f), rotation, glm::vec3(0.0f, 0.0f, 1.0f));
     ubo.view = glm::lookAt(cameraPosition, cameraLookAt, cameraUpVector);
     ubo.proj = glm::perspective(glm::radians(cameraFOVY),
-        (float) swapchain->swapChainExtent.width / (float) swapchain->swapChainExtent.height, nearPlane, farPlane);
+                                (float) swapchain->swapChainExtent.width / (float) swapchain->swapChainExtent.height,
+                                nearPlane, farPlane);
     ubo.proj[1][1] *= -1;  // because GLM generates OpenGL projections
     if (doJitter) {
         ubo.jitt = halton23norm(jitterSequence);
         ubo.jitt *= glm::vec2(1.f / swapchain->swapChainExtent.width, 1.f / swapchain->swapChainExtent.height);
         jitterSequence++;
     } else {
-        ubo.jitt = glm::vec2(0,0);
+        ubo.jitt = glm::vec2(0, 0);
     }
     //jitterSequence %= jitters.size();
 
-    while (vkGetEventStatus(device, postprocessing->getCurrentFrameTAAEvent()) == VK_EVENT_RESET);
+    mvpUBO.copyTo(lastmvpUBO, (currentImage + MAX_FRAMES_IN_FLIGHT - 1) % MAX_FRAMES_IN_FLIGHT, currentImage,
+                  sizeof(ubo));
     mvpUBO.update(&ubo, sizeof(ubo), currentImage);
     lighting->updateBuffers(ubo.proj * ubo.view, cameraPosition, cameraUpVector);
 
@@ -446,11 +459,11 @@ void JungleApp::createDescriptorPool() {
 
     // Descriptors required in JungleApp itself
     requirements.push_back({
-        .requireUniformBuffers = MAX_FRAMES_IN_FLIGHT,
-        .requireSamplers = 0,
-    });
+                                   .requireUniformBuffers = MAX_FRAMES_IN_FLIGHT,
+                                   .requireSamplers = 0,
+                           });
 
-    for (auto& req : requirements) {
+    for (auto &req: requirements) {
         poolSizes[0].descriptorCount += req.requireUniformBuffers;
         poolSizes[1].descriptorCount += req.requireSamplers;
     }
@@ -465,7 +478,7 @@ void JungleApp::createDescriptorPool() {
 
 void JungleApp::createDescriptorSets() {
     sceneDescriptorSets = VulkanHelper::createDescriptorSetsFromLayout(device, descriptorPool,
-        mvpSetLayout, MAX_FRAMES_IN_FLIGHT);
+                                                                       mvpSetLayout, MAX_FRAMES_IN_FLIGHT);
 
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
         std::vector<VkDescriptorBufferInfo> bufferInfos;
@@ -474,7 +487,7 @@ void JungleApp::createDescriptorSets() {
         bufferInfo.offset = 0;
         bufferInfo.range = sizeof(UniformBufferObject);
         bufferInfos.push_back(bufferInfo);
-        bufferInfo.buffer = mvpUBO.buffers[(i + MAX_FRAMES_IN_FLIGHT - 1) % MAX_FRAMES_IN_FLIGHT];
+        bufferInfo.buffer = lastmvpUBO.buffers[i];
         bufferInfos.push_back(bufferInfo);
 
         VkWriteDescriptorSet descriptorWrite{};
@@ -502,6 +515,7 @@ void JungleApp::cleanup() {
     swapchain.reset();
 
     mvpUBO.destroy(&device);
+    lastmvpUBO.destroy(&device);
     lighting.reset();
     postprocessing.reset();
     vkDestroyDescriptorPool(device, descriptorPool, nullptr);
@@ -519,7 +533,7 @@ void JungleApp::cleanup() {
     glfwTerminate();
 }
 
-void JungleApp::setupScene(const std::string& sceneName) {
+void JungleApp::setupScene(const std::string &sceneName) {
     scene = Scene(&device, swapchain.get(), sceneName);
     scene.setupBuffers();
     scene.setupTextures();
@@ -531,7 +545,7 @@ float JungleApp::halton(uint32_t b, uint32_t n) {
     float f = 1;
     float r = 0;
     while (n > 0) {
-        f = f/b;
+        f = f / b;
         r = r + f * (n % b);
         n /= b;
     }
