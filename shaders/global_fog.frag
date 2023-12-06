@@ -25,8 +25,7 @@ void main() {
     float world_depth = (fog.far*fog.near)/(d * (fog.far - fog.near) - d);
     vec3 ambientLight = fog.ambientFactor * fog.color;
     vec3 fogLight = fog.brightness * fog.color;
-    color.rgb += albedo.rgb * ambientLight;
-    color.rgb *= exp(-fog.absorption*world_depth);
+    color.rgb += albedo.rgb * ambientLight * exp(-fog.absorption*world_depth);
     // depth illumination: integral from 0 to depth: color * exp(-absorption*x) dx
     if (fog.absorption != 0)
         color.rgb += (fogLight - fogLight * exp(-fog.absorption * world_depth))/fog.absorption;

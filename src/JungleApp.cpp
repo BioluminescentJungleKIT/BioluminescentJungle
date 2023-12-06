@@ -31,6 +31,7 @@ void JungleApp::initVulkan(const std::string &sceneName, bool recompileShaders) 
     lighting->setup(recompileShaders, &scene, mvpSetLayout);
 
     postprocessing = std::make_unique<PostProcessing>(&device, swapchain.get(), &nearPlane, &farPlane);
+    lighting->fogAbsorption = &postprocessing->getFogPointer()->absorption;
     postprocessing->setupRenderStages(recompileShaders);
 
     createUniformBuffers();
@@ -120,6 +121,8 @@ void JungleApp::drawImGUI() {
             ImGui::SliderFloat("Brightness", &postprocessing->getFogPointer()->brightness, 0.f, 10.f);
             ImGui::SliderFloat("Ambient Effect", &postprocessing->getFogPointer()->ambientFactor, 0.f, 10.f);
             ImGui::SliderFloat("Absorption Coefficient", &postprocessing->getFogPointer()->absorption, 0.f, 10.f);
+            ImGui::SliderFloat("Scatter Factor", &lighting->scatterStrength, 0.f, 1.f);
+            ImGui::SliderFloat("Bleeding", &lighting->lightBleed, 0.f, 3.f);
         }
         if (ImGui::CollapsingHeader("Color Settings")) {
             ImGui::SliderFloat("Exposure", &postprocessing->getTonemappingPointer()->exposure, -10, 10);
