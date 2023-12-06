@@ -7,10 +7,10 @@
 #include "imgui_impl_vulkan.h"
 #include <vulkan/vulkan_core.h>
 
-PostProcessing::PostProcessing(VulkanDevice *device, Swapchain *swapChain) :
+PostProcessing::PostProcessing(VulkanDevice *device, Swapchain *swapChain, float *pNear, float *pFar) :
         tonemap(Tonemap(device, swapChain)),
         taa(TAA(device, swapChain, &taaTarget)),
-        fog(GlobalFog(device, swapChain)),
+        fog(GlobalFog(device, swapChain, pNear, pFar)),
         device(device),
         swapchain(swapChain) {
     fogTarget.init(device, MAX_FRAMES_IN_FLIGHT);
@@ -97,7 +97,7 @@ void PostProcessing::handleResize(const RenderTarget &sourceBuffer, const Render
                             VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
                             VK_IMAGE_ASPECT_COLOR_BIT);
     taaTarget.createFramebuffers(taa.getRenderPass(), swapchain->swapChainExtent);
-    taa.handleResize(sourceBuffer, gBuffer);
+    taa.handleResize(fogTarget, gBuffer);
 
     tonemap.handleResize(taaTarget, gBuffer);
 }

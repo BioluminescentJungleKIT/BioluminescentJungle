@@ -30,7 +30,7 @@ void JungleApp::initVulkan(const std::string &sceneName, bool recompileShaders) 
     lighting = std::make_unique<DeferredLighting>(&device, swapchain.get());
     lighting->setup(recompileShaders, &scene, mvpSetLayout);
 
-    postprocessing = std::make_unique<PostProcessing>(&device, swapchain.get());
+    postprocessing = std::make_unique<PostProcessing>(&device, swapchain.get(), &nearPlane, &farPlane);
     postprocessing->setupRenderStages(recompileShaders);
 
     createUniformBuffers();

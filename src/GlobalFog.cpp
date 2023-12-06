@@ -23,6 +23,9 @@ void GlobalFog::updateUBOContent() {
     ubo.ambientFactor = ambientFactor;
     ubo.brightness = brightness;
     ubo.absorption = enabled ? absorption : 0;
+    ubo.near = *near;
+    ubo.far = *far;
 }
 
-GlobalFog::GlobalFog(VulkanDevice *pDevice, Swapchain *pSwapchain) : PostProcessingStep(pDevice, pSwapchain) {}
+GlobalFog::GlobalFog(VulkanDevice *pDevice, Swapchain *pSwapchain, float *near, float *far) :
+        PostProcessingStep(pDevice, pSwapchain), near(near), far(far) {}

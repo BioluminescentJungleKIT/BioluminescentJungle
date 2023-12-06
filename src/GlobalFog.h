@@ -18,6 +18,8 @@ struct GlobalFogUBO {
     glm::float32 ambientFactor;
     glm::float32 brightness;
     glm::float32 absorption;
+    glm::float32 near;
+    glm::float32 far;
 };
 
 /**
@@ -25,7 +27,7 @@ struct GlobalFogUBO {
  */
 class GlobalFog : public PostProcessingStep<GlobalFogUBO> {
 public:
-    GlobalFog(VulkanDevice *pDevice, Swapchain *pSwapchain);
+    GlobalFog(VulkanDevice *pDevice, Swapchain *pSwapchain, float *near, float *far);
 
     std::string getShaderName() override;
 
@@ -36,10 +38,12 @@ public:
     void enable();
 
     glm::vec3 color{0.2, 0.03, 0.1};
-    glm::float32 ambientFactor{2};
-    glm::float32 brightness{0.1};
-    glm::float32 absorption{0.1};
+    glm::float32 ambientFactor{1};
+    glm::float32 brightness{0.05};
+    glm::float32 absorption{0.2};
     bool enabled{true};
+    float *near{};
+    float *far{};
 };
 
 #endif /* end of include guard: GLOBALFOG_H */
