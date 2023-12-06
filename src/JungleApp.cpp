@@ -419,6 +419,7 @@ void JungleApp::updateUniformBuffers(uint32_t currentImage) {
     }
     //jitterSequence %= jitters.size();
 
+    while (vkGetEventStatus(device, postprocessing->getCurrentFrameTAAEvent()) == VK_EVENT_RESET);
     mvpUBO.update(&ubo, sizeof(ubo), currentImage);
     lighting->updateBuffers(ubo.proj * ubo.view, cameraPosition, cameraUpVector);
 

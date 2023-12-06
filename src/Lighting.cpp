@@ -143,7 +143,7 @@ void DeferredLighting::setup(bool recompileShaders, Scene *scene, VkDescriptorSe
     for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
         samplers[i].resize(GBufferTarget::NumAttachments);
         for (int j = 0; j < GBufferTarget::NumAttachments; j++) {
-            samplers[i][j] = VulkanHelper::createSampler(device);
+            samplers[i][j] = VulkanHelper::createSampler(device, true);
         }
     }
 

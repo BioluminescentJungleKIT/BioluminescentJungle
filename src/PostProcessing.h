@@ -36,6 +36,8 @@ class PostProcessing {
     void createDescriptorSets(VkDescriptorPool pool, const RenderTarget &sourceBuffer,
                               const RenderTarget &gBuffer);
 
+    VkEvent getCurrentFrameTAAEvent();
+
     RequiredDescriptors getNumDescriptors();
 
     Tonemap* getTonemappingPointer() {
@@ -53,6 +55,8 @@ class PostProcessing {
   private:
     VulkanDevice *device;
     Swapchain *swapchain;
+
+    std::vector<VkEvent> taaSyncEvents;
 
     Tonemap tonemap;
     TAA taa;

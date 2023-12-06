@@ -120,7 +120,7 @@ public:
         for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
             samplers[i].resize(GBufferTarget::NumAttachments + 1 + getAdditionalSamplersCount());
             for (int j = 0; j < GBufferTarget::NumAttachments + 1 + getAdditionalSamplersCount(); j++) {
-                samplers[i][j] = VulkanHelper::createSampler(device);
+                samplers[i][j] = VulkanHelper::createSampler(device, false);
             }
         }
 

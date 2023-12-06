@@ -16,6 +16,20 @@ PostProcessing::PostProcessing(VulkanDevice *device, Swapchain *swapChain) :
     taaTarget.addAttachment(swapchain->swapChainExtent, POST_PROCESSING_FORMAT,
                             VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
                             VK_IMAGE_ASPECT_COLOR_BIT);
+    taaSyncEvents.resize(MAX_FRAMES_IN_FLIGHT);
+    for (auto &taaSyncEvent: taaSyncEvents) {
+        VkEventCreateInfo eventCreateInfo{};
+        eventCreateInfo.sType = VK_STRUCTURE_TYPE_EVENT_CREATE_INFO;
+        VK_CHECK_RESULT(vkCreateEvent(*device, &eventCreateInfo, nullptr, &taaSyncEvent))
+    }
+    VK_CHECK_RESULT(vkSetEvent(*device, taaSyncEvents[0]))  // allow first frame to render
+}
+
+PostProcessing::~PostProcessing() {
+    for (auto &taaSyncEvent: taaSyncEvents) {
+        vkDestroyEvent(*device, taaSyncEvent, nullptr);
+    }
+    taaTarget.destroyAll();
 }
 
 void PostProcessing::setupRenderStages(bool recompileShaders) {
@@ -29,9 +43,16 @@ void PostProcessing::createPipeline(bool recompileShaders) {
     tonemap.createPipeline(recompileShaders);
 }
 
-
 void PostProcessing::recordCommandBuffer(VkCommandBuffer commandBuffer, VkFramebuffer_T *finalTarget) {
+    vkCmdWaitEvents(commandBuffer, 1, &taaSyncEvents[swapchain->currentFrame],
+                    VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_HOST_BIT,
+                    VK_PIPELINE_STAGE_VERTEX_SHADER_BIT,
+                    0, nullptr, 0, nullptr, 0, nullptr);
     taa.recordCommandBuffer(commandBuffer, taaTarget.framebuffers[swapchain->currentFrame], false);
+    vkCmdResetEvent(commandBuffer, taaSyncEvents[swapchain->currentFrame],
+                    VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+    vkCmdSetEvent(commandBuffer, taaSyncEvents[(swapchain->currentFrame + 1) % MAX_FRAMES_IN_FLIGHT],
+                  VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
     tonemap.recordCommandBuffer(commandBuffer, finalTarget, true);
 }
 
@@ -51,10 +72,6 @@ void PostProcessing::createDescriptorSets(VkDescriptorPool pool, const RenderTar
     tonemap.createDescriptorSets(pool, taaTarget, gBuffer);
 }
 
-PostProcessing::~PostProcessing() {
-    taaTarget.destroyAll();
-}
-
 RequiredDescriptors PostProcessing::getNumDescriptors() {
     auto taaDescriptors = taa.getNumDescriptors();
     auto tonemapDescriptors = tonemap.getNumDescriptors();
@@ -71,4 +88,8 @@ void PostProcessing::handleResize(const RenderTarget &sourceBuffer, const Render
     taaTarget.createFramebuffers(taa.getRenderPass(), swapchain->swapChainExtent);
     taa.handleResize(sourceBuffer, gBuffer);
     tonemap.handleResize(taaTarget, gBuffer);
+}
+
+VkEvent PostProcessing::getCurrentFrameTAAEvent() {
+    return taaSyncEvents[swapchain->currentFrame];
 }
