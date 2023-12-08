@@ -71,7 +71,6 @@ PipelineDescription Scene::getPipelineDescriptionForPrimitive(const tinygltf::Pr
     return descr;
 }
 
-
 Scene::Scene(VulkanDevice *device, Swapchain *swapchain, std::string filename) {
     this->device = device;
     this->swapchain = swapchain;
@@ -597,7 +596,7 @@ static ShaderList selectShaders(const PipelineDescription &descr) {
 
     if (descr.useDisplacement) {
         return ShaderList {
-            {VK_SHADER_STAGE_VERTEX_BIT,   "shaders/simple-texture.vert"},
+            {VK_SHADER_STAGE_VERTEX_BIT,   "shaders/displacement.vert"},
             {VK_SHADER_STAGE_FRAGMENT_BIT, "shaders/displacement.frag"},
         };
     }

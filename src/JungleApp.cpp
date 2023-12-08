@@ -512,6 +512,8 @@ void JungleApp::handleGLFWKey(GLFWwindow* window, int key, int scancode, int act
 
     glm::vec3 viewDir = app->cameraFinalLookAt - app->cameraFinalPosition;
 
+    const float flipped = std::copysign(1, app->cameraUpVector.z);
+
     glm::vec3 fwd = glm::normalize(glm::vec3(viewDir.x, viewDir.y, 0.0));
     glm::vec3 side = glm::cross(fwd, glm::vec3(0.0, 0.0, 1.0));
 
@@ -557,6 +559,8 @@ void JungleApp::handleGLFWMouse(GLFWwindow *window, double x, double y) {
 
         // Button is pressed, we have previous values => compute change in the target
         glm::vec3 viewDir = glm::normalize(app->cameraFinalLookAt - app->cameraFinalPosition);
+        dx *= std::copysign(1, app->cameraUpVector.z);
+        dy *= std::copysign(1, app->cameraUpVector.z);
 
         float yaw = glm::degrees(atan2(viewDir.y, viewDir.x));
         float pitch = glm::degrees(asin(viewDir.z));
