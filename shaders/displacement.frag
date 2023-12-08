@@ -16,29 +16,7 @@ layout(set = 0, binding = 0) uniform UniformBufferObject {
 layout(set = 2, binding = 0) uniform sampler2D texSampler;
 layout(set = 2, binding = 1) uniform sampler2D displacement;
 
-float rand(vec2 co){
-    return fract(sin(dot(co, vec2(12.9898, 78.233))) * 43758.5453);
-}
-
-void computeTangentSpace(vec3 N, out vec3 T, out vec3 B, out vec2 dUVx, out vec2 dUVy, out float scaling) {
-    vec3 Q1 = dFdx(fsPos);
-    vec3 Q2 = dFdy(fsPos);
-    dUVx = dFdx(uv);
-    dUVy = dFdy(uv);
-    mat2 iv = inverse(transpose(mat2(dUVx, dUVy)));
-    mat3x2 tb = iv * transpose(mat2x3(Q1, Q2));
-    T = vec3(tb[0][0], tb[1][0], tb[2][0]);
-    B = vec3(tb[0][1], tb[1][1], tb[2][1]);
-
-    //T = cross(Bx, N);
-    //B = cross(N, Tx);
-
-    scaling = sqrt( max( dot(T,T), dot(B,B) ) );
-    //T /= scaling;
-    //B /= scaling;
-}
-
-// Thanks InCG exercise => the above works as well, but is a bit slower
+// Thanks InCG exercise
 void computeCotangentSpace(vec3 N, out vec3 T, out vec3 B) {
     vec3 Q1 = dFdx(fsPos);
     vec3 Q2 = dFdy(fsPos);
@@ -66,9 +44,6 @@ void main() {
     vec3 N = normalize(normal);
 
     vec3 T, B;
-    vec2 dUVx, dUVy;
-    float scaling;
-   // computeTangentSpace(N, T, B, dUVx, dUVy, scaling);
     computeCotangentSpace(N, T, B);
 
     // TODO: investigate whether we want normalization or not.
@@ -77,28 +52,34 @@ void main() {
     mat3 worldToTangent = transpose(mat3(T, B, N));
     vec3 ray = (worldToTangent * -fsPos).xyz;
 
-    float heightScale = 0.05;
+    // TODO: make a parameter
+    float heightScale = 0.02;
 
-
-    const int numSamples = 500;
-    const float stepSize = 1.0 / numSamples;
+    // TODO: make a parameter
+    const int numSamples = 100;
 
     const vec3 directionNormalized = normalize(ray);
-    const vec3 step = vec3(directionNormalized.xy / directionNormalized.z, -1.0) * stepSize;
+    const vec3 step = vec3(directionNormalized.xy / directionNormalized.z, -1.0) / numSamples;
     vec3 currentPos = vec3(uv, heightScale);
 
-
+    float lastHeightAbove = 0.0;
 
     for (int i = 0; i < numSamples; i++) {
-        float depth = texture(displacement, currentPos.xy).r * heightScale;
-
-        if (currentPos.x < 0 || currentPos.y < 0 || currentPos.x > 1 || currentPos.y > 1) {
+        if (currentPos.s < 0 || currentPos.t < 0 || currentPos.s > 1 || currentPos.t > 1) {
+            // We left the object
+            // TODO: optimize the check: we can compute maximal number of samples
             discard;
         }
 
-        if (depth >= currentPos.z) {
-            // Found a hit
-            outColor = texture(texSampler, currentPos.xy);
+        const float depth = texture(displacement, currentPos.st).r * heightScale;
+        const float heightAbove = currentPos.z - depth;
+
+        if (heightAbove <= 0) {
+            // Found a hit, linear interpolation
+            currentPos -= (-heightAbove) / (-heightAbove + lastHeightAbove) * step;
+            outColor = texture(texSampler, currentPos.st);
+
+
             // Convert normal to world space, because our lighting uses it
 
             outNormal = 1.0 * i / numSamples * vec3(1.0, 1.0, 1.0);
@@ -108,6 +89,7 @@ void main() {
             return;
         } else {
             currentPos += step;
+            lastHeightAbove = heightAbove;
         }
     }
 
