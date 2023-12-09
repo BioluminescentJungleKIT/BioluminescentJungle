@@ -109,7 +109,7 @@ void JungleApp::drawImGUI() {
             ImGui::DragFloat3("Camera PoI", &cameraFinalLookAt.x, 0.01f);
             ImGui::DragFloat3("Camera PoV", &cameraFinalPosition.x, 0.01f);
             ImGui::DragFloat3("Camera Up", &cameraUpVector.x, 0.01f);
-            ImGui::SliderFloat("Camera Teleport Speed", &cameraTeleportSpeed, 0.0f, 5.0f);
+            ImGui::SliderFloat("Camera Teleport Speed", &cameraMovementSpeed, 0.0f, 5.0f);
             scene.cameraButtons(cameraFinalLookAt, cameraFinalPosition, cameraUpVector, cameraFOVY, nearPlane, farPlane);
         }
         if (ImGui::CollapsingHeader("Scene Settings")) {
@@ -149,6 +149,7 @@ void JungleApp::drawImGUI() {
 }
 
 void JungleApp::drawFrame() {
+    handleMotion();
     auto imageIndex = swapchain->acquireNextImage(sceneRPass);
     if (!imageIndex.has_value()) {
         return;
@@ -206,7 +207,6 @@ void JungleApp::initWindow() {
     window = glfwCreateWindow(WIDTH, HEIGHT, "Bioluminescent Jungle", nullptr, nullptr);
     glfwSetWindowUserPointer(window, this);
     glfwSetFramebufferSizeCallback(window, handleGLFWResize);
-    glfwSetKeyCallback(window, handleGLFWKey);
     glfwSetCursorPosCallback(window, handleGLFWMouse);
 }
 
@@ -549,38 +549,46 @@ void JungleApp::setupScene(const std::string &sceneName) {
     scene.computeDefaultCameraPos(cameraFinalLookAt, cameraFinalPosition, cameraFOVY);
 }
 
-void JungleApp::handleGLFWKey(GLFWwindow* window, int key, int scancode, int action, int mods) {
-    if (action == GLFW_RELEASE) {
-        return;
-    }
-
-    auto app = reinterpret_cast<JungleApp*>(glfwGetWindowUserPointer(window));
-
-    glm::vec3 viewDir = app->cameraFinalLookAt - app->cameraFinalPosition;
+void JungleApp::handleMotion() {
+    glm::vec3 viewDir = cameraFinalLookAt - cameraFinalPosition;
 
     glm::vec3 fwd = glm::normalize(glm::vec3(viewDir.x, viewDir.y, 0.0));
     glm::vec3 side = glm::cross(fwd, glm::vec3(0.0, 0.0, 1.0));
 
     // Camera movement
     glm::vec3 movement(0.0);
-    if (key == GLFW_KEY_W)
+    if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
         movement += fwd;
-    if (key == GLFW_KEY_S)
+
+    if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
         movement -= fwd;
 
-    if (key == GLFW_KEY_A)
+    if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
         movement -= side;
-    if (key == GLFW_KEY_D)
+    if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
         movement += side;
 
-    if (key == GLFW_KEY_Q)
-        movement.z += 1.0;
-    if (key == GLFW_KEY_E)
+    if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS)
+        movement.z += std::copysign(1, cameraUpVector.z);
+    if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS)
         movement.z -= 1.0;
 
-    movement *= app->cameraTeleportSpeed;
-    app->cameraFinalPosition += movement;
-    app->cameraFinalLookAt += movement;
+    if (glm::length(movement) <= 1e-6) {
+        lastMoveTime = -1;
+        return;
+    }
+
+    float curTime = glfwGetTime();
+    if (lastMoveTime < 0) {
+        lastMoveTime = curTime;
+        return;
+    }
+
+    movement *= curTime - lastMoveTime;
+    movement *= cameraMovementSpeed;
+    cameraFinalPosition += movement;
+    cameraFinalLookAt += movement;
+    lastMoveTime = curTime;
 }
 
 void JungleApp::handleGLFWMouse(GLFWwindow *window, double x, double y) {
@@ -636,7 +644,7 @@ void JungleApp::cameraMotion() {
     const float EPS = 0.001f;
 
     glm::vec3 delta = this->cameraFinalPosition - this->cameraPosition;
-    if (glm::length(delta) < EPS) {
+    if (glm::length(delta) < EPS || lastMoveTime >= 0) {
         this->cameraPosition = this->cameraFinalPosition;
         this->cameraLookAt = this->cameraFinalLookAt;
         return;
