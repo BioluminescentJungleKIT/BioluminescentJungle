@@ -554,9 +554,6 @@ void JungleApp::setupScene(const std::string &sceneName) {
 
 void JungleApp::handleMotion() {
     glm::vec3 viewDir = cameraFinalLookAt - cameraFinalPosition;
-
-    const float flipped = std::copysign(1, app->cameraUpVector.z);
-
     glm::vec3 fwd = glm::normalize(glm::vec3(viewDir.x, viewDir.y, 0.0));
     glm::vec3 side = glm::cross(fwd, glm::vec3(0.0, 0.0, 1.0));
 
