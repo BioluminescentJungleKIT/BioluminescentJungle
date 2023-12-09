@@ -66,6 +66,10 @@ class DeferredLighting {
 
     RequiredDescriptors getNumDescriptors();
 
+    float *fogAbsorption;
+    float lightBleed{0.1};
+    float scatterStrength{0.05};
+
   private:
     VulkanDevice *device;
     Swapchain *swapchain;

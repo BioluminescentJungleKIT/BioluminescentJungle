@@ -30,7 +30,8 @@ void JungleApp::initVulkan(const std::string &sceneName, bool recompileShaders) 
     lighting = std::make_unique<DeferredLighting>(&device, swapchain.get());
     lighting->setup(recompileShaders, &scene, mvpSetLayout);
 
-    postprocessing = std::make_unique<PostProcessing>(&device, swapchain.get());
+    postprocessing = std::make_unique<PostProcessing>(&device, swapchain.get(), &nearPlane, &farPlane);
+    lighting->fogAbsorption = &postprocessing->getFogPointer()->absorption;
     postprocessing->setupRenderStages(recompileShaders);
 
     createUniformBuffers();
@@ -114,6 +115,14 @@ void JungleApp::drawImGUI() {
         if (ImGui::CollapsingHeader("Scene Settings")) {
             ImGui::Checkbox("Spin", &spinScene);
             ImGui::SliderFloat("Fixed spin", &fixedRotation, 0.0f, 360.0f);
+        }
+        if (ImGui::CollapsingHeader("Fog Settings")) {
+            ImGui::ColorEdit3("Color", &postprocessing->getFogPointer()->color.r);
+            ImGui::SliderFloat("Brightness", &postprocessing->getFogPointer()->brightness, 0.f, 10.f);
+            ImGui::SliderFloat("Ambient Effect", &postprocessing->getFogPointer()->ambientFactor, 0.f, 10.f);
+            ImGui::SliderFloat("Absorption Coefficient", &postprocessing->getFogPointer()->absorption, 0.f, 10.f);
+            ImGui::SliderFloat("Scatter Factor", &lighting->scatterStrength, 0.f, 1.f);
+            ImGui::SliderFloat("Bleeding", &lighting->lightBleed, 0.f, 3.f);
         }
         if (ImGui::CollapsingHeader("Color Settings")) {
             ImGui::SliderFloat("Exposure", &postprocessing->getTonemappingPointer()->exposure, -10, 10);
@@ -438,11 +447,9 @@ void JungleApp::updateUniformBuffers(uint32_t currentImage) {
 
     // TODO: is there a better way to integrate this somehow? Too lazy to skip the tonemapping render pass completely.
     if (lighting->debug.compositionMode != 0) {
-        postprocessing->getTAAPointer()->disable();
-        postprocessing->getTonemappingPointer()->disable();
+        postprocessing->disable();
     } else {
-        postprocessing->getTAAPointer()->enable();
-        postprocessing->getTonemappingPointer()->enable();
+        postprocessing->enable();
     }
     postprocessing->updateBuffers();
 }

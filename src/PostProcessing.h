@@ -3,6 +3,7 @@
 
 #include "Swapchain.h"
 #include "UniformBuffer.h"
+
 #define GLFW_INCLUDE_VULKAN
 
 #include <GLFW/glfw3.h>
@@ -10,14 +11,16 @@
 #include "Pipeline.h"
 #include "Tonemap.h"
 #include "TAA.h"
+#include "GlobalFog.h"
 #include <memory>
 
 /**
  * A helper class which manages PostProcessingping-related resources
  */
 class PostProcessing {
-  public:
-    PostProcessing(VulkanDevice* device, Swapchain* swapChain);
+public:
+    PostProcessing(VulkanDevice *device, Swapchain *swapChain, float *pNear, float *pFar);
+
     ~PostProcessing();
 
     // Will also destroy any old pipeline which exists
@@ -25,12 +28,15 @@ class PostProcessing {
 
     std::vector<VkDescriptorSet> PostProcessingDescriptorSets;
     std::vector<VkSampler> PostProcessingSamplers;
+
     void setupRenderStages(bool recompileShaders);
+
     void recordCommandBuffer(VkCommandBuffer commandBuffer, VkFramebuffer_T *finalTarget);
 
     void handleResize(const RenderTarget &sourceBuffer, const RenderTarget &gBuffer);
 
     void setupBuffers();
+
     void updateBuffers();
 
     void createDescriptorSets(VkDescriptorPool pool, const RenderTarget &sourceBuffer,
@@ -38,25 +44,35 @@ class PostProcessing {
 
     RequiredDescriptors getNumDescriptors();
 
-    Tonemap* getTonemappingPointer() {
+    Tonemap *getTonemappingPointer() {
         return &tonemap;
     }
 
-    TAA* getTAAPointer() {
+    TAA *getTAAPointer() {
         return &taa;
+    }
+
+    GlobalFog *getFogPointer() {
+        return &fog;
     }
 
     VkRenderPass getFinalRenderPass() {
         return tonemap.getRenderPass();
     }
 
-  private:
+    void enable();
+
+    void disable();
+
+private:
     VulkanDevice *device;
     Swapchain *swapchain;
 
+    GlobalFog fog;
     Tonemap tonemap;
     TAA taa;
 
+    RenderTarget fogTarget;
     RenderTarget taaTarget;
 };
 
