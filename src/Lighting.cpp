@@ -11,6 +11,9 @@ struct LightingBuffer {
     alignas(16) glm::vec3 cameraUp;
     glm::float32_t viewportWidth;
     glm::float32_t viewportHeight;
+    glm::float32 fogAbsorption;
+    glm::float32 scatterStrength;
+    glm::float32 lightBleed;
 };
 
 DeferredLighting::DeferredLighting(VulkanDevice* device, Swapchain* swapChain) {
@@ -143,7 +146,7 @@ void DeferredLighting::setup(bool recompileShaders, Scene *scene, VkDescriptorSe
     for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
         samplers[i].resize(GBufferTarget::NumAttachments);
         for (int j = 0; j < GBufferTarget::NumAttachments; j++) {
-            samplers[i][j] = VulkanHelper::createSampler(device);
+            samplers[i][j] = VulkanHelper::createSampler(device, true);
         }
     }
 
@@ -306,6 +309,9 @@ void DeferredLighting::updateBuffers(glm::mat4 vp, glm::vec3 cameraPos, glm::vec
     buffer.cameraUp = cameraUp;
     buffer.viewportWidth = swapchain->swapChainExtent.width;
     buffer.viewportHeight = swapchain->swapChainExtent.height;
+    buffer.fogAbsorption = *fogAbsorption;
+    buffer.scatterStrength = scatterStrength;
+    buffer.lightBleed = lightBleed;
     lightUBO.update(&buffer, sizeof(buffer), swapchain->currentFrame);
 }
 

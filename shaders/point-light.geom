@@ -4,9 +4,10 @@ layout(points) in;
 layout(triangle_strip, max_vertices = 4) out;
 
 layout(set = 0, binding = 0) uniform UniformBufferObject {
-    mat4 model;// global
+    mat4 modl;// global
     mat4 view;
     mat4 proj;
+    vec2 jitt;
 } ubo;
 
 layout(set = 2, binding = 0, std140) uniform DebugOptions {

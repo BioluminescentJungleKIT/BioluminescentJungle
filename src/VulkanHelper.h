@@ -155,7 +155,7 @@ public:
 
     static VkIndexType gltfTypeToVkIndexType(int componentType);
 
-    static VkSampler createSampler(VulkanDevice* device);
+    static VkSampler createSampler(VulkanDevice *device, bool tiling);
 
     static void setFullViewportScissor(VkCommandBuffer commandBuffer, VkExtent2D extent);
 

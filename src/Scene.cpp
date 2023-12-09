@@ -260,8 +260,8 @@ void Scene::setupDescriptorSets(VkDescriptorPool descriptorPool) {
 
 RequiredDescriptors Scene::getNumDescriptors() {
     return RequiredDescriptors{
-            .requireUniformBuffers = (int) meshTransforms.size() + MAX_FRAMES_IN_FLIGHT,
-            .requireSamplers = (int) textures.size(),
+            .requireUniformBuffers = (uint) meshTransforms.size() + MAX_FRAMES_IN_FLIGHT,
+            .requireSamplers = (uint) textures.size(),
     };
 }
 
@@ -574,7 +574,7 @@ void Scene::setupTextures() {
         textures[gTexture.source] = uploadGLTFImage(device, model.images[gTexture.source]);
         textures[gTexture.source].imageView =
             device->createImageView(textures[gTexture.source].image, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_ASPECT_COLOR_BIT);
-        textures[gTexture.source].sampler = VulkanHelper::createSampler(device);
+        textures[gTexture.source].sampler = VulkanHelper::createSampler(device, true);
     };
 
     for (size_t i = 0; i < model.materials.size(); i++) {

@@ -19,6 +19,7 @@ add_executable(Jungle src/main.cpp
         src/Lighting.cpp
         src/Swapchain.cpp
         src/Tonemap.cpp
+        src/TAA.cpp
         src/UniformBuffer.cpp
         src/JungleApp.h
         lib/imgui/imconfig.h
@@ -44,6 +45,10 @@ add_executable(Jungle src/main.cpp
         src/VulkanHelper.cpp
         src/MusicPlayer.cpp
         src/MusicPlayer.h
+        src/PostProcessing.h
+        src/PostProcessing.cpp
+        src/PostProcessingStep.h
+        src/GlobalFog.cpp
 )
 
 target_include_directories(Jungle PRIVATE lib/imgui lib/imgui/backends lib/imgui/misc/cpp/)
