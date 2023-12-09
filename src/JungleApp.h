@@ -79,7 +79,7 @@ private:
 
     std::optional<float> lastMouseX, lastMouseY;
     static void handleGLFWResize(GLFWwindow* window, int width, int height);
-    static void handleGLFWKey(GLFWwindow* window, int key, int scancode, int action, int mods);
+    void handleMotion();
     static void handleGLFWMouse(GLFWwindow *window, double x, double y);
 
     void createMVPSetLayout();
@@ -109,13 +109,15 @@ private:
     bool forceRecreateSwapchain;
     bool forceReloadShaders;
     bool showDemoWindow;
+    bool invertMouse = true;
     float nearPlane = .1f;
     float farPlane = 1000.f;
     float cameraFOVY = 45;
     glm::vec3 cameraLookAt = glm::vec3(0.0f, 0.0f, 0.0f);
     glm::vec3 cameraPosition = glm::vec3(5.0f, 5.0f, 5.0f);
     glm::vec3 cameraUpVector = glm::vec3(0.0f, 0.0f, 1.0f);
-    float cameraTeleportSpeed = 1.0;
+    float cameraMovementSpeed = 2.0;
+    double lastMoveTime = -1.0;
 
     // The *Final* members indicate what is the current target for the camera (while the animation is running)
     glm::vec3 cameraFinalPosition = glm::vec3(5.0f, 5.0f, 5.0f);
