@@ -115,6 +115,7 @@ private:
     glm::vec3 cameraLookAt = glm::vec3(0.0f, 0.0f, 0.0f);
     glm::vec3 cameraPosition = glm::vec3(5.0f, 5.0f, 5.0f);
     glm::vec3 cameraUpVector = glm::vec3(0.0f, 0.0f, 1.0f);
+    float cameraTeleportSpeed = 1.0;
 
     // The *Final* members indicate what is the current target for the camera (while the animation is running)
     glm::vec3 cameraFinalPosition = glm::vec3(5.0f, 5.0f, 5.0f);

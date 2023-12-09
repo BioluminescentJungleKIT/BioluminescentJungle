@@ -109,6 +109,7 @@ void JungleApp::drawImGUI() {
             ImGui::DragFloat3("Camera PoI", &cameraFinalLookAt.x, 0.01f);
             ImGui::DragFloat3("Camera PoV", &cameraFinalPosition.x, 0.01f);
             ImGui::DragFloat3("Camera Up", &cameraUpVector.x, 0.01f);
+            ImGui::SliderFloat("Camera Teleport Speed", &cameraTeleportSpeed, 0.0f, 5.0f);
             scene.cameraButtons(cameraFinalLookAt, cameraFinalPosition, cameraUpVector, cameraFOVY, nearPlane, farPlane);
         }
         if (ImGui::CollapsingHeader("Scene Settings")) {
@@ -577,6 +578,7 @@ void JungleApp::handleGLFWKey(GLFWwindow* window, int key, int scancode, int act
     if (key == GLFW_KEY_E)
         movement.z -= 1.0;
 
+    movement *= app->cameraTeleportSpeed;
     app->cameraFinalPosition += movement;
     app->cameraFinalLookAt += movement;
 }
