@@ -21,6 +21,7 @@ layout(set = 3, binding = 0, std140) uniform MaterialSettings {
     float heightScale;
     int raymarchSteps;
     int enableInverseDisplacement;
+    int enableLinearApprox;
 } mapping;
 
 // Thanks InCG exercise
@@ -62,7 +63,7 @@ void main() {
     vec3 ray = (worldToTangent * -fsPos).xyz;
 
     const vec3 directionNormalized = normalize(ray);
-    const vec3 step = vec3(directionNormalized.xy, -1.0) / mapping.raymarchSteps;
+    const vec3 step = vec3(directionNormalized.xy / directionNormalized.z, -1.0) / mapping.raymarchSteps;
     vec3 currentPos = vec3(uv, mapping.heightScale);
 
 
@@ -80,7 +81,7 @@ void main() {
 
         if (heightAbove <= 0) {
             // Found a hit, linear interpolation
-            if (heightAbove < 0) {
+            if (heightAbove < 0 && mapping.enableLinearApprox > 0) {
                 currentPos -= (-heightAbove) / (-heightAbove + lastHeightAbove) * step;
             }
 
