@@ -109,6 +109,7 @@ private:
     bool forceRecreateSwapchain;
     bool forceReloadShaders;
     bool showDemoWindow;
+    bool invertMouse = true;
     float nearPlane = .1f;
     float farPlane = 1000.f;
     float cameraFOVY = 45;

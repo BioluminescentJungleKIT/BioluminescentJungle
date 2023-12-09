@@ -110,6 +110,7 @@ void JungleApp::drawImGUI() {
             ImGui::DragFloat3("Camera PoV", &cameraFinalPosition.x, 0.01f);
             ImGui::DragFloat3("Camera Up", &cameraUpVector.x, 0.01f);
             ImGui::SliderFloat("Camera Teleport Speed", &cameraMovementSpeed, 0.0f, 5.0f);
+            ImGui::Checkbox("Invert mouse motion", &invertMouse);
             scene.cameraButtons(cameraFinalLookAt, cameraFinalPosition, cameraUpVector, cameraFOVY, nearPlane, farPlane);
         }
         if (ImGui::CollapsingHeader("Scene Settings")) {
@@ -609,6 +610,10 @@ void JungleApp::handleGLFWMouse(GLFWwindow *window, double x, double y) {
         // We are dragging the mouse with button pressed
         float dx = -(app->lastMouseX.value() - x) * 180 / app->swapchain->swapChainExtent.width;
         float dy = (y - app->lastMouseY.value()) * 180 / app->swapchain->swapChainExtent.height;
+        if (app->invertMouse) {
+            dx *= -1;
+            dy *= -1;
+        }
 
         // Button is pressed, we have previous values => compute change in the target
         glm::vec3 viewDir = glm::normalize(app->cameraFinalLookAt - app->cameraFinalPosition);
