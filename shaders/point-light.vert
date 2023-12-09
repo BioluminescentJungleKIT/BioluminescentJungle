@@ -16,5 +16,5 @@ layout(location = 1) out vec3 intensity;
 void main() {
     position = (ubo.model * vec4(inPosition, 1.0)).xyz;
 
-    intensity = inColor * inIntensity/200;
+    intensity = inColor * inIntensity/250;
 }

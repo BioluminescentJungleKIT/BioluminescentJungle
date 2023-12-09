@@ -31,11 +31,11 @@ static bool string_contains(std::string a, std::string b) {
 }
 
 static bool materialUsesDisplacedTexture(const tinygltf::Material& material) {
-    if (material.normalTexture.index >= 0 && string_contains(material.name, "Displaced")) {
-        return true;
-    }
+    return material.occlusionTexture.index >= 0;
+}
 
-    return false;
+static bool materialUsesNormalTexture(const tinygltf::Material& material) {
+    return material.normalTexture.index >= 0;
 }
 
 static bool materialUsesBaseTexture(const tinygltf::Material& material) {
@@ -64,8 +64,10 @@ PipelineDescription Scene::getPipelineDescriptionForPrimitive(const tinygltf::Pr
         descr.vertexFixedColorAccessor = attributes.at(FIXED_COLOR);
     }
 
-    if (has_texcoords && materialUsesDisplacedTexture(material)) {
-        descr.useDisplacement = true;
+    if (has_texcoords && materialUsesNormalTexture(material)) {
+        if (materialUsesDisplacedTexture(material)) {
+            descr.useDisplacement = true;
+        }
     }
 
     return descr;
@@ -134,6 +136,11 @@ void Scene::renderPrimitiveInstances(int meshId, int primitiveId, VkCommandBuffe
             pipelineLayout, 2, 1, &materialDSet[primitive.material], 0, nullptr);
     }
 
+    if (descr.useDisplacement) {
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+            pipelineLayout, 3, 1, &materialSettingSets[swapchain->currentFrame], 0, nullptr);
+    }
+
     std::vector<VkBuffer> vertexBuffers;
     std::vector<VkDeviceSize> offsets;
     const auto &addBufferOffset = [&](const char *attribute) {
@@ -187,7 +194,6 @@ void Scene::setupDescriptorSets(VkDescriptorPool descriptorPool) {
     int i = 0;
     for (int mesh = 0; mesh < model.meshes.size(); mesh++) {
         if (meshTransforms.find(mesh) == meshTransforms.end()) continue; // 0 instances. skip.
-
         auto meshTransformsBufferIndex = buffersMap[mesh];
         VkDescriptorBufferInfo bufferInfo{};
         bufferInfo.buffer = buffers[meshTransformsBufferIndex];
@@ -209,18 +215,32 @@ void Scene::setupDescriptorSets(VkDescriptorPool descriptorPool) {
         vkUpdateDescriptorSets(*device, 1, &descriptorWrite, 0, nullptr);
     }
 
+    materialSettingSets = VulkanHelper::createDescriptorSetsFromLayout(*device, descriptorPool,
+        materialsSettingsLayout, MAX_FRAMES_IN_FLIGHT);
+    for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+        auto bInfo = vkutil::createDescriptorBufferInfo(materialBuffer.buffers[i], 0, sizeof(MaterialSettings));
+        device->writeDescriptorSets({
+            vkutil::createDescriptorWriteUBO(bInfo, materialSettingSets[i], 0),
+        });
+    }
+
     for (size_t i = 0; i < model.materials.size(); i++) {
-        if (materialUsesDisplacedTexture(model.materials[i])) {
+        if (materialUsesNormalTexture(model.materials[i]) && materialUsesDisplacedTexture(model.materials[i])) {
             auto dset = VulkanHelper::createDescriptorSetsFromLayout(*device, descriptorPool,
                 albedoDisplacementDSLayout, 1)[0];
 
             auto& albedo = textures[model.materials[i].values.find(BASE_COLOR_TEXTURE)->second.TextureIndex()];
-            auto& disp = textures[model.materials[i].normalTexture.index];
+            auto& normal = textures[model.materials[i].normalTexture.index];
+            auto& disp = textures[model.materials[i].occlusionTexture.index];
+
             auto albedoImageInfo = vkutil::createDescriptorImageInfo(albedo.imageView, albedo.sampler);
+            auto normalImageInfo = vkutil::createDescriptorImageInfo(normal.imageView, normal.sampler);
             auto dispImageInfo = vkutil::createDescriptorImageInfo(disp.imageView, disp.sampler);
+
             device->writeDescriptorSets({
                 vkutil::createDescriptorWriteSampler(albedoImageInfo, dset, 0),
-                vkutil::createDescriptorWriteSampler(dispImageInfo, dset, 1),
+                vkutil::createDescriptorWriteSampler(normalImageInfo, dset, 1),
+                vkutil::createDescriptorWriteSampler(dispImageInfo, dset, 2),
             });
 
             materialDSet[i] = dset;
@@ -240,7 +260,7 @@ void Scene::setupDescriptorSets(VkDescriptorPool descriptorPool) {
 
 RequiredDescriptors Scene::getNumDescriptors() {
     return RequiredDescriptors{
-            .requireUniformBuffers = (int) meshTransforms.size(),
+            .requireUniformBuffers = (int) meshTransforms.size() + MAX_FRAMES_IN_FLIGHT,
             .requireSamplers = (int) textures.size(),
     };
 }
@@ -345,11 +365,14 @@ void Scene::setupUniformBuffers() {
         buffers.push_back(buffer);
         bufferMemories.push_back(bufferMemory);
     }
+
+    materialBuffer.allocate(device, sizeof(MaterialSettings), MAX_FRAMES_IN_FLIGHT);
 }
 
 void Scene::destroyBuffers() {
     for (auto buffer: buffers) vkDestroyBuffer(*device, buffer, nullptr);
     for (auto bufferMemory: bufferMemories) vkFreeMemory(*device, bufferMemory, nullptr);
+    materialBuffer.destroy(device);
 }
 
 std::tuple<std::vector<VkVertexInputAttributeDescription>, std::vector<VkVertexInputBindingDescription>>
@@ -416,6 +439,13 @@ void Scene::ensureDescriptorSetLayouts() {
         albedoDisplacementDSLayout = device->createDescriptorSetLayout({
             vkutil::createSetLayoutBinding(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT),
             vkutil::createSetLayoutBinding(1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT),
+            vkutil::createSetLayoutBinding(2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT),
+        });
+    }
+
+    if (materialsSettingsLayout == VK_NULL_HANDLE) {
+        materialsSettingsLayout = device->createDescriptorSetLayout({
+            vkutil::createSetLayoutBinding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT),
         });
     }
 }
@@ -424,6 +454,7 @@ void Scene::destroyDescriptorSetLayout() {
     vkDestroyDescriptorSetLayout(*device, uboDescriptorSetLayout, nullptr);
     vkDestroyDescriptorSetLayout(*device, albedoDSLayout, nullptr);
     vkDestroyDescriptorSetLayout(*device, albedoDisplacementDSLayout, nullptr);
+    vkDestroyDescriptorSetLayout(*device, materialsSettingsLayout, nullptr);
 }
 
 void calculateBoundingBox(const tinygltf::Model &model, glm::vec3 &minBounds, glm::vec3 &maxBounds) {
@@ -533,7 +564,7 @@ Scene::LoadedTexture uploadGLTFImage(VulkanDevice *device, const tinygltf::Image
 }
 
 void Scene::setupTextures() {
-    const auto& loadTexture = [&] (int textureIdx, bool isNormalMap) {
+    const auto& loadTexture = [&] (int textureIdx) {
         // We have a texture here
         const tinygltf::Texture &gTexture = model.textures[textureIdx];
         if (textures.count(gTexture.source)) {
@@ -544,7 +575,6 @@ void Scene::setupTextures() {
         textures[gTexture.source].imageView =
             device->createImageView(textures[gTexture.source].image, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_ASPECT_COLOR_BIT);
         textures[gTexture.source].sampler = VulkanHelper::createSampler(device);
-        textures[gTexture.source].isNormalMap = isNormalMap;
     };
 
     for (size_t i = 0; i < model.materials.size(); i++) {
@@ -552,13 +582,15 @@ void Scene::setupTextures() {
 
         auto it = material.values.find(BASE_COLOR_TEXTURE);
         if (it != material.values.end()) {
-            loadTexture(it->second.TextureIndex(), false);
+            loadTexture(it->second.TextureIndex());
         }
 
-        int nIdx = material.normalTexture.index;
-        if (nIdx >= 0) {
-            loadTexture(nIdx, true);
-            continue;
+        if (materialUsesNormalTexture(material)) {
+            loadTexture(material.normalTexture.index);
+        }
+
+        if (materialUsesDisplacedTexture(material)) {
+            loadTexture(material.occlusionTexture.index);
         }
     }
 }
@@ -636,14 +668,20 @@ void Scene::createPipelinesWithDescription(PipelineDescription descr, VkRenderPa
     }
 
     ensureDescriptorSetLayouts();
-    std::vector<VkDescriptorSetLayout> descriptorSets{mvpLayout, uboDescriptorSetLayout};
+    std::vector<VkDescriptorSetLayout> dsLayouts{mvpLayout, uboDescriptorSetLayout};
     addAttributeAndBinding(0, 0, *descr.vertexPosAccessor);
     addAttributeAndBinding(2, 2, *descr.vertexNormalAccessor);
     if (descr.vertexFixedColorAccessor.has_value()) {
         addAttributeAndBinding(1, 1, *descr.vertexFixedColorAccessor);
     } else if (descr.vertexTexcoordsAccessor.has_value()) {
         addAttributeAndBinding(1, 1, *descr.vertexTexcoordsAccessor);
-        descriptorSets.push_back(descr.useDisplacement ? albedoDisplacementDSLayout : albedoDSLayout);
+
+        if (descr.useDisplacement) {
+            dsLayouts.push_back(albedoDisplacementDSLayout);
+            dsLayouts.push_back(materialsSettingsLayout);
+        } else {
+            dsLayouts.push_back(albedoDSLayout);
+        }
     } else {
         throw std::runtime_error("Mesh primitive without color or texcoords is not supported by shaders!");
     }
@@ -660,7 +698,7 @@ void Scene::createPipelinesWithDescription(PipelineDescription descr, VkRenderPa
     params.blending.assign(GBufferTarget::NumAttachments - 1, {});
     params.useDepthTest = true;
 
-    params.descriptorSetLayouts = descriptorSets;
+    params.descriptorSetLayouts = dsLayouts;
     pipelines[descr] = std::make_unique<GraphicsPipeline>(device, renderPass, 0, params);
 }
 
@@ -682,5 +720,17 @@ void Scene::cameraButtons(glm::vec3& lookAt, glm::vec3& position, glm::vec3& up,
         if (ImGui::Button(camera.name.c_str())) {
             setFromCamera(lookAt, position, up, fovy, near, far, camera);
         }
+    }
+}
+
+void Scene::updateBuffers() {
+    materialBuffer.update(&materialSettings, sizeof(materialSettings), swapchain->currentFrame);
+}
+
+void Scene::drawImGUIMaterialSettings() {
+    if (ImGui::CollapsingHeader("Material Settings")) {
+        ImGui::Checkbox("Enable Inverse Displacement Mapping", (bool*)&materialSettings.enableInverseDisplacement);
+        ImGui::SliderInt("Raymarching Steps", &materialSettings.raymarchSteps, 1, 1000);
+        ImGui::SliderFloat("Height Scale", &materialSettings.heightScale, 1e-6, 1);
     }
 }

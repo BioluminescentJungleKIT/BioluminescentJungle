@@ -12,6 +12,7 @@
 #include <vulkan/vulkan_core.h>
 #include "Pipeline.h"
 #include "Swapchain.h"
+#include "UniformBuffer.h"
 #include "tiny_gltf.h"
 #include "PhysicalDevice.h"
 
@@ -53,6 +54,12 @@ struct PipelineDescription {
     }
 };
 
+struct MaterialSettings {
+    glm::float32_t heightScale = 0.05;
+    glm::int32_t raymarchSteps = 100;
+    glm::int32_t enableInverseDisplacement = 1;
+};
+
 // load glft using loader. provide definitions and functions for creating pipeline and rendering it.
 class Scene {
 public:
@@ -66,6 +73,7 @@ public:
     void destroyAll();
 
     void setupBuffers();
+    void updateBuffers();
 
     void setupTextures();
     void destroyTextures();
@@ -89,13 +97,13 @@ public:
         VkDeviceMemory memory;
         VkImageView imageView;
         VkSampler sampler;
-        bool isNormalMap = false;
     };
 
     void drawPointLights(VkCommandBuffer buffer);
     void cameraButtons(glm::vec3 &lookAt, glm::vec3 &position, glm::vec3 &up, float &fovy, float &near, float &far);
+    void drawImGUIMaterialSettings();
 
-private:
+  private:
     tinygltf::TinyGLTF loader;
     tinygltf::Model model;
     VulkanDevice *device;
@@ -125,11 +133,13 @@ private:
     std::map<std::vector<int>, int> transformBuffers;
 
     VkDescriptorSetLayout uboDescriptorSetLayout{VK_NULL_HANDLE};
+    VkDescriptorSetLayout materialsSettingsLayout{VK_NULL_HANDLE};
 
     VkDescriptorSetLayout albedoDSLayout{VK_NULL_HANDLE};
     VkDescriptorSetLayout albedoDisplacementDSLayout{VK_NULL_HANDLE};
 
     std::vector<VkDescriptorSet> uboDescriptorSets;
+    std::vector<VkDescriptorSet> materialSettingSets;
 
     std::map<int, int> buffersMap;
     std::map<int, int> descriptorSetsMap;
@@ -142,6 +152,9 @@ private:
     std::vector<LightData> lights;
     int lightsBuffer{-1};
     std::vector<CameraData> cameras;
+
+    MaterialSettings materialSettings;
+    UniformBuffer materialBuffer;
 };
 
 

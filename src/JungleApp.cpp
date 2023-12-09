@@ -111,6 +111,7 @@ void JungleApp::drawImGUI() {
             ImGui::SliderFloat("Gamma", &tonemap->gamma, 0, 4);
             ImGui::Combo("Tonemapping", &tonemap->tonemappingMode, "None\0Hable\0AgX\0\0");
         }
+        scene.drawImGUIMaterialSettings();
     }
     ImGui::End();
 
@@ -406,6 +407,7 @@ void JungleApp::updateUniformBuffers(uint32_t currentImage) {
     ubo.proj[1][1] *= -1;  // because GLM generates OpenGL projections
 
     mvpUBO.update(&ubo, sizeof(ubo), currentImage);
+    scene.updateBuffers();
     lighting->updateBuffers(ubo.proj * ubo.view, cameraPosition, cameraUpVector);
 
     // TODO: is there a better way to integrate this somehow? Too lazy to skip the tonemapping render pass completely.
