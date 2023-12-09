@@ -315,15 +315,15 @@ glm::mat4 VulkanHelper::transformFromMatrixOrComponents(std::vector<double> matr
     }
 }
 
-VkSampler VulkanHelper::createSampler(VulkanDevice* device) {
+VkSampler VulkanHelper::createSampler(VulkanDevice *device, bool tiling) {
     VkSamplerCreateInfo samplerInfo{};
     samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
     samplerInfo.magFilter = VK_FILTER_LINEAR;
     samplerInfo.minFilter = VK_FILTER_LINEAR;
 
-    samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-    samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-    samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    samplerInfo.addressModeU = tiling ? VK_SAMPLER_ADDRESS_MODE_REPEAT : VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    samplerInfo.addressModeV = tiling ? VK_SAMPLER_ADDRESS_MODE_REPEAT : VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    samplerInfo.addressModeW = tiling ? VK_SAMPLER_ADDRESS_MODE_REPEAT : VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
 
     samplerInfo.anisotropyEnable = VK_TRUE;
 
@@ -366,8 +366,7 @@ void VulkanHelper::setFullViewportScissor(VkCommandBuffer commandBuffer, VkExten
 }
 
 std::vector<VkDescriptorSet> VulkanHelper::createDescriptorSetsFromLayout(
-    VkDevice device, VkDescriptorPool pool, VkDescriptorSetLayout layout, size_t n)
-{
+        VkDevice device, VkDescriptorPool pool, VkDescriptorSetLayout layout, size_t n) {
     std::vector<VkDescriptorSetLayout> layouts(n, layout);
     std::vector<VkDescriptorSet> sets(n);
 
