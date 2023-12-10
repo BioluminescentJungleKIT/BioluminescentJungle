@@ -49,7 +49,7 @@ void computeTangentSpace(vec3 N, out vec3 T, out vec3 B) {
 }
 
 void readConvertNormal(vec3 T, vec3 B, vec3 N, vec2 uv) {
-    float gamma = mapping.useInvertedFormat > 0 ? 1.0/2.2 : 1.0;
+    float gamma = 1.0/2.2;
     outNormal = pow(texture(normalMap, uv).rgb, vec3(gamma)) * 2 - 1;
     outNormal = normalize(transpose(inverse(mat3(T, B, N))) * outNormal);
     // Convert normal to world space, because our lighting uses it
@@ -97,7 +97,7 @@ void main() {
         if (mapping.useInvertedFormat > 0) {
             depth = (1.0 - pow(texture(heightMap, currentPos.st).r, 1.0/2.2)) * mapping.heightScale;
         } else {
-            depth = texture(heightMap, currentPos.st).r * mapping.heightScale;
+            depth = pow(texture(heightMap, currentPos.st).r, 1.0/2.2) * mapping.heightScale;
         }
 
         const float heightAbove = currentPos.z - depth;
