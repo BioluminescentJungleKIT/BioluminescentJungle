@@ -20,6 +20,9 @@ layout(set = 0, binding = 0) uniform UniformBufferObject {
 layout(set = 2, binding = 0) uniform sampler2D albedo;
 layout(set = 2, binding = 1) uniform sampler2D normalMap;
 layout(set = 2, binding = 2) uniform sampler2D heightMap;
+layout(set = 2, binding = 3) uniform IsNormalMap {
+    int isNormalMapOnly;
+} isNormal;
 
 layout(set = 3, binding = 0, std140) uniform MaterialSettings {
     float heightScale;
@@ -55,13 +58,11 @@ void readConvertNormal(vec3 T, vec3 B, vec3 N, vec2 uv) {
 
 void main() {
     outMotion = (fsOldPosClipSpace/fsOldPosClipSpace.w - fsPosClipSpace/fsPosClipSpace.w).xy;
-
     vec3 N = normalize(normal);
 
     vec3 T, B;
     computeTangentSpace(N, T, B);
-
-    if (mapping.enableInverseDisplacement == 0) {
+    if (isNormal.isNormalMapOnly > 0 || mapping.enableInverseDisplacement == 0) {
         outColor = texture(albedo, uv);
         // Convert normal to world space, because our lighting uses it
         readConvertNormal(T, B, N, uv);

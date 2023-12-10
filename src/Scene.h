@@ -39,10 +39,12 @@ struct PipelineDescription {
     std::optional<int> vertexTexcoordsAccessor;
     std::optional<int> vertexFixedColorAccessor;
     std::optional<int> vertexNormalAccessor;
+
+    bool useNormalMap = false;
     bool useDisplacement = false;
 
     auto toTuple() const {
-        return std::make_tuple(vertexPosAccessor, vertexTexcoordsAccessor, vertexFixedColorAccessor, useDisplacement);
+        return std::make_tuple(vertexPosAccessor, vertexTexcoordsAccessor, vertexFixedColorAccessor, useNormalMap, useDisplacement);
     }
 
     bool operator < (const PipelineDescription& other) const {
@@ -157,6 +159,7 @@ public:
 
     MaterialSettings materialSettings;
     UniformBuffer materialBuffer;
+    UniformBuffer constantsBuffers;
 };
 
 

@@ -65,6 +65,7 @@ PipelineDescription Scene::getPipelineDescriptionForPrimitive(const tinygltf::Pr
     }
 
     if (has_texcoords && materialUsesNormalTexture(material)) {
+        descr.useNormalMap = true;
         if (materialUsesDisplacedTexture(material)) {
             descr.useDisplacement = true;
         }
@@ -136,7 +137,7 @@ void Scene::renderPrimitiveInstances(int meshId, int primitiveId, VkCommandBuffe
             pipelineLayout, 2, 1, &materialDSet[primitive.material], 0, nullptr);
     }
 
-    if (descr.useDisplacement) {
+    if (descr.useNormalMap) {
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
             pipelineLayout, 3, 1, &materialSettingSets[swapchain->currentFrame], 0, nullptr);
     }
@@ -224,36 +225,55 @@ void Scene::setupDescriptorSets(VkDescriptorPool descriptorPool) {
         });
     }
 
+    const auto& findTexture = [&] (int gltfId) -> LoadedTexture& {
+        auto gTex = model.textures[gltfId];
+        return textures[gTex.source];
+    };
+
     for (size_t i = 0; i < model.materials.size(); i++) {
-        if (materialUsesNormalTexture(model.materials[i]) && materialUsesDisplacedTexture(model.materials[i])) {
-            auto dset = VulkanHelper::createDescriptorSetsFromLayout(*device, descriptorPool,
-                albedoDisplacementDSLayout, 1)[0];
+        VkDescriptorSetLayout desiredLayout = VK_NULL_HANDLE;
+        std::vector<VkDescriptorImageInfo> boundTextures;
+        std::vector<VkDescriptorBufferInfo> boundBuffers;
+        if (materialUsesBaseTexture(model.materials[i])) {
+            desiredLayout = albedoDSLayout;
+            std::cout << "Material " << i << " "  << model.materials[i].values.find(BASE_COLOR_TEXTURE)->second.TextureIndex() << std::endl;
+            auto& albedo = findTexture(model.materials[i].values.find(BASE_COLOR_TEXTURE)->second.TextureIndex());
+            boundTextures.push_back(vkutil::createDescriptorImageInfo(albedo.imageView, albedo.sampler));
 
-            auto& albedo = textures[model.materials[i].values.find(BASE_COLOR_TEXTURE)->second.TextureIndex()];
-            auto& normal = textures[model.materials[i].normalTexture.index];
-            auto& disp = textures[model.materials[i].occlusionTexture.index];
+            if (materialUsesNormalTexture(model.materials[i])) {
+                desiredLayout = albedoDisplacementDSLayout;
+                auto& normal = findTexture(model.materials[i].normalTexture.index);
+                boundTextures.push_back(vkutil::createDescriptorImageInfo(normal.imageView, normal.sampler));
 
-            auto albedoImageInfo = vkutil::createDescriptorImageInfo(albedo.imageView, albedo.sampler);
-            auto normalImageInfo = vkutil::createDescriptorImageInfo(normal.imageView, normal.sampler);
-            auto dispImageInfo = vkutil::createDescriptorImageInfo(disp.imageView, disp.sampler);
+                if (materialUsesDisplacedTexture(model.materials[i])) {
+                    auto& disp = findTexture(model.materials[i].occlusionTexture.index);
+                    boundTextures.push_back(vkutil::createDescriptorImageInfo(disp.imageView, disp.sampler));
+                    boundBuffers.push_back(vkutil::createDescriptorBufferInfo(constantsBuffers.buffers[0], 0, sizeof(glm::int32_t)));
+                } else {
+                    // We map the normal texture as both normal texture and as the height map.
+                    // Vulkan requires that we bind all textures even if we don't use them ...
+                    boundTextures.push_back(boundTextures.back());
+                    boundBuffers.push_back(vkutil::createDescriptorBufferInfo(constantsBuffers.buffers[1], 0, sizeof(glm::int32_t)));
+                }
+            }
+        }
 
-            device->writeDescriptorSets({
-                vkutil::createDescriptorWriteSampler(albedoImageInfo, dset, 0),
-                vkutil::createDescriptorWriteSampler(normalImageInfo, dset, 1),
-                vkutil::createDescriptorWriteSampler(dispImageInfo, dset, 2),
-            });
+        if (desiredLayout != VK_NULL_HANDLE) {
+            materialDSet[i] =
+                VulkanHelper::createDescriptorSetsFromLayout(*device, descriptorPool, desiredLayout, 1)[0];
 
-            materialDSet[i] = dset;
-        } else if (materialUsesBaseTexture(model.materials[i])) {
-            auto dset = VulkanHelper::createDescriptorSetsFromLayout(*device, descriptorPool,
-                albedoDSLayout, 1)[0];
+            std::vector<VkWriteDescriptorSet> writes;
+            size_t id = 0;
+            for (id = 0; id < boundTextures.size(); id++) {
+                std::cout << id << " " << boundTextures[id].imageView << std::endl;
+                writes.push_back(vkutil::createDescriptorWriteSampler(boundTextures[id], materialDSet[i], id));
+            }
 
-            auto& albedo = textures[model.materials[i].values.find(BASE_COLOR_TEXTURE)->second.TextureIndex()];
-            auto albedoImageInfo = vkutil::createDescriptorImageInfo(albedo.imageView, albedo.sampler);
-            device->writeDescriptorSets({
-                vkutil::createDescriptorWriteSampler(albedoImageInfo, dset, 0),
-            });
-            materialDSet[i] = dset;
+            for (size_t j = 0; j < boundBuffers.size(); j++, id++) {
+                writes.push_back(vkutil::createDescriptorWriteUBO(boundBuffers[j], materialDSet[i], id));
+            }
+
+            device->writeDescriptorSets(writes);
         }
     }
 }
@@ -367,6 +387,12 @@ void Scene::setupUniformBuffers() {
     }
 
     materialBuffer.allocate(device, sizeof(MaterialSettings), MAX_FRAMES_IN_FLIGHT);
+
+    constantsBuffers.allocate(device, sizeof(glm::int32_t), 2);
+    // Just two buffers with the constants 0 and 1, allowing us to reuse the shader ..
+    for (glm::int32_t v = 0; v < 2; v++) {
+        constantsBuffers.update(&v, sizeof(v), v);
+    }
 }
 
 void Scene::destroyBuffers() {
@@ -440,6 +466,7 @@ void Scene::ensureDescriptorSetLayouts() {
             vkutil::createSetLayoutBinding(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT),
             vkutil::createSetLayoutBinding(1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT),
             vkutil::createSetLayoutBinding(2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT),
+            vkutil::createSetLayoutBinding(3, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT),
         });
     }
 
@@ -626,7 +653,7 @@ static ShaderList selectShaders(const PipelineDescription &descr) {
         };
     }
 
-    if (descr.useDisplacement) {
+    if (descr.useNormalMap) {
         return ShaderList {
             {VK_SHADER_STAGE_VERTEX_BIT,   "shaders/displacement.vert"},
             {VK_SHADER_STAGE_FRAGMENT_BIT, "shaders/displacement.frag"},
@@ -676,7 +703,7 @@ void Scene::createPipelinesWithDescription(PipelineDescription descr, VkRenderPa
     } else if (descr.vertexTexcoordsAccessor.has_value()) {
         addAttributeAndBinding(1, 1, *descr.vertexTexcoordsAccessor);
 
-        if (descr.useDisplacement) {
+        if (descr.useNormalMap) {
             dsLayouts.push_back(albedoDisplacementDSLayout);
             dsLayouts.push_back(materialsSettingsLayout);
         } else {
