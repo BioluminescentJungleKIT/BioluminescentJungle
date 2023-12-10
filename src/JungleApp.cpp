@@ -589,6 +589,7 @@ void JungleApp::handleMotion() {
     movement *= cameraMovementSpeed;
     cameraFinalPosition += movement;
     cameraFinalLookAt += movement;
+    cameraUpVector = glm::vec3(0, 0, 1);
     lastMoveTime = curTime;
 }
 
@@ -633,6 +634,7 @@ void JungleApp::handleGLFWMouse(GLFWwindow *window, double x, double y) {
     // store x,y values for the next event
     app->lastMouseX = x;
     app->lastMouseY = y;
+    app->cameraUpVector = glm::vec3(0, 0, 1);
 }
 
 void JungleApp::handleGLFWResize(GLFWwindow* window, int width, int height)
