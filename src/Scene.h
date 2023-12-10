@@ -59,6 +59,7 @@ struct MaterialSettings {
     glm::int32_t raymarchSteps = 100;
     glm::int32_t enableInverseDisplacement = 1;
     glm::int32_t enableLinearApprox = 1;
+    glm::int32_t useInvertedFormat = 0;
 };
 
 // load glft using loader. provide definitions and functions for creating pipeline and rendering it.

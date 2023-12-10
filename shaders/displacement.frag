@@ -26,6 +26,7 @@ layout(set = 3, binding = 0, std140) uniform MaterialSettings {
     int raymarchSteps;
     int enableInverseDisplacement;
     int enableLinearApprox;
+    int useInvertedFormat;
 } mapping;
 
 void computeTangentSpace(vec3 N, out vec3 T, out vec3 B) {
@@ -45,10 +46,10 @@ void computeTangentSpace(vec3 N, out vec3 T, out vec3 B) {
 }
 
 void readConvertNormal(vec3 T, vec3 B, vec3 N, vec2 uv) {
+    float gamma = mapping.useInvertedFormat > 0 ? 1.0/2.2 : 1.0;
+    outNormal = pow(texture(normalMap, uv).rgb, vec3(gamma)) * 2 - 1;
+    outNormal = normalize(transpose(inverse(mat3(T, B, N))) * outNormal);
     // Convert normal to world space, because our lighting uses it
-    outNormal = pow(texture(normalMap, uv).rgb, vec3(1/2.2)) * 2 - 1;
-
-    outNormal = transpose(inverse(mat3(T, B, N))) * outNormal;
     outNormal = (transpose(ubo.view) * vec4(outNormal, 0.0)).xyz;
 }
 
@@ -60,9 +61,6 @@ void main() {
     vec3 T, B;
     computeTangentSpace(N, T, B);
 
-    vec3 coT = cross(B, N);
-    vec3 coB = cross(N, T);
-
     if (mapping.enableInverseDisplacement == 0) {
         outColor = texture(albedo, uv);
         // Convert normal to world space, because our lighting uses it
@@ -70,20 +68,21 @@ void main() {
         return;
     }
 
-    // TODO: investigate whether we want normalization or not.
-    // If yes: we can use transpose() instead of inverse()
-    // If no: we might still be able to use a few tricks to avoid inversion
+    vec3 coT = cross(B, N);
+    vec3 coB = cross(N, T);
+
+    // Workaround to compensate for inside-out twisted surfaces
+    if (dot(cross(coT, coB), N) > 0) {
+        coT *= -1;
+        coB *= -1;
+    }
+
     mat3 worldToTangent = transpose(mat3(coT, coB, N));
     vec3 ray = (worldToTangent * -fsPos).xyz;
 
     const vec3 directionNormalized = normalize(ray);
     const vec3 step = vec3(directionNormalized.xy / directionNormalized.z, -1.0) / mapping.raymarchSteps;
     vec3 currentPos = vec3(uv, mapping.heightScale);
-
-    vec2 duvdx = dFdx(uv);
-    vec2 duvdy = dFdy(uv);
-
-
     float lastHeightAbove = 0.0;
 
     for (int i = 0; i < mapping.raymarchSteps; i++) {
@@ -93,9 +92,14 @@ void main() {
             discard;
         }
 
-        const float depth = (1.0 - pow(texture(heightMap, currentPos.st).r, 1.0/2.2)) * mapping.heightScale;
-        const float heightAbove = currentPos.z - depth;
+        float depth;
+        if (mapping.useInvertedFormat > 0) {
+            depth = (1.0 - pow(texture(heightMap, currentPos.st).r, 1.0/2.2)) * mapping.heightScale;
+        } else {
+            depth = texture(heightMap, currentPos.st).r * mapping.heightScale;
+        }
 
+        const float heightAbove = currentPos.z - depth;
         if (heightAbove <= 0) {
             // Found a hit, linear interpolation
             if (heightAbove < 0 && mapping.enableLinearApprox > 0) {
