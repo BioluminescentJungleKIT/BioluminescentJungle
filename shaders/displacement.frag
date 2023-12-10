@@ -28,17 +28,15 @@ layout(set = 3, binding = 0, std140) uniform MaterialSettings {
     int enableLinearApprox;
 } mapping;
 
-// Thanks InCG exercise
-void computeCotangentSpace(vec3 N, out vec3 T, out vec3 B) {
+void computeTangentSpace(vec3 N, out vec3 T, out vec3 B) {
     vec3 Q1 = dFdx(fsPos);
     vec3 Q2 = dFdy(fsPos);
     vec2 st1 = dFdx(uv);
     vec2 st2 = dFdy(uv);
 
-    vec3 dp2perp = cross( Q2, N );
-    vec3 dp1perp = cross( N, Q1 );
-    T = dp2perp * st1.x + dp1perp * st2.x;
-    B = dp2perp * st1.y + dp1perp * st2.y;
+    mat2 m = inverse(transpose(mat2(st1, st2)));
+    T = m[0][0] * Q1 + m[1][0] * Q2;
+    B = m[0][1] * Q1 + m[1][1] * Q2;
 
     // construct a scale-invariant frame
     float invmax = inversesqrt( max( dot(T,T), dot(B,B) ) );
@@ -46,25 +44,36 @@ void computeCotangentSpace(vec3 N, out vec3 T, out vec3 B) {
     B *= invmax;
 }
 
+void readConvertNormal(vec3 T, vec3 B, vec3 N, vec2 uv) {
+    // Convert normal to world space, because our lighting uses it
+    outNormal = pow(texture(normalMap, uv).rgb, vec3(1/2.2)) * 2 - 1;
+
+    outNormal = transpose(inverse(mat3(T, B, N))) * outNormal;
+    outNormal = (transpose(ubo.view) * vec4(outNormal, 0.0)).xyz;
+}
+
 void main() {
     outMotion = (fsOldPosClipSpace/fsOldPosClipSpace.w - fsPosClipSpace/fsPosClipSpace.w).xy;
 
     vec3 N = normalize(normal);
+
     vec3 T, B;
-    computeCotangentSpace(N, T, B);
+    computeTangentSpace(N, T, B);
+
+    vec3 coT = cross(B, N);
+    vec3 coB = cross(N, T);
+
     if (mapping.enableInverseDisplacement == 0) {
         outColor = texture(albedo, uv);
-
         // Convert normal to world space, because our lighting uses it
-        outNormal = mat3(T, B, N) * texture(normalMap, uv).xyz;
-        outNormal = (transpose(ubo.view) * vec4(outNormal, 0.0)).xyz;
+        readConvertNormal(T, B, N, uv);
         return;
     }
 
     // TODO: investigate whether we want normalization or not.
     // If yes: we can use transpose() instead of inverse()
     // If no: we might still be able to use a few tricks to avoid inversion
-    mat3 worldToTangent = transpose(mat3(T, B, N));
+    mat3 worldToTangent = transpose(mat3(coT, coB, N));
     vec3 ray = (worldToTangent * -fsPos).xyz;
 
     const vec3 directionNormalized = normalize(ray);
@@ -84,7 +93,7 @@ void main() {
             discard;
         }
 
-        const float depth = texture(heightMap, currentPos.st).r * mapping.heightScale;
+        const float depth = (1.0 - pow(texture(heightMap, currentPos.st).r, 1.0/2.2)) * mapping.heightScale;
         const float heightAbove = currentPos.z - depth;
 
         if (heightAbove <= 0) {
@@ -94,10 +103,7 @@ void main() {
             }
 
             outColor = texture(albedo, currentPos.st);
-
-            // Convert normal to world space, because our lighting uses it
-            outNormal = mat3(T, B, N) * texture(normalMap, currentPos.st).xyz;
-            outNormal = (transpose(ubo.view) * vec4(outNormal, 0.0)).xyz;
+            readConvertNormal(T, B, N, currentPos.st);
             return;
         } else {
             currentPos += step;
