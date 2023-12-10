@@ -3,14 +3,18 @@
 layout(location = 0) in vec2 uv;
 layout(location = 1) in vec3 normal;
 layout(location = 2) in vec3 fsPos;
+layout(location = 3) in vec4 fsPosClipSpace;
+layout(location = 4) in vec4 fsOldPosClipSpace;
 
 layout(location = 0) out vec4 outColor;
 layout(location = 1) out vec3 outNormal;
+layout(location = 2) out vec2 outMotion;
 
 layout(set = 0, binding = 0) uniform UniformBufferObject {
-    mat4 model;  // global
+    mat4 modl;  // global
     mat4 view;
     mat4 proj;
+    vec2 jitt;
 } ubo;
 
 layout(set = 2, binding = 0) uniform sampler2D albedo;
@@ -43,10 +47,11 @@ void computeCotangentSpace(vec3 N, out vec3 T, out vec3 B) {
 }
 
 void main() {
+    outMotion = (fsOldPosClipSpace/fsOldPosClipSpace.w - fsPosClipSpace/fsPosClipSpace.w).xy;
+
     vec3 N = normalize(normal);
     vec3 T, B;
     computeCotangentSpace(N, T, B);
-
     if (mapping.enableInverseDisplacement == 0) {
         outColor = texture(albedo, uv);
 
@@ -65,6 +70,9 @@ void main() {
     const vec3 directionNormalized = normalize(ray);
     const vec3 step = vec3(directionNormalized.xy / directionNormalized.z, -1.0) / mapping.raymarchSteps;
     vec3 currentPos = vec3(uv, mapping.heightScale);
+
+    vec2 duvdx = dFdx(uv);
+    vec2 duvdy = dFdy(uv);
 
 
     float lastHeightAbove = 0.0;
