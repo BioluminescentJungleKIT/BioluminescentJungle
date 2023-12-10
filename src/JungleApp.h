@@ -5,21 +5,13 @@
 #ifndef VULKANBASICS_PLANETAPP_H
 #define VULKANBASICS_PLANETAPP_H
 
-#include <iostream>
-#include <stdexcept>
-#include <cstdlib>
-#include <cstring>
-#include <fstream>
 #include <memory>
-#include <array>
 #include <shaderc/shaderc.hpp>
 #include "Lighting.h"
 #include "Scene.h"
 #include "PhysicalDevice.h"
 #include "Swapchain.h"
 #include "MusicPlayer.h"
-#include "Pipeline.h"
-#include "Tonemap.h"
 #include "PostProcessing.h"
 
 const uint32_t WIDTH = 1800;
@@ -85,10 +77,10 @@ private:
 
     void drawImGUI();
 
-    static void framebufferResizeCallback(GLFWwindow *window, int width, int height) {
-        auto app = reinterpret_cast<JungleApp *>(glfwGetWindowUserPointer(window));
-        app->framebufferResized = true;
-    }
+    std::optional<float> lastMouseX, lastMouseY;
+    static void handleGLFWResize(GLFWwindow* window, int width, int height);
+    void handleMotion();
+    static void handleGLFWMouse(GLFWwindow *window, double x, double y);
 
     void createMVPSetLayout();
 
@@ -117,12 +109,27 @@ private:
     bool forceRecreateSwapchain;
     bool forceReloadShaders;
     bool showDemoWindow;
+    bool invertMouse = true;
     float nearPlane = .1f;
     float farPlane = 1000.f;
     float cameraFOVY = 45;
     glm::vec3 cameraLookAt = glm::vec3(0.0f, 0.0f, 0.0f);
     glm::vec3 cameraPosition = glm::vec3(5.0f, 5.0f, 5.0f);
     glm::vec3 cameraUpVector = glm::vec3(0.0f, 0.0f, 1.0f);
+    float cameraMovementSpeed = 2.0;
+    double lastMoveTime = -1.0;
+
+    // The *Final* members indicate what is the current target for the camera (while the animation is running)
+    glm::vec3 cameraFinalPosition = glm::vec3(5.0f, 5.0f, 5.0f);
+    glm::vec3 cameraFinalLookAt = glm::vec3(5.0f, 5.0f, 5.0f);
+
+    // Parameters while computing the animation for the camera
+    glm::vec3 cameraAnimStartPos = cameraFinalPosition;
+    glm::vec3 cameraAnimEndPos = cameraFinalPosition;
+
+    std::optional<double> lastCameraChange;
+    void cameraMotion();
+
     bool spinScene = false;
     float fixedRotation = 0.0;
 

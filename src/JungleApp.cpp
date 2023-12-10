@@ -9,8 +9,6 @@
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
-#include <set>
-#include <limits>
 #include <algorithm>
 #include <chrono>
 #include "JungleApp.h"
@@ -71,6 +69,7 @@ void JungleApp::setupGBuffer() {
 void JungleApp::mainLoop() {
     while (!glfwWindowShouldClose(window)) {
         glfwPollEvents();
+        cameraMotion();
         drawFrame();
     }
 
@@ -107,10 +106,12 @@ void JungleApp::drawImGUI() {
         if (ImGui::CollapsingHeader("Camera Settings")) {
             ImGui::DragFloatRange2("Clipping Planes", &nearPlane, &farPlane, 0.07f, .01f, 100000.f);
             ImGui::SliderFloat("Camera FOV", &cameraFOVY, 1.f, 179.f);
-            ImGui::DragFloat3("Camera PoI", &cameraLookAt.x, 0.01f);
-            ImGui::DragFloat3("Camera PoV", &cameraPosition.x, 0.01f);
+            ImGui::DragFloat3("Camera PoI", &cameraFinalLookAt.x, 0.01f);
+            ImGui::DragFloat3("Camera PoV", &cameraFinalPosition.x, 0.01f);
             ImGui::DragFloat3("Camera Up", &cameraUpVector.x, 0.01f);
-            scene.cameraButtons(cameraLookAt, cameraPosition, cameraUpVector, cameraFOVY, nearPlane, farPlane);
+            ImGui::SliderFloat("Camera Teleport Speed", &cameraMovementSpeed, 0.0f, 5.0f);
+            ImGui::Checkbox("Invert mouse motion", &invertMouse);
+            scene.cameraButtons(cameraFinalLookAt, cameraFinalPosition, cameraUpVector, cameraFOVY, nearPlane, farPlane);
         }
         if (ImGui::CollapsingHeader("Scene Settings")) {
             ImGui::Checkbox("Spin", &spinScene);
@@ -149,6 +150,7 @@ void JungleApp::drawImGUI() {
 }
 
 void JungleApp::drawFrame() {
+    handleMotion();
     auto imageIndex = swapchain->acquireNextImage(sceneRPass);
     if (!imageIndex.has_value()) {
         return;
@@ -205,7 +207,8 @@ void JungleApp::initWindow() {
     glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
     window = glfwCreateWindow(WIDTH, HEIGHT, "Bioluminescent Jungle", nullptr, nullptr);
     glfwSetWindowUserPointer(window, this);
-    glfwSetFramebufferSizeCallback(window, framebufferResizeCallback);
+    glfwSetFramebufferSizeCallback(window, handleGLFWResize);
+    glfwSetCursorPosCallback(window, handleGLFWMouse);
 }
 
 void JungleApp::initImGui() {
@@ -544,7 +547,141 @@ void JungleApp::setupScene(const std::string &sceneName) {
     scene = Scene(&device, swapchain.get(), sceneName);
     scene.setupBuffers();
     scene.setupTextures();
-    scene.computeDefaultCameraPos(cameraLookAt, cameraPosition, cameraFOVY);
+    scene.computeDefaultCameraPos(cameraFinalLookAt, cameraFinalPosition, cameraFOVY);
+}
+
+void JungleApp::handleMotion() {
+    glm::vec3 viewDir = cameraFinalLookAt - cameraFinalPosition;
+
+    glm::vec3 fwd = glm::normalize(glm::vec3(viewDir.x, viewDir.y, 0.0));
+    glm::vec3 side = glm::cross(fwd, glm::vec3(0.0, 0.0, 1.0));
+
+    // Camera movement
+    glm::vec3 movement(0.0);
+    if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
+        movement += fwd;
+
+    if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
+        movement -= fwd;
+
+    if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
+        movement -= side;
+    if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
+        movement += side;
+
+    if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS)
+        movement.z += std::copysign(1, cameraUpVector.z);
+    if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS)
+        movement.z -= 1.0;
+
+    if (glm::length(movement) <= 1e-6) {
+        lastMoveTime = -1;
+        return;
+    }
+
+    float curTime = glfwGetTime();
+    if (lastMoveTime < 0) {
+        lastMoveTime = curTime;
+        return;
+    }
+
+    movement *= curTime - lastMoveTime;
+    movement *= cameraMovementSpeed;
+    cameraFinalPosition += movement;
+    cameraFinalLookAt += movement;
+    cameraUpVector = glm::vec3(0, 0, 1);
+    lastMoveTime = curTime;
+}
+
+void JungleApp::handleGLFWMouse(GLFWwindow *window, double x, double y) {
+    if (ImGui::GetIO().WantCaptureMouse) {
+        // ImGui is using the mouse at the moment
+        return;
+    }
+
+    auto app = reinterpret_cast<JungleApp*>(glfwGetWindowUserPointer(window));
+    if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) != GLFW_PRESS) {
+        // Button not pressed => don't do anything
+        app->lastMouseX.reset();
+        app->lastMouseY.reset();
+        return;
+    }
+
+    if (app->lastMouseX.has_value() && app->lastMouseY.has_value()) {
+        // We are dragging the mouse with button pressed
+        float dx = -(app->lastMouseX.value() - x) * 180 / app->swapchain->swapChainExtent.width;
+        float dy = (y - app->lastMouseY.value()) * 180 / app->swapchain->swapChainExtent.height;
+        if (app->invertMouse) {
+            dx *= -1;
+            dy *= -1;
+        }
+
+        // Button is pressed, we have previous values => compute change in the target
+        glm::vec3 viewDir = glm::normalize(app->cameraFinalLookAt - app->cameraFinalPosition);
+
+        float yaw = glm::degrees(atan2(viewDir.y, viewDir.x));
+        float pitch = glm::degrees(asin(viewDir.z));
+
+        yaw += dx;
+        pitch = std::clamp(pitch + dy, -89.9f, 89.9f);
+
+        viewDir.x = cos(glm::radians(yaw)) * cos(glm::radians(pitch));
+        viewDir.z = sin(glm::radians(pitch));
+        viewDir.y = sin(glm::radians(yaw)) * cos(glm::radians(pitch));
+        app->cameraFinalLookAt = app->cameraFinalPosition + viewDir;
+    }
+
+    // store x,y values for the next event
+    app->lastMouseX = x;
+    app->lastMouseY = y;
+    app->cameraUpVector = glm::vec3(0, 0, 1);
+}
+
+void JungleApp::handleGLFWResize(GLFWwindow* window, int width, int height)
+{
+    auto app = reinterpret_cast<JungleApp*>(glfwGetWindowUserPointer(window));
+    app->framebufferResized = true;
+}
+
+constexpr float easeAnimation(float alpha) {
+    return 1.0 - std::pow(1.0 - alpha, 5);
+}
+
+void JungleApp::cameraMotion() {
+    const float EPS = 0.001f;
+
+    glm::vec3 delta = this->cameraFinalPosition - this->cameraPosition;
+    if (glm::length(delta) < EPS || lastMoveTime >= 0) {
+        this->cameraPosition = this->cameraFinalPosition;
+        this->cameraLookAt = this->cameraFinalLookAt;
+        return;
+    }
+
+    const auto& restartAnimation = [&] {
+        lastCameraChange = glfwGetTime();
+        cameraAnimStartPos = cameraPosition;
+        cameraAnimEndPos = cameraFinalPosition;
+    };
+
+    if (!lastCameraChange.has_value()) {
+        restartAnimation();
+        return;
+    }
+
+    // Compute time elapsed
+    const double now = glfwGetTime();
+    const double elapsed = std::min(1.0, (now - *lastCameraChange) * 4.0);
+    const bool animationChanged = glm::length(cameraAnimEndPos - cameraFinalPosition) >= EPS;
+
+    // Ease the animation
+    const float alpha = easeAnimation(elapsed);
+    this->cameraPosition = (1.0f - alpha) * this->cameraAnimStartPos + alpha * this->cameraAnimEndPos;
+    this->cameraLookAt = (this->cameraFinalLookAt - this->cameraFinalPosition) + this->cameraPosition;
+
+    // If the camera position changes while we are animating, adjust the start/end points again
+    if (animationChanged) {
+        restartAnimation();
+    }
 }
 
 float JungleApp::halton(uint32_t b, uint32_t n) {
