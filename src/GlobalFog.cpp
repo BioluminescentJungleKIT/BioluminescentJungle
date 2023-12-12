@@ -1,9 +1,5 @@
 #include "GlobalFog.h"
-#include "Pipeline.h"
 #include "Swapchain.h"
-#include "VulkanHelper.h"
-#include "imgui.h"
-#include "imgui_impl_vulkan.h"
 #include <vulkan/vulkan_core.h>
 
 std::string GlobalFog::getShaderName() {
@@ -23,9 +19,21 @@ void GlobalFog::updateUBOContent() {
     ubo.ambientFactor = ambientFactor;
     ubo.brightness = brightness;
     ubo.absorption = enabled ? absorption : 0;
-    ubo.near = *near;
-    ubo.far = *far;
+    ubo.ssrStrength = enabled ? ssrStrength : 0;
+    ubo.ssrEdgeSmoothing = ssrEdgeSmoothing;
+    ubo.ssrHitThreshold = ssrHitThreshold;
+    ubo.ssrRaySteps = ssrRaySteps;
 }
 
-GlobalFog::GlobalFog(VulkanDevice *pDevice, Swapchain *pSwapchain, float *near, float *far) :
-        PostProcessingStep(pDevice, pSwapchain), near(near), far(far) {}
+void GlobalFog::updateCamera(glm::mat4 view, glm::mat4 projection, float near, float far) {
+    ubo.near = near;
+    ubo.far = far;
+    ubo.view = view;
+    ubo.projection = projection;
+    ubo.inverseVP = glm::inverse(projection * view);
+    ubo.viewportWidth = swapchain->swapChainExtent.width;
+    ubo.viewportHeight = swapchain->swapChainExtent.height;
+}
+
+GlobalFog::GlobalFog(VulkanDevice *pDevice, Swapchain *pSwapchain) :
+        PostProcessingStep(pDevice, pSwapchain) {}

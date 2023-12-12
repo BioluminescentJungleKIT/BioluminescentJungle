@@ -40,11 +40,13 @@ struct PipelineDescription {
     std::optional<int> vertexFixedColorAccessor;
     std::optional<int> vertexNormalAccessor;
 
+    bool useSSR = false;
     bool useNormalMap = false;
     bool useDisplacement = false;
 
     auto toTuple() const {
-        return std::make_tuple(vertexPosAccessor, vertexTexcoordsAccessor, vertexFixedColorAccessor, useNormalMap, useDisplacement);
+        return std::make_tuple(vertexPosAccessor, vertexTexcoordsAccessor, vertexFixedColorAccessor,
+            useNormalMap, useDisplacement, useSSR);
     }
 
     bool operator < (const PipelineDescription& other) const {

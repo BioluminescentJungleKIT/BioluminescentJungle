@@ -33,9 +33,9 @@ vec3 calculatePosition() {
 
     // Convert screen coordinates to normalized device coordinates (NDC)
     vec4 ndc = vec4(
-    (gl_FragCoord.x / info.viewportWidth - 0.5) * 2.0,
-    (gl_FragCoord.y / info.viewportHeight - 0.5) * 2.0,
-    depth, 1.0);
+            (gl_FragCoord.x / info.viewportWidth - 0.5) * 2.0,
+            (gl_FragCoord.y / info.viewportHeight - 0.5) * 2.0,
+            depth, 1.0);
 
     // Convert NDC throuch inverse clip coordinates to view coordinates
     vec4 clip = info.inverseMVP * ndc;
@@ -98,5 +98,12 @@ void main() {
         outColor = vec4(texelFetch(normal, ivec2(gl_FragCoord), 0).xyz, 1.0);
     } else if (debug.compositionMode == 5) {
         outColor = vec4(texelFetch(motion, ivec2(gl_FragCoord), 0).rg, 0.0, 1.0) * 100;
+    } else if (debug.compositionMode == 6) {
+        vec4 normal = texelFetch(normal, ivec2(gl_FragCoord), 0);
+        if (normal.a > 0) {
+            outColor = vec4(1.0);
+        } else {
+            outColor = vec4(0.0);
+        }
     }
 }

@@ -28,7 +28,7 @@ void JungleApp::initVulkan(const std::string &sceneName, bool recompileShaders) 
     lighting = std::make_unique<DeferredLighting>(&device, swapchain.get());
     lighting->setup(recompileShaders, &scene, mvpSetLayout);
 
-    postprocessing = std::make_unique<PostProcessing>(&device, swapchain.get(), &nearPlane, &farPlane);
+    postprocessing = std::make_unique<PostProcessing>(&device, swapchain.get());
     lighting->fogAbsorption = &postprocessing->getFogPointer()->absorption;
     postprocessing->setupRenderStages(recompileShaders);
 
@@ -96,7 +96,7 @@ void JungleApp::drawImGUI() {
         }
         if (ImGui::CollapsingHeader("Debug Settings")) {
             ImGui::Combo("G-Buffer Visualization", &lighting->debug.compositionMode,
-                         "None\0Albedo\0Depth\0Position\0Normal\0Motion\0\0");
+                         "None\0Albedo\0Depth\0Position\0Normal\0Motion\0SSR Region\0\0");
             ImGui::Checkbox("Show Light BBoxes", (bool *) &lighting->debug.showLightBoxes);
             ImGui::SliderFloat("Light bbox log size", &lighting->lightRadiusLog, -5.f, 5.f);
         }
@@ -120,6 +120,10 @@ void JungleApp::drawImGUI() {
         if (ImGui::CollapsingHeader("Scene Settings")) {
             ImGui::Checkbox("Spin", &spinScene);
             ImGui::SliderFloat("Fixed spin", &fixedRotation, 0.0f, 360.0f);
+            ImGui::SliderFloat("SSR strength", &postprocessing->getFogPointer()->ssrStrength, 0, 1);
+            ImGui::SliderFloat("SSR Edge Smoothing", &postprocessing->getFogPointer()->ssrEdgeSmoothing, 0, 4);
+            ImGui::SliderFloat("SSR Hit Threshold", &postprocessing->getFogPointer()->ssrHitThreshold, 0, 0.01, "%.6f");
+            ImGui::SliderInt("SSR Raymarch Steps", &postprocessing->getFogPointer()->ssrRaySteps, 1, 1000);
         }
         if (ImGui::CollapsingHeader("Fog Settings")) {
             ImGui::ColorEdit3("Color", &postprocessing->getFogPointer()->color.r);
@@ -460,6 +464,8 @@ void JungleApp::updateUniformBuffers(uint32_t currentImage) {
     } else {
         postprocessing->enable();
     }
+
+    postprocessing->getFogPointer()->updateCamera(ubo.view, ubo.proj, nearPlane, farPlane);
     postprocessing->updateBuffers();
 }
 

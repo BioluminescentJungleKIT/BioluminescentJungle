@@ -11,15 +11,11 @@ layout(location = 2) out vec2 outMotion;
 
 layout(set = 2, binding = 0) uniform sampler2D texSampler;
 
-float rand(vec2 co){
-    return fract(sin(dot(co, vec2(12.9898, 78.233))) * 43758.5453);
-}
-
 void main() {
     vec4 color = texture(texSampler, uv);
-    // alpha hashing
-    if ( color.a <= rand(uv * 10000 + gl_FragCoord.xy) ) discard;
+
     outColor = color;
-    outNormal = vec4(normalize(normal), 0.0);
+    // Write 1.0 as normal.w, which means surface is reflective
+    outNormal = vec4(normalize(normal), 1.0);
     outMotion = (lastpos/lastpos.w - currpos/currpos.w).xy;
 }

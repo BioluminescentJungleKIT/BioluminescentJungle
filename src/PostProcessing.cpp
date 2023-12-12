@@ -7,10 +7,10 @@
 #include "imgui_impl_vulkan.h"
 #include <vulkan/vulkan_core.h>
 
-PostProcessing::PostProcessing(VulkanDevice *device, Swapchain *swapChain, float *pNear, float *pFar) :
+PostProcessing::PostProcessing(VulkanDevice *device, Swapchain *swapChain) :
         tonemap(Tonemap(device, swapChain)),
         taa(TAA(device, swapChain, &taaTarget)),
-        fog(GlobalFog(device, swapChain, pNear, pFar)),
+        fog(GlobalFog(device, swapChain)),
         device(device),
         swapchain(swapChain) {
     fogTarget.init(device, MAX_FRAMES_IN_FLIGHT);

@@ -7,7 +7,7 @@ layout(location = 3) in vec4 fsPosClipSpace;
 layout(location = 4) in vec4 fsOldPosClipSpace;
 
 layout(location = 0) out vec4 outColor;
-layout(location = 1) out vec3 outNormal;
+layout(location = 1) out vec4 outNormal;
 layout(location = 2) out vec2 outMotion;
 
 layout(set = 0, binding = 0) uniform UniformBufferObject {
@@ -50,10 +50,11 @@ void computeTangentSpace(vec3 N, out vec3 T, out vec3 B) {
 
 void readConvertNormal(vec3 T, vec3 B, vec3 N, vec2 uv) {
     float gamma = 1.0/2.2;
-    outNormal = pow(texture(normalMap, uv).rgb, vec3(gamma)) * 2 - 1;
-    outNormal = normalize(transpose(inverse(mat3(T, B, N))) * outNormal);
+    vec3 normal = pow(texture(normalMap, uv).rgb, vec3(gamma)) * 2 - 1;
+    normal = normalize(transpose(inverse(mat3(T, B, N))) * normal);
     // Convert normal to world space, because our lighting uses it
-    outNormal = (transpose(ubo.view) * vec4(outNormal, 0.0)).xyz;
+    normal = (transpose(ubo.view) * vec4(normal, 0.0)).xyz;
+    outNormal = vec4(normal, 0);
 }
 
 void main() {

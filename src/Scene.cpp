@@ -38,6 +38,10 @@ static bool materialUsesNormalTexture(const tinygltf::Material& material) {
     return material.normalTexture.index >= 0;
 }
 
+static bool materialUsesSSR(const tinygltf::Material& material) {
+    return material.name.find("SSR") != material.name.npos;
+}
+
 static bool materialUsesBaseTexture(const tinygltf::Material& material) {
     return material.values.count(BASE_COLOR_TEXTURE);
 }
@@ -59,7 +63,11 @@ PipelineDescription Scene::getPipelineDescriptionForPrimitive(const tinygltf::Pr
     auto& material = model.materials[primitive.material];
 
     if (has_texcoords && materialUsesBaseTexture(material)) {
-            descr.vertexTexcoordsAccessor = attributes.at(TEXCOORD0);
+        descr.vertexTexcoordsAccessor = attributes.at(TEXCOORD0);
+
+        if (materialUsesSSR(material)) {
+            descr.useSSR = true;
+        }
     } else if (attributes.count(FIXED_COLOR)) {
         descr.vertexFixedColorAccessor = attributes.at(FIXED_COLOR);
     }
@@ -658,6 +666,13 @@ static ShaderList selectShaders(const PipelineDescription &descr) {
         return ShaderList {
             {VK_SHADER_STAGE_VERTEX_BIT,   "shaders/displacement.vert"},
             {VK_SHADER_STAGE_FRAGMENT_BIT, "shaders/displacement.frag"},
+        };
+    }
+
+    if (descr.useSSR) {
+        return ShaderList {
+            {VK_SHADER_STAGE_VERTEX_BIT,   "shaders/simple-texture.vert"},
+            {VK_SHADER_STAGE_FRAGMENT_BIT, "shaders/reflection-texture.frag"},
         };
     }
 
