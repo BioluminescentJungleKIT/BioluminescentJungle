@@ -280,8 +280,8 @@ void Scene::setupDescriptorSets(VkDescriptorPool descriptorPool) {
 
 RequiredDescriptors Scene::getNumDescriptors() {
     return RequiredDescriptors{
-            .requireUniformBuffers = (uint) meshTransforms.size() + MAX_FRAMES_IN_FLIGHT,
-            .requireSamplers = (uint) textures.size(),
+            .requireUniformBuffers = (uint) meshTransforms.size() + (uint)model.materials.size() + MAX_FRAMES_IN_FLIGHT,
+            .requireSamplers = (uint)model.materials.size() * 3,
     };
 }
 
