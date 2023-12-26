@@ -71,6 +71,10 @@ void JungleApp::mainLoop() {
         glfwPollEvents();
         cameraMotion();
         drawFrame();
+
+        if constexpr (RATELIMIT > 0) {
+            usleep(1e6 / RATELIMIT);
+        }
     }
 
     vkDeviceWaitIdle(device.device);
