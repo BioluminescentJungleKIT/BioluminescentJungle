@@ -66,6 +66,7 @@ void main() {
         outColor = texture(albedo, uv);
         // Convert normal to world space, because our lighting uses it
         readConvertNormal(T, B, N, uv);
+        gl_FragDepth = fsPosClipSpace.z / fsPosClipSpace.w;
         return;
     }
 
@@ -78,10 +79,10 @@ void main() {
         coB *= -1;
     }
 
-    mat3 worldToTangent = transpose(mat3(coT, coB, N));
-    vec3 ray = (worldToTangent * -fsPos).xyz;
+    const mat3 worldToTangent = transpose(mat3(coT, coB, N));
+    const vec3 viewRay = worldToTangent * -fsPos;
 
-    const vec3 directionNormalized = normalize(ray);
+    const vec3 directionNormalized = normalize(viewRay);
     const vec3 step = vec3(directionNormalized.xy / directionNormalized.z, -1.0) / mapping.raymarchSteps;
     vec3 currentPos = vec3(uv, mapping.heightScale);
     float lastHeightAbove = 0.0;
@@ -106,6 +107,12 @@ void main() {
             if (heightAbove < 0 && mapping.enableLinearApprox > 0) {
                 currentPos -= (-heightAbove) / (-heightAbove + lastHeightAbove) * step;
             }
+
+            // Adjust depth based on how far along the view ray we have travelled
+            const float factor = length(vec3(currentPos.xy, currentPos.z / mapping.heightScale) - vec3(uv, 1.0)) / length(viewRay);
+            vec3 finalPos = fsPos * (1.0 + factor);
+            vec4 finalNdcPos = ubo.proj * vec4(finalPos, 1.0);
+            gl_FragDepth = finalNdcPos.z / finalNdcPos.w;
 
             outColor = texture(albedo, currentPos.st);
             readConvertNormal(T, B, N, currentPos.st);
