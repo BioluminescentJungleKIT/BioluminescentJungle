@@ -399,6 +399,7 @@ void Scene::destroyBuffers() {
     for (auto buffer: buffers) vkDestroyBuffer(*device, buffer, nullptr);
     for (auto bufferMemory: bufferMemories) vkFreeMemory(*device, bufferMemory, nullptr);
     materialBuffer.destroy(device);
+    constantsBuffers.destroy(device);
 }
 
 std::tuple<std::vector<VkVertexInputAttributeDescription>, std::vector<VkVertexInputBindingDescription>>

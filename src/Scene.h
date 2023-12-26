@@ -134,8 +134,6 @@ public:
     VkVertexInputBindingDescription getVertexBindingDescription(int accessor, int bindingId);
     void setupUniformBuffers();
 
-    std::map<std::vector<int>, int> transformBuffers;
-
     VkDescriptorSetLayout uboDescriptorSetLayout{VK_NULL_HANDLE};
     VkDescriptorSetLayout materialsSettingsLayout{VK_NULL_HANDLE};
 
