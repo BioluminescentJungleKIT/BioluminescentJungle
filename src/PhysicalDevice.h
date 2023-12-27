@@ -68,6 +68,11 @@ class VulkanDevice
     void transitionImageLayout(VkImage image, VkFormat format,
         VkImageLayout oldLayout, VkImageLayout newLayout);
 
+    // Helper functions
+    VkDescriptorSetLayout createDescriptorSetLayout(
+        const std::vector<VkDescriptorSetLayoutBinding>& bindings);
+    void writeDescriptorSets(const std::vector<VkWriteDescriptorSet>& sets);
+
   private:
     static bool checkValidationLayerSupport();
     VkResult CreateDebugUtilsMessengerEXT(VkInstance instance,

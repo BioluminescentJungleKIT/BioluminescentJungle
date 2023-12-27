@@ -167,8 +167,9 @@ GraphicsPipeline::GraphicsPipeline(VulkanDevice* device, VkRenderPass renderPass
     pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
     pipelineLayoutInfo.setLayoutCount = params.descriptorSetLayouts.size();
     pipelineLayoutInfo.pSetLayouts = params.descriptorSetLayouts.data();
-    pipelineLayoutInfo.pushConstantRangeCount = 0; // Optional
-    pipelineLayoutInfo.pPushConstantRanges = nullptr; // Optional
+    pipelineLayoutInfo.pushConstantRangeCount = 0;
+    pipelineLayoutInfo.pPushConstantRanges = nullptr;
+
     VK_CHECK_RESULT(vkCreatePipelineLayout(*device, &pipelineLayoutInfo, nullptr, &layout))
 
     VkGraphicsPipelineCreateInfo pipelineInfo{};

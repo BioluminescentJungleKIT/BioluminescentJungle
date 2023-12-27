@@ -71,6 +71,10 @@ void JungleApp::mainLoop() {
         glfwPollEvents();
         cameraMotion();
         drawFrame();
+
+        if constexpr (RATELIMIT > 0) {
+            usleep(1e6 / RATELIMIT);
+        }
     }
 
     vkDeviceWaitIdle(device.device);
@@ -131,6 +135,7 @@ void JungleApp::drawImGUI() {
             ImGui::Combo("Tonemapping", &postprocessing->getTonemappingPointer()->tonemappingMode,
                          "None\0Hable\0AgX\0\0");
         }
+        scene.drawImGUIMaterialSettings();
     }
     ImGui::End();
 
@@ -446,6 +451,7 @@ void JungleApp::updateUniformBuffers(uint32_t currentImage) {
     mvpUBO.copyTo(lastmvpUBO, (currentImage + MAX_FRAMES_IN_FLIGHT - 1) % MAX_FRAMES_IN_FLIGHT, currentImage,
                   sizeof(ubo));
     mvpUBO.update(&ubo, sizeof(ubo), currentImage);
+    scene.updateBuffers();
     lighting->updateBuffers(ubo.proj * ubo.view, cameraPosition, cameraUpVector);
 
     // TODO: is there a better way to integrate this somehow? Too lazy to skip the tonemapping render pass completely.
@@ -547,12 +553,11 @@ void JungleApp::setupScene(const std::string &sceneName) {
     scene = Scene(&device, swapchain.get(), sceneName);
     scene.setupBuffers();
     scene.setupTextures();
-    scene.computeDefaultCameraPos(cameraFinalLookAt, cameraFinalPosition, cameraFOVY);
+    scene.computeDefaultCameraPos(cameraFinalLookAt, cameraFinalPosition, cameraUpVector, cameraFOVY, nearPlane, farPlane);
 }
 
 void JungleApp::handleMotion() {
     glm::vec3 viewDir = cameraFinalLookAt - cameraFinalPosition;
-
     glm::vec3 fwd = glm::normalize(glm::vec3(viewDir.x, viewDir.y, 0.0));
     glm::vec3 side = glm::cross(fwd, glm::vec3(0.0, 0.0, 1.0));
 
@@ -618,6 +623,8 @@ void JungleApp::handleGLFWMouse(GLFWwindow *window, double x, double y) {
 
         // Button is pressed, we have previous values => compute change in the target
         glm::vec3 viewDir = glm::normalize(app->cameraFinalLookAt - app->cameraFinalPosition);
+        dx *= std::copysign(1, app->cameraUpVector.z);
+        dy *= std::copysign(1, app->cameraUpVector.z);
 
         float yaw = glm::degrees(atan2(viewDir.y, viewDir.x));
         float pitch = glm::degrees(asin(viewDir.z));

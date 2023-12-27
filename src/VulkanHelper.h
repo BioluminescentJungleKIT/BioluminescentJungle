@@ -8,11 +8,9 @@
 
 #include "tiny_gltf.h"
 #include <vulkan/vulkan.h>
-#include "Scene.h"
 #include <glm/glm.hpp>
 #include <shaderc/shaderc.hpp>
 #include <fstream>
-#include <optional>
 #include <cstring>
 #include <vector>
 #include <cstdlib>
@@ -20,6 +18,7 @@
 #include <iostream>
 #include <GLFW/glfw3.h>
 #include <vulkan/vulkan_core.h>
+#include "PhysicalDevice.h"
 
 static std::string errorString(VkResult errorCode) {
     switch (errorCode) {
@@ -168,5 +167,63 @@ public:
                                     std::vector<double> translation);
 };
 
+namespace vkutil {
+inline VkDescriptorSetLayoutBinding createSetLayoutBinding(int bindingId, VkDescriptorType type, VkShaderStageFlags stages) {
+    VkDescriptorSetLayoutBinding samplerLayoutBinding{};
+    samplerLayoutBinding.binding = bindingId;
+    samplerLayoutBinding.descriptorCount = 1;
+    samplerLayoutBinding.descriptorType = type;
+    samplerLayoutBinding.pImmutableSamplers = nullptr;
+    samplerLayoutBinding.stageFlags = stages;
+    return samplerLayoutBinding;
+}
+
+inline VkDescriptorBufferInfo createDescriptorBufferInfo(VkBuffer buffer, VkDeviceSize offset, VkDeviceSize range)
+{
+    VkDescriptorBufferInfo info{};
+    info.buffer = buffer;
+    info.offset = offset;
+    info.range  = range;
+    return info;
+}
+
+inline VkDescriptorImageInfo createDescriptorImageInfo(VkImageView imageView, VkSampler sampler,
+    VkImageLayout layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
+{
+    VkDescriptorImageInfo imageInfo{};
+    imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    imageInfo.imageView = imageView;
+    imageInfo.sampler = sampler;
+    return imageInfo;
+}
+
+inline VkWriteDescriptorSet createDescriptorWriteUBO(
+    VkDescriptorBufferInfo& bufferInfo, VkDescriptorSet dset, int bindingId)
+{
+    VkWriteDescriptorSet descriptorWrite{};
+    descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    descriptorWrite.dstSet = dset;
+    descriptorWrite.dstBinding = bindingId;
+    descriptorWrite.dstArrayElement = 0;
+    descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    descriptorWrite.descriptorCount = 1;
+    descriptorWrite.pBufferInfo = &bufferInfo;
+    return descriptorWrite;
+}
+
+inline VkWriteDescriptorSet createDescriptorWriteSampler(
+    VkDescriptorImageInfo& imageInfo, VkDescriptorSet dset, int bindingId)
+{
+    VkWriteDescriptorSet descriptorWrite{};
+    descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    descriptorWrite.dstSet = dset;
+    descriptorWrite.dstBinding = bindingId;
+    descriptorWrite.dstArrayElement = 0;
+    descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    descriptorWrite.descriptorCount = 1;
+    descriptorWrite.pImageInfo = &imageInfo;
+    return descriptorWrite;
+}
+}
 
 #endif //JUNGLE_VULKANHELPER_H

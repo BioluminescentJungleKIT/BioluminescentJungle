@@ -502,3 +502,21 @@ void VulkanDevice::createCommandPool() {
     poolInfo.queueFamilyIndex = chosenQueues.graphicsFamily.value();
     VK_CHECK_RESULT(vkCreateCommandPool(device, &poolInfo, nullptr, &commandPool))
 }
+
+VkDescriptorSetLayout VulkanDevice::createDescriptorSetLayout(
+    const std::vector<VkDescriptorSetLayoutBinding>& bindings)
+{
+    VkDescriptorSetLayoutCreateInfo layoutInfo{};
+    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    layoutInfo.bindingCount = bindings.size();
+    layoutInfo.pBindings = bindings.data();
+
+    VkDescriptorSetLayout layout;
+    VK_CHECK_RESULT(vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &layout));
+    return layout;
+}
+
+void VulkanDevice::writeDescriptorSets(const std::vector<VkWriteDescriptorSet>& sets)
+{
+    vkUpdateDescriptorSets(device, sets.size(), sets.data(), 0, nullptr);
+}

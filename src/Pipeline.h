@@ -20,8 +20,10 @@ struct RequiredDescriptors {
     unsigned int requireSamplers = 0;
 };
 
+using ShaderList = std::vector<std::pair<VkShaderStageFlagBits, std::string>>;
+
 struct PipelineParameters {
-    std::vector<std::pair<VkShaderStageFlagBits, std::string>> shadersList;
+    ShaderList shadersList;
     bool recompileShaders = false;
     VkPrimitiveTopology topology;
 

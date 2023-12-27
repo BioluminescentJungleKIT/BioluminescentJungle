@@ -91,7 +91,7 @@ void main() {
     } else if (debug.compositionMode == 1) {
         outColor = vec4(texelFetch(albedo, ivec2(gl_FragCoord), 0).rgb, 1.0);
     } else if (debug.compositionMode == 2) {
-        outColor = vec4(vec3(texelFetch(depth, ivec2(gl_FragCoord), 0).r), 1.0);
+        outColor = vec4(vec3(pow(texelFetch(depth, ivec2(gl_FragCoord), 0).r, 70)), 1.0);
     } else if (debug.compositionMode == 3) {
         outColor = vec4(calculatePosition(), 1.0);
     } else if (debug.compositionMode == 4) {

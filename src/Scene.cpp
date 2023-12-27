@@ -8,13 +8,13 @@
 #include "Pipeline.h"
 #include "Scene.h"
 #include "VulkanHelper.h"
+#include "imgui.h"
 #include <glm/gtc/matrix_transform.hpp>
 #include <iomanip>
 #include <stdexcept>
 #include <vulkan/vulkan_core.h>
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/gtx/quaternion.hpp>
-#include <random>
 #include <memory>
 
 // Definitions of standard names in gltf
@@ -25,6 +25,22 @@
 #define NORMAL "NORMAL"
 
 const int MAX_RECURSION = 10;
+
+static bool string_contains(std::string a, std::string b) {
+    return a.find(b) != a.npos;
+}
+
+static bool materialUsesDisplacedTexture(const tinygltf::Material& material) {
+    return material.occlusionTexture.index >= 0;
+}
+
+static bool materialUsesNormalTexture(const tinygltf::Material& material) {
+    return material.normalTexture.index >= 0;
+}
+
+static bool materialUsesBaseTexture(const tinygltf::Material& material) {
+    return material.values.count(BASE_COLOR_TEXTURE);
+}
 
 PipelineDescription Scene::getPipelineDescriptionForPrimitive(const tinygltf::Primitive &primitive) {
     PipelineDescription descr;
@@ -39,15 +55,24 @@ PipelineDescription Scene::getPipelineDescriptionForPrimitive(const tinygltf::Pr
         descr.vertexNormalAccessor = attributes.at(NORMAL);
     }
 
-    if (attributes.count(TEXCOORD0) && model.materials[primitive.material].values.count(BASE_COLOR_TEXTURE)) {
-        descr.vertexTexcoordsAccessor = attributes.at(TEXCOORD0);
+    bool has_texcoords = attributes.count(TEXCOORD0);
+    auto& material = model.materials[primitive.material];
+
+    if (has_texcoords && materialUsesBaseTexture(material)) {
+            descr.vertexTexcoordsAccessor = attributes.at(TEXCOORD0);
     } else if (attributes.count(FIXED_COLOR)) {
         descr.vertexFixedColorAccessor = attributes.at(FIXED_COLOR);
     }
 
+    if (has_texcoords && materialUsesNormalTexture(material)) {
+        descr.useNormalMap = true;
+        if (materialUsesDisplacedTexture(material)) {
+            descr.useDisplacement = true;
+        }
+    }
+
     return descr;
 }
-
 
 Scene::Scene(VulkanDevice *device, Swapchain *swapchain, std::string filename) {
     this->device = device;
@@ -107,28 +132,18 @@ void Scene::renderPrimitiveInstances(int meshId, int primitiveId, VkCommandBuffe
     if (meshTransforms.find(meshId) == meshTransforms.end()) return; // 0 instances. skip.
     //
     auto &primitive = model.meshes[meshId].primitives[primitiveId];
-    if (descr.vertexTexcoordsAccessor.has_value()) {
-        auto &material = model.materials[primitive.material];
-        auto it = material.values.find(BASE_COLOR_TEXTURE);
-        if (it != material.values.end()) {
-            // We have a texture here
-            const auto &textureIdx = it->second.TextureIndex();
-            const tinygltf::Texture &gTexture = model.textures[textureIdx];
+    if (materialDSet.contains(primitive.material)) {
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+            pipelineLayout, 2, 1, &materialDSet[primitive.material], 0, nullptr);
+    }
 
-            if (!textures.count(gTexture.source)) {
-                throw std::runtime_error("Texture not found at runtime??");
-            }
-
-            vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                    pipelineLayout, 2, 1, &textures[gTexture.source].dSet, 0, nullptr);
-        } else {
-            throw std::runtime_error("Material has texture coordinates but no base color?");
-        }
+    if (descr.useNormalMap) {
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+            pipelineLayout, 3, 1, &materialSettingSets[swapchain->currentFrame], 0, nullptr);
     }
 
     std::vector<VkBuffer> vertexBuffers;
     std::vector<VkDeviceSize> offsets;
-
     const auto &addBufferOffset = [&](const char *attribute) {
         const auto &bufferView = model.bufferViews[model.accessors[primitive.attributes[attribute]].bufferView];
         vertexBuffers.push_back(buffers[bufferView.buffer]);
@@ -180,7 +195,6 @@ void Scene::setupDescriptorSets(VkDescriptorPool descriptorPool) {
     int i = 0;
     for (int mesh = 0; mesh < model.meshes.size(); mesh++) {
         if (meshTransforms.find(mesh) == meshTransforms.end()) continue; // 0 instances. skip.
-
         auto meshTransformsBufferIndex = buffersMap[mesh];
         VkDescriptorBufferInfo bufferInfo{};
         bufferInfo.buffer = buffers[meshTransformsBufferIndex];
@@ -202,40 +216,72 @@ void Scene::setupDescriptorSets(VkDescriptorPool descriptorPool) {
         vkUpdateDescriptorSets(*device, 1, &descriptorWrite, 0, nullptr);
     }
 
-    if (textures.empty()) {
-        return;
+    materialSettingSets = VulkanHelper::createDescriptorSetsFromLayout(*device, descriptorPool,
+        materialsSettingsLayout, MAX_FRAMES_IN_FLIGHT);
+    for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+        auto bInfo = vkutil::createDescriptorBufferInfo(materialBuffer.buffers[i], 0, sizeof(MaterialSettings));
+        device->writeDescriptorSets({
+            vkutil::createDescriptorWriteUBO(bInfo, materialSettingSets[i], 0),
+        });
     }
 
-    auto textureDescriptorSets = VulkanHelper::createDescriptorSetsFromLayout(*device, descriptorPool,
-                                                                              textureDescriptorSetLayout,
-                                                                              textures.size());
+    const auto& findTexture = [&] (int gltfId) -> LoadedTexture& {
+        auto gTex = model.textures[gltfId];
+        return textures[gTex.source];
+    };
 
-    i = 0;
-    for (auto &[texId, tex]: textures) {
-        VkDescriptorImageInfo imageInfo{};
-        imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        imageInfo.imageView = tex.imageView;
-        imageInfo.sampler = tex.sampler;
+    for (size_t i = 0; i < model.materials.size(); i++) {
+        VkDescriptorSetLayout desiredLayout = VK_NULL_HANDLE;
+        std::vector<VkDescriptorImageInfo> boundTextures;
+        std::vector<VkDescriptorBufferInfo> boundBuffers;
+        if (materialUsesBaseTexture(model.materials[i])) {
+            desiredLayout = albedoDSLayout;
+            std::cout << "Material " << i << " "  << model.materials[i].values.find(BASE_COLOR_TEXTURE)->second.TextureIndex() << std::endl;
+            auto& albedo = findTexture(model.materials[i].values.find(BASE_COLOR_TEXTURE)->second.TextureIndex());
+            boundTextures.push_back(vkutil::createDescriptorImageInfo(albedo.imageView, albedo.sampler));
 
-        VkWriteDescriptorSet descriptorWrite{};
-        descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrite.dstSet = textureDescriptorSets[i];
-        descriptorWrite.dstBinding = 0;
-        descriptorWrite.dstArrayElement = 0;
-        descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        descriptorWrite.descriptorCount = 1;
-        descriptorWrite.pImageInfo = &imageInfo;
-        vkUpdateDescriptorSets(*device, 1, &descriptorWrite, 0, nullptr);
+            if (materialUsesNormalTexture(model.materials[i])) {
+                desiredLayout = albedoDisplacementDSLayout;
+                auto& normal = findTexture(model.materials[i].normalTexture.index);
+                boundTextures.push_back(vkutil::createDescriptorImageInfo(normal.imageView, normal.sampler));
 
-        tex.dSet = textureDescriptorSets[i];
-        ++i;
+                if (materialUsesDisplacedTexture(model.materials[i])) {
+                    auto& disp = findTexture(model.materials[i].occlusionTexture.index);
+                    boundTextures.push_back(vkutil::createDescriptorImageInfo(disp.imageView, disp.sampler));
+                    boundBuffers.push_back(vkutil::createDescriptorBufferInfo(constantsBuffers.buffers[0], 0, sizeof(glm::int32_t)));
+                } else {
+                    // We map the normal texture as both normal texture and as the height map.
+                    // Vulkan requires that we bind all textures even if we don't use them ...
+                    boundTextures.push_back(boundTextures.back());
+                    boundBuffers.push_back(vkutil::createDescriptorBufferInfo(constantsBuffers.buffers[1], 0, sizeof(glm::int32_t)));
+                }
+            }
+        }
+
+        if (desiredLayout != VK_NULL_HANDLE) {
+            materialDSet[i] =
+                VulkanHelper::createDescriptorSetsFromLayout(*device, descriptorPool, desiredLayout, 1)[0];
+
+            std::vector<VkWriteDescriptorSet> writes;
+            size_t id = 0;
+            for (id = 0; id < boundTextures.size(); id++) {
+                std::cout << id << " " << boundTextures[id].imageView << std::endl;
+                writes.push_back(vkutil::createDescriptorWriteSampler(boundTextures[id], materialDSet[i], id));
+            }
+
+            for (size_t j = 0; j < boundBuffers.size(); j++, id++) {
+                writes.push_back(vkutil::createDescriptorWriteUBO(boundBuffers[j], materialDSet[i], id));
+            }
+
+            device->writeDescriptorSets(writes);
+        }
     }
 }
 
 RequiredDescriptors Scene::getNumDescriptors() {
     return RequiredDescriptors{
-            .requireUniformBuffers = (int) meshTransforms.size(),
-            .requireSamplers = (int) textures.size(),
+            .requireUniformBuffers = (uint) meshTransforms.size() + (uint)model.materials.size() + MAX_FRAMES_IN_FLIGHT,
+            .requireSamplers = (uint)model.materials.size() * 3,
     };
 }
 
@@ -258,28 +304,8 @@ void Scene::setupBuffers() {
         generateTransforms(node, glm::mat4(1.f), MAX_RECURSION);
     }
 
-    if (addArtificialLight && lights.empty()) {
-        float fov;
-        glm::vec3 lookAt, camera;
-        computeDefaultCameraPos(lookAt, camera, fov);
-
-        float range = (camera - lookAt).length();
-
-        std::mt19937 mt(0);
-        auto distX = std::uniform_real_distribution<float>(-range, range);
-        auto distY = std::uniform_real_distribution<float>(-range, range);
-        auto distZ = std::uniform_real_distribution<float>(-range * 0.2, range * 0.2);
-
-        for (int i = 1; i < 6; i++) {
-            glm::vec3 delta{distX(mt), distY(mt), distZ(mt)};
-            lights.push_back({lookAt + delta, glm::vec3((i % 3) / 2.0, (i % 2) / 2.0, (i % 5) / 4.0), 3.0});
-        }
-    }
-
     setupUniformBuffers();
 }
-
-bool Scene::addArtificialLight = false;
 
 void Scene::generateTransforms(int nodeIndex, glm::mat4 oldTransform, int maxRecursion) {
     if (maxRecursion <= 0) return;
@@ -359,11 +385,21 @@ void Scene::setupUniformBuffers() {
         buffers.push_back(buffer);
         bufferMemories.push_back(bufferMemory);
     }
+
+    materialBuffer.allocate(device, sizeof(MaterialSettings), MAX_FRAMES_IN_FLIGHT);
+
+    constantsBuffers.allocate(device, sizeof(glm::int32_t), 2);
+    // Just two buffers with the constants 0 and 1, allowing us to reuse the shader ..
+    for (glm::int32_t v = 0; v < 2; v++) {
+        constantsBuffers.update(&v, sizeof(v), v);
+    }
 }
 
 void Scene::destroyBuffers() {
     for (auto buffer: buffers) vkDestroyBuffer(*device, buffer, nullptr);
     for (auto bufferMemory: bufferMemories) vkFreeMemory(*device, bufferMemory, nullptr);
+    materialBuffer.destroy(device);
+    constantsBuffers.destroy(device);
 }
 
 std::tuple<std::vector<VkVertexInputAttributeDescription>, std::vector<VkVertexInputBindingDescription>>
@@ -415,41 +451,38 @@ VkVertexInputBindingDescription Scene::getVertexBindingDescription(int accessor,
 
 void Scene::ensureDescriptorSetLayouts() {
     if (uboDescriptorSetLayout == VK_NULL_HANDLE) {
-        VkDescriptorSetLayoutBinding uboLayoutBinding{};
-        uboLayoutBinding.binding = 0;
-        uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        uboLayoutBinding.descriptorCount = 1;
-        uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-        uboLayoutBinding.pImmutableSamplers = nullptr; // Optional
-
-        VkDescriptorSetLayoutCreateInfo layoutInfo{};
-        layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-        layoutInfo.bindingCount = 1;
-        layoutInfo.pBindings = &uboLayoutBinding;
-
-        VK_CHECK_RESULT(vkCreateDescriptorSetLayout(*device, &layoutInfo, nullptr, &uboDescriptorSetLayout))
+        uboDescriptorSetLayout = device->createDescriptorSetLayout({
+            vkutil::createSetLayoutBinding(0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_VERTEX_BIT),
+        });
     }
 
-    if (textureDescriptorSetLayout == VK_NULL_HANDLE) {
-        VkDescriptorSetLayoutBinding samplerLayoutBinding{};
-        samplerLayoutBinding.binding = 0;
-        samplerLayoutBinding.descriptorCount = 1;
-        samplerLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        samplerLayoutBinding.pImmutableSamplers = nullptr;
-        samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    if (albedoDSLayout == VK_NULL_HANDLE) {
+        albedoDSLayout = device->createDescriptorSetLayout({
+            vkutil::createSetLayoutBinding(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT),
+        });
+    }
 
-        VkDescriptorSetLayoutCreateInfo layoutInfo{};
-        layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-        layoutInfo.bindingCount = 1;
-        layoutInfo.pBindings = &samplerLayoutBinding;
+    if (albedoDisplacementDSLayout == VK_NULL_HANDLE) {
+        albedoDisplacementDSLayout = device->createDescriptorSetLayout({
+            vkutil::createSetLayoutBinding(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT),
+            vkutil::createSetLayoutBinding(1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT),
+            vkutil::createSetLayoutBinding(2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT),
+            vkutil::createSetLayoutBinding(3, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT),
+        });
+    }
 
-        VK_CHECK_RESULT(vkCreateDescriptorSetLayout(*device, &layoutInfo, nullptr, &textureDescriptorSetLayout))
+    if (materialsSettingsLayout == VK_NULL_HANDLE) {
+        materialsSettingsLayout = device->createDescriptorSetLayout({
+            vkutil::createSetLayoutBinding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT),
+        });
     }
 }
 
 void Scene::destroyDescriptorSetLayout() {
     vkDestroyDescriptorSetLayout(*device, uboDescriptorSetLayout, nullptr);
-    vkDestroyDescriptorSetLayout(*device, textureDescriptorSetLayout, nullptr);
+    vkDestroyDescriptorSetLayout(*device, albedoDSLayout, nullptr);
+    vkDestroyDescriptorSetLayout(*device, albedoDisplacementDSLayout, nullptr);
+    vkDestroyDescriptorSetLayout(*device, materialsSettingsLayout, nullptr);
 }
 
 void calculateBoundingBox(const tinygltf::Model &model, glm::vec3 &minBounds, glm::vec3 &maxBounds) {
@@ -484,18 +517,30 @@ std::ostream &operator<<(std::ostream &out, const glm::vec3 &value) {
     return out;
 }
 
-void Scene::computeDefaultCameraPos(glm::vec3 &lookAt, glm::vec3 &cameraPos, float &fov) {
+static void setFromCamera(glm::vec3& lookAt, glm::vec3& position, glm::vec3& up,
+    float& fovy, float& near, float& far, CameraData const& camera);
+
+void Scene::computeDefaultCameraPos(glm::vec3 &lookAt, glm::vec3 &position, glm::vec3 &up, float &fovy, float &near, float &far) {
+    if (!this->cameras.empty()) {
+        setFromCamera(lookAt, position, up, fovy, near, far, cameras[0]);
+        return;
+    }
+
     // Compute bbox of the meshes, point to the middle and have a small distance
     // This works only for small test models, for bigger models, export a camera!
     glm::vec3 min, max;
     calculateBoundingBox(model, min, max);
 
-    fov = 45.0f;
+    fovy = 45.0f;
     lookAt = (min + max) / 2.0f;
     float R = glm::length(max - min);
-    R /= std::tan(fov * M_PI / 360);
+    R /= std::tan(fovy * M_PI / 360);
     R *= 0.6;
-    cameraPos = glm::vec3(lookAt.x, lookAt.y + R, lookAt.z + R);
+
+    position = glm::vec3(lookAt.x, lookAt.y + R, lookAt.z + R);
+    near = 0.1f;
+    far = 1000.f;
+    up = glm::vec3(0, 0, 1);
 }
 
 void copyBufferToImage(VulkanDevice *device, VkBuffer buffer, VkImage image, uint32_t width, uint32_t height) {
@@ -547,27 +592,34 @@ Scene::LoadedTexture uploadGLTFImage(VulkanDevice *device, const tinygltf::Image
 }
 
 void Scene::setupTextures() {
+    const auto& loadTexture = [&] (int textureIdx) {
+        // We have a texture here
+        const tinygltf::Texture &gTexture = model.textures[textureIdx];
+        if (textures.count(gTexture.source)) {
+            return;
+        }
+
+        textures[gTexture.source] = uploadGLTFImage(device, model.images[gTexture.source]);
+        textures[gTexture.source].imageView =
+            device->createImageView(textures[gTexture.source].image, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_ASPECT_COLOR_BIT);
+        textures[gTexture.source].sampler = VulkanHelper::createSampler(device, true);
+    };
+
     for (size_t i = 0; i < model.materials.size(); i++) {
         const auto &material = model.materials[i];
 
         auto it = material.values.find(BASE_COLOR_TEXTURE);
-        if (it == material.values.end()) {
-            continue;
+        if (it != material.values.end()) {
+            loadTexture(it->second.TextureIndex());
         }
 
-        // We have a texture here
-        const auto &textureIdx = it->second.TextureIndex();
-        const tinygltf::Texture &gTexture = model.textures[textureIdx];
-
-        if (textures.count(gTexture.source)) {
-            continue;
+        if (materialUsesNormalTexture(material)) {
+            loadTexture(material.normalTexture.index);
         }
 
-        textures[gTexture.source] = uploadGLTFImage(device, model.images[gTexture.source]);
-        textures[gTexture.source].imageView = device->createImageView(textures[gTexture.source].image,
-                                                                      VK_FORMAT_R8G8B8A8_SRGB,
-                                                                      VK_IMAGE_ASPECT_COLOR_BIT);
-        textures[gTexture.source].sampler = VulkanHelper::createSampler(device, true);
+        if (materialUsesDisplacedTexture(material)) {
+            loadTexture(material.occlusionTexture.index);
+        }
     }
 }
 
@@ -594,8 +646,25 @@ void Scene::createPipelines(VkRenderPass renderPass, VkDescriptorSetLayout mvpLa
     }
 }
 
-static std::string queryShaderName(const PipelineDescription &descr) {
-    return descr.vertexFixedColorAccessor.has_value() ? "shaders/shader" : "shaders/simple-texture";
+static ShaderList selectShaders(const PipelineDescription &descr) {
+    if (descr.vertexFixedColorAccessor.has_value()) {
+        return ShaderList {
+            {VK_SHADER_STAGE_VERTEX_BIT,   "shaders/shader.vert"},
+            {VK_SHADER_STAGE_FRAGMENT_BIT, "shaders/shader.frag"},
+        };
+    }
+
+    if (descr.useNormalMap) {
+        return ShaderList {
+            {VK_SHADER_STAGE_VERTEX_BIT,   "shaders/displacement.vert"},
+            {VK_SHADER_STAGE_FRAGMENT_BIT, "shaders/displacement.frag"},
+        };
+    }
+
+    return ShaderList {
+        {VK_SHADER_STAGE_VERTEX_BIT,   "shaders/simple-texture.vert"},
+        {VK_SHADER_STAGE_FRAGMENT_BIT, "shaders/simple-texture.frag"},
+    };
 }
 
 void Scene::createPipelinesWithDescription(PipelineDescription descr, VkRenderPass renderPass,
@@ -627,25 +696,26 @@ void Scene::createPipelinesWithDescription(PipelineDescription descr, VkRenderPa
     }
 
     ensureDescriptorSetLayouts();
-    std::vector<VkDescriptorSetLayout> descriptorSets{mvpLayout, uboDescriptorSetLayout};
+    std::vector<VkDescriptorSetLayout> dsLayouts{mvpLayout, uboDescriptorSetLayout};
     addAttributeAndBinding(0, 0, *descr.vertexPosAccessor);
     addAttributeAndBinding(2, 2, *descr.vertexNormalAccessor);
     if (descr.vertexFixedColorAccessor.has_value()) {
         addAttributeAndBinding(1, 1, *descr.vertexFixedColorAccessor);
     } else if (descr.vertexTexcoordsAccessor.has_value()) {
         addAttributeAndBinding(1, 1, *descr.vertexTexcoordsAccessor);
-        descriptorSets.push_back(textureDescriptorSetLayout);
+
+        if (descr.useNormalMap) {
+            dsLayouts.push_back(albedoDisplacementDSLayout);
+            dsLayouts.push_back(materialsSettingsLayout);
+        } else {
+            dsLayouts.push_back(albedoDSLayout);
+        }
     } else {
         throw std::runtime_error("Mesh primitive without color or texcoords is not supported by shaders!");
     }
 
     PipelineParameters params;
-    std::string shaderNames = queryShaderName(descr);
-    params.shadersList = {
-            {VK_SHADER_STAGE_VERTEX_BIT,   shaderNames + ".vert"},
-            {VK_SHADER_STAGE_FRAGMENT_BIT, shaderNames + ".frag"},
-    };
-
+    params.shadersList = selectShaders(descr);
     params.recompileShaders = forceRecompile;
     params.vertexAttributeDescription = attributeDescriptions;
     params.vertexInputDescription = bindingDescriptions;
@@ -656,19 +726,41 @@ void Scene::createPipelinesWithDescription(PipelineDescription descr, VkRenderPa
     params.blending.assign(GBufferTarget::NumAttachments - 1, {});
     params.useDepthTest = true;
 
-    params.descriptorSetLayouts = descriptorSets;
+    params.descriptorSetLayouts = dsLayouts;
     pipelines[descr] = std::make_unique<GraphicsPipeline>(device, renderPass, 0, params);
 }
 
-void Scene::cameraButtons(glm::vec3 &lookAt, glm::vec3 &position, glm::vec3 &up, float &fovy, float &near, float &far) {
+static void setFromCamera(glm::vec3& lookAt, glm::vec3& position, glm::vec3& up,
+    float& fovy, float& near, float& far, CameraData const& camera)
+{
+    lookAt = glm::vec3(camera.view * glm::vec4(0.0f, 0.0f, -1.0f, 1.0f));
+    position = glm::vec3(camera.view * glm::vec4(0.0f, 0.0f, 0.0f, 1.0f));
+    up = glm::vec3(camera.view * glm::vec4(0.0f, 1.0f, 0.0f, 0.0f));
+    fovy = glm::degrees(camera.yfov);
+    near = camera.znear;
+    far = camera.zfar;
+}
+
+void Scene::cameraButtons(glm::vec3& lookAt, glm::vec3& position, glm::vec3& up,
+    float& fovy, float& near, float& far)
+{
     for (auto const &camera: cameras) {
         if (ImGui::Button(camera.name.c_str())) {
-            lookAt = glm::vec3(camera.view * glm::vec4(0.0f, 0.0f, -1.0f, 1.0f));
-            position = glm::vec3(camera.view * glm::vec4(0.0f, 0.0f, 0.0f, 1.0f));
-            up = glm::vec3(camera.view * glm::vec4(0.0f, 1.0f, 0.0f, 0.0f));
-            fovy = glm::degrees(camera.yfov);
-            near = camera.znear;
-            far = camera.zfar;
+            setFromCamera(lookAt, position, up, fovy, near, far, camera);
         }
+    }
+}
+
+void Scene::updateBuffers() {
+    materialBuffer.update(&materialSettings, sizeof(materialSettings), swapchain->currentFrame);
+}
+
+void Scene::drawImGUIMaterialSettings() {
+    if (ImGui::CollapsingHeader("Material Settings")) {
+        ImGui::Checkbox("Enable Inverse Displacement Mapping", (bool*)&materialSettings.enableInverseDisplacement);
+        ImGui::Checkbox("Enable Linear Approximation", (bool*)&materialSettings.enableLinearApprox);
+        ImGui::SliderInt("Raymarching Steps", &materialSettings.raymarchSteps, 1, 1000);
+        ImGui::SliderFloat("Height Scale", &materialSettings.heightScale, 1e-6, 0.1);
+        ImGui::Checkbox("Use gamma-corrected inverted depth", (bool*)&materialSettings.useInvertedFormat);
     }
 }

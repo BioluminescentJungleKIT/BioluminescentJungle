@@ -12,10 +12,9 @@
 #include <vulkan/vulkan_core.h>
 #include "Pipeline.h"
 #include "Swapchain.h"
+#include "UniformBuffer.h"
 #include "tiny_gltf.h"
 #include "PhysicalDevice.h"
-#include "imgui.h"
-
 
 struct ModelTransform {
     glm::mat4 model;
@@ -41,8 +40,11 @@ struct PipelineDescription {
     std::optional<int> vertexFixedColorAccessor;
     std::optional<int> vertexNormalAccessor;
 
+    bool useNormalMap = false;
+    bool useDisplacement = false;
+
     auto toTuple() const {
-        return std::make_tuple(vertexPosAccessor, vertexTexcoordsAccessor, vertexFixedColorAccessor);
+        return std::make_tuple(vertexPosAccessor, vertexTexcoordsAccessor, vertexFixedColorAccessor, useNormalMap, useDisplacement);
     }
 
     bool operator < (const PipelineDescription& other) const {
@@ -52,6 +54,14 @@ struct PipelineDescription {
     bool operator == (const PipelineDescription& other) const {
         return toTuple() == other.toTuple();
     }
+};
+
+struct MaterialSettings {
+    glm::float32_t heightScale = 0.05;
+    glm::int32_t raymarchSteps = 100;
+    glm::int32_t enableInverseDisplacement = 1;
+    glm::int32_t enableLinearApprox = 1;
+    glm::int32_t useInvertedFormat = 0;
 };
 
 // load glft using loader. provide definitions and functions for creating pipeline and rendering it.
@@ -67,6 +77,7 @@ public:
     void destroyAll();
 
     void setupBuffers();
+    void updateBuffers();
 
     void setupTextures();
     void destroyTextures();
@@ -82,7 +93,7 @@ public:
     RequiredDescriptors getNumDescriptors();
 
     void destroyDescriptorSetLayout();
-    void computeDefaultCameraPos(glm::vec3& lookAt, glm::vec3& cameraPos, float& fov);
+    void computeDefaultCameraPos(glm::vec3 &lookAt, glm::vec3 &position, glm::vec3 &up, float &fovy, float &near, float &far);
 
     struct LoadedTexture
     {
@@ -90,15 +101,13 @@ public:
         VkDeviceMemory memory;
         VkImageView imageView;
         VkSampler sampler;
-        VkDescriptorSet dSet;
     };
 
     void drawPointLights(VkCommandBuffer buffer);
-    static bool addArtificialLight;
-
     void cameraButtons(glm::vec3 &lookAt, glm::vec3 &position, glm::vec3 &up, float &fovy, float &near, float &far);
+    void drawImGUIMaterialSettings();
 
-private:
+  private:
     tinygltf::TinyGLTF loader;
     tinygltf::Model model;
     VulkanDevice *device;
@@ -125,21 +134,30 @@ private:
     VkVertexInputBindingDescription getVertexBindingDescription(int accessor, int bindingId);
     void setupUniformBuffers();
 
-    std::map<std::vector<int>, int> transformBuffers;
-
     VkDescriptorSetLayout uboDescriptorSetLayout{VK_NULL_HANDLE};
-    VkDescriptorSetLayout textureDescriptorSetLayout{VK_NULL_HANDLE};
+    VkDescriptorSetLayout materialsSettingsLayout{VK_NULL_HANDLE};
+
+    VkDescriptorSetLayout albedoDSLayout{VK_NULL_HANDLE};
+    VkDescriptorSetLayout albedoDisplacementDSLayout{VK_NULL_HANDLE};
 
     std::vector<VkDescriptorSet> uboDescriptorSets;
+    std::vector<VkDescriptorSet> materialSettingSets;
 
     std::map<int, int> buffersMap;
     std::map<int, int> descriptorSetsMap;
     std::map<int, std::vector<ModelTransform>> meshTransforms;
     std::vector<VkDescriptorSet> bindingDescriptorSets;
+
     std::map<int, LoadedTexture> textures;
+    std::map<int, VkDescriptorSet> materialDSet;
+
     std::vector<LightData> lights;
     int lightsBuffer{-1};
     std::vector<CameraData> cameras;
+
+    MaterialSettings materialSettings;
+    UniformBuffer materialBuffer;
+    UniformBuffer constantsBuffers;
 };
 
 
