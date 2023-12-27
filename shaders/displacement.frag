@@ -110,7 +110,7 @@ void main() {
             }
 
             // Adjust depth based on how far along the view ray we have travelled
-            const float factor = length(vec3(currentPos.xy, currentPos.z / mapping.heightScale) - vec3(uv, 1.0)) / length(viewRay);
+            const float factor = length(vec3(currentPos.xy, currentPos.z) - vec3(uv, mapping.heightScale)) / length(viewRay);
             vec3 finalPos = fsPos * (1.0 + factor);
             vec4 finalNdcPos = ubo.proj * vec4(finalPos, 1.0);
             gl_FragDepth = finalNdcPos.z / finalNdcPos.w;
