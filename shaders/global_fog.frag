@@ -130,7 +130,7 @@ void main() {
 
     if (fog.ssrStrength > 0) {
         vec4 normal = texelFetch(normal, ivec2(gl_FragCoord), 0);
-        // TODO: d > 0 works because 0 is depth buffer cleared. We do not clear the normals, so just comparing
+        // TODO: d < 1.0f works because 1.0 is depth buffer clear value. We do not clear the normals, so just comparing
         // normal.a > 0 gives false positives.
         if (normal.a > 0 && d < 1.0f) {
             traceReflection(normal.xyz, d, normal.a * fog.ssrStrength, color);
