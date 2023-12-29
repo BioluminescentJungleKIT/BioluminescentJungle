@@ -19,7 +19,7 @@
  */
 class PostProcessing {
 public:
-    PostProcessing(VulkanDevice *device, Swapchain *swapChain, float *pNear, float *pFar);
+    PostProcessing(VulkanDevice *device, Swapchain *swapChain);
 
     ~PostProcessing();
 

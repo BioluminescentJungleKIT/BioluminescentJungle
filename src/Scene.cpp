@@ -38,6 +38,10 @@ static bool materialUsesNormalTexture(const tinygltf::Material& material) {
     return material.normalTexture.index >= 0;
 }
 
+static bool materialUsesSSR(const tinygltf::Material& material) {
+    return material.name.find("SSR") != material.name.npos;
+}
+
 static bool materialUsesBaseTexture(const tinygltf::Material& material) {
     return material.values.count(BASE_COLOR_TEXTURE);
 }
@@ -59,7 +63,11 @@ PipelineDescription Scene::getPipelineDescriptionForPrimitive(const tinygltf::Pr
     auto& material = model.materials[primitive.material];
 
     if (has_texcoords && materialUsesBaseTexture(material)) {
-            descr.vertexTexcoordsAccessor = attributes.at(TEXCOORD0);
+        descr.vertexTexcoordsAccessor = attributes.at(TEXCOORD0);
+
+        if (materialUsesSSR(material)) {
+            descr.useSSR = true;
+        }
     } else if (attributes.count(FIXED_COLOR)) {
         descr.vertexFixedColorAccessor = attributes.at(FIXED_COLOR);
     }
@@ -236,7 +244,6 @@ void Scene::setupDescriptorSets(VkDescriptorPool descriptorPool) {
         std::vector<VkDescriptorBufferInfo> boundBuffers;
         if (materialUsesBaseTexture(model.materials[i])) {
             desiredLayout = albedoDSLayout;
-            std::cout << "Material " << i << " "  << model.materials[i].values.find(BASE_COLOR_TEXTURE)->second.TextureIndex() << std::endl;
             auto& albedo = findTexture(model.materials[i].values.find(BASE_COLOR_TEXTURE)->second.TextureIndex());
             boundTextures.push_back(vkutil::createDescriptorImageInfo(albedo.imageView, albedo.sampler));
 
@@ -265,7 +272,6 @@ void Scene::setupDescriptorSets(VkDescriptorPool descriptorPool) {
             std::vector<VkWriteDescriptorSet> writes;
             size_t id = 0;
             for (id = 0; id < boundTextures.size(); id++) {
-                std::cout << id << " " << boundTextures[id].imageView << std::endl;
                 writes.push_back(vkutil::createDescriptorWriteSampler(boundTextures[id], materialDSet[i], id));
             }
 
@@ -593,13 +599,19 @@ Scene::LoadedTexture uploadGLTFImage(VulkanDevice *device, const tinygltf::Image
 
 void Scene::setupTextures() {
     const auto& loadTexture = [&] (int textureIdx) {
+
         // We have a texture here
         const tinygltf::Texture &gTexture = model.textures[textureIdx];
         if (textures.count(gTexture.source)) {
             return;
         }
 
-        textures[gTexture.source] = uploadGLTFImage(device, model.images[gTexture.source]);
+        auto& image = model.images[gTexture.source];
+        if (image.width <= 0 || image.height <= 0) {
+            throw std::runtime_error("Image with negative dimensions, maybe a missing asset!");
+        }
+
+        textures[gTexture.source] = uploadGLTFImage(device, image);
         textures[gTexture.source].imageView =
             device->createImageView(textures[gTexture.source].image, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_ASPECT_COLOR_BIT);
         textures[gTexture.source].sampler = VulkanHelper::createSampler(device, true);
@@ -658,6 +670,13 @@ static ShaderList selectShaders(const PipelineDescription &descr) {
         return ShaderList {
             {VK_SHADER_STAGE_VERTEX_BIT,   "shaders/displacement.vert"},
             {VK_SHADER_STAGE_FRAGMENT_BIT, "shaders/displacement.frag"},
+        };
+    }
+
+    if (descr.useSSR) {
+        return ShaderList {
+            {VK_SHADER_STAGE_VERTEX_BIT,   "shaders/simple-texture.vert"},
+            {VK_SHADER_STAGE_FRAGMENT_BIT, "shaders/reflection-texture.frag"},
         };
     }
 
