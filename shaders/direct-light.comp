@@ -1,0 +1,57 @@
+#version 450
+
+#include "util.glsl"
+
+layout(set = 0, binding = 0) uniform sampler2D albedo;
+layout(set = 0, binding = 1) uniform sampler2D depth;
+layout(set = 0, binding = 2) uniform sampler2D normal;
+layout(set = 0, binding = 3) uniform sampler2D motion;
+
+layout(set = 1, binding = 0) uniform writeonly image2D compositeLight;
+layout(set = 1, binding = 1, std140) uniform LightInfoBlock {
+    SceneLightInfo slInfo;
+};
+
+struct PointLight {
+    vec4 position; // just xyz
+    vec4 color; // just xyz
+    vec4 intensity; // just x
+};
+
+layout(std140, set = 1, binding = 2) readonly buffer PointLightIn {
+    PointLight pointLights[];
+};
+
+layout(std140, set = 1, binding = 3) uniform Params {
+    int nPointLights;
+};
+
+layout (local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+
+void main()
+{
+    ivec2 pos = ivec2(gl_GlobalInvocationID.xy);
+    if (pos.x > slInfo.viewportWidth || pos.y > slInfo.viewportHeight) {
+        return;
+    }
+
+    float depth = texelFetch(depth, pos, 0).r;
+
+    SurfacePoint point;
+    point.worldPos = calculatePosition(depth, vec2(pos), slInfo);
+    point.albedo = texelFetch(albedo, pos, 0).rgb;
+    point.N = texelFetch(normal, pos, 0).xyz;
+
+    vec3 finalColor = vec3(0.0);
+
+    for (int i = 0; i < nPointLights; i++) {
+        PointLightParams light;
+        light.pos = pointLights[i].position.xyz;
+        light.intensity = pointLights[i].color.rgb * pointLights[i].intensity.x/55;
+        light.r = exp(0.01);
+
+        finalColor += evalPointLight(point, light, slInfo);
+    }
+
+    imageStore(compositeLight, ivec2(pos), vec4(finalColor, 1.0));
+}

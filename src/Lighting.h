@@ -39,13 +39,20 @@ class DeferredLighting {
     VkRenderPass renderPass;
     std::unique_ptr<GraphicsPipeline> pipeline;
     std::unique_ptr<GraphicsPipeline> debugPipeline;
+    std::unique_ptr<ComputePipeline> raytracingPipeline;
 
     void createRenderPass();
-    VkDescriptorSetLayout samplersLayout, debugLayout;
+    VkDescriptorSetLayout samplersLayout, debugLayout, computeLayout;
 
     std::vector<VkDescriptorSet> samplersSets;
     std::vector<VkDescriptorSet> debugSets;
-    std::vector<std::vector<VkSampler>> samplers;
+    std::vector<VkDescriptorSet> computeSets;
+
+    std::vector<std::vector<VkImageMemoryBarrier>> preComputeBarriers;
+    std::vector<std::vector<VkImageMemoryBarrier>> postComputeBarriers;
+    void setupBarriers();
+
+    VkSampler linearSampler;
 
     void setup(bool recompileshaders, Scene *scene, VkDescriptorSetLayout mvpLayout);
 
@@ -53,13 +60,13 @@ class DeferredLighting {
 
     void createDescriptorSetLayout();
 
-    void createDescriptorSets(VkDescriptorPool pool, const RenderTarget& gBuffer);
+    void createDescriptorSets(VkDescriptorPool pool, const RenderTarget& gBuffer, Scene *scene);
 
     RenderTarget compositedLight;
 
     void handleResize(const RenderTarget& gBuffer, VkDescriptorSetLayout mvpSetLayout, Scene *scene);
     void setupRenderTarget();
-    void updateSamplerBindings(const RenderTarget& gBuffer);
+    void updateDescriptors(const RenderTarget& gBuffer, Scene *scene);
 
     void setupBuffers();
     void updateBuffers(glm::mat4 VP, glm::vec3 cameraPos, glm::vec3 cameraUp);
@@ -90,6 +97,7 @@ class DeferredLighting {
     Swapchain *swapchain;
     UniformBuffer debugUBO;
     UniformBuffer lightUBO;
+    UniformBuffer computeParamsUBO;
 
     void recordRasterBuffer(VkCommandBuffer commandBuffer, VkDescriptorSet mvpSet, Scene *scene);
     void recordRaytraceBuffer(VkCommandBuffer commandBuffer, VkDescriptorSet mvpSet, Scene* scene);

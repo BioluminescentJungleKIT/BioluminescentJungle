@@ -3,6 +3,7 @@
 #include "Swapchain.h"
 #include "VulkanHelper.h"
 #include "GBufferDescription.h"
+#include <cmath>
 #include <vulkan/vulkan_core.h>
 
 struct LightingBuffer {
@@ -16,6 +17,10 @@ struct LightingBuffer {
     glm::float32 lightBleed;
 };
 
+struct ComputeParamsBuffer {
+    glm::int32_t nPointLights;
+};
+
 DeferredLighting::DeferredLighting(VulkanDevice* device, Swapchain* swapChain) {
     this->device = device;
     this->swapchain = swapChain;
@@ -24,16 +29,13 @@ DeferredLighting::DeferredLighting(VulkanDevice* device, Swapchain* swapChain) {
 DeferredLighting::~DeferredLighting() {
     debugUBO.destroy(device);
     lightUBO.destroy(device);
+    computeParamsUBO.destroy(device);
     vkDestroyRenderPass(*device, renderPass, nullptr);
     vkDestroyDescriptorSetLayout(*device, debugLayout, nullptr);
     vkDestroyDescriptorSetLayout(*device, samplersLayout, nullptr);
+    vkDestroyDescriptorSetLayout(*device, computeLayout, nullptr);
 
-    for (auto& samplerRow : this->samplers) {
-        for (auto& sampler: samplerRow) {
-            vkDestroySampler(*device, sampler, nullptr);
-        }
-    }
-
+    vkDestroySampler(*device, linearSampler, nullptr);
     compositedLight.destroyAll();
 }
 
@@ -89,6 +91,11 @@ void DeferredLighting::createPipeline(bool recompileShaders, VkDescriptorSetLayo
     this->debugPipeline = std::make_unique<GraphicsPipeline>(device, renderPass, 0, params);
 
     // Compute raytracing pipeline
+    ComputePipeline::Parameters p;
+    p.source = {VK_SHADER_STAGE_COMPUTE_BIT, "shaders/direct-light.comp"};
+    p.recompileShaders = recompileShaders;
+    p.descriptorSetLayouts = {samplersLayout, computeLayout};
+    this->raytracingPipeline = std::make_unique<ComputePipeline>(device, p);
 }
 
 void DeferredLighting::createRenderPass() {
@@ -144,22 +151,48 @@ void DeferredLighting::createRenderPass() {
 void DeferredLighting::setup(bool recompileShaders, Scene *scene, VkDescriptorSetLayout mvpLayout) {
     createRenderPass();
 
-    samplers.resize(MAX_FRAMES_IN_FLIGHT);
-    for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-        samplers[i].resize(GBufferTarget::NumAttachments);
-        for (int j = 0; j < GBufferTarget::NumAttachments; j++) {
-            samplers[i][j] = VulkanHelper::createSampler(device, true);
-        }
-    }
-
+    linearSampler = VulkanHelper::createSampler(device, true);
     createDescriptorSetLayout();
     createPipeline(recompileShaders, mvpLayout, scene);
     setupRenderTarget();
 }
 
+size_t roundUpDiv(size_t a, size_t b) {
+    return (a + b - 1) / b;
+}
+
 void DeferredLighting::recordRaytraceBuffer(
     VkCommandBuffer commandBuffer, VkDescriptorSet mvpSet, Scene* scene)
-{}
+{
+    // Transition attachments to GENERAL layout
+    vkCmdPipelineBarrier(commandBuffer,
+        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+        0,
+        0, nullptr,
+        0, nullptr,
+        preComputeBarriers[0].size(), preComputeBarriers[swapchain->currentFrame].data());
+
+
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, raytracingPipeline->pipeline);
+
+    std::array<VkDescriptorSet, 2> sets {
+        samplersSets[swapchain->currentFrame], computeSets[swapchain->currentFrame]
+    };
+
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, raytracingPipeline->layout, 0, sets.size(), sets.data(), 0, 0);
+
+    // TODO: is 16x16 the most efficient?
+    vkCmdDispatch(commandBuffer, roundUpDiv(swapchain->swapChainExtent.width, 16),
+        roundUpDiv(swapchain->swapChainExtent.height, 16), 1);
+
+    // Transition attachments to SHADER_READ_OPTIMAL layout
+    vkCmdPipelineBarrier(commandBuffer,
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+        0,
+        0, nullptr,
+        0, nullptr,
+        postComputeBarriers[0].size(), postComputeBarriers[swapchain->currentFrame].data());
+}
 
 void DeferredLighting::recordRasterBuffer(VkCommandBuffer commandBuffer, VkDescriptorSet mvpSet, Scene *scene) {
     VkRenderPassBeginInfo renderPassInfo{};
@@ -207,105 +240,107 @@ void DeferredLighting::recordCommandBuffer(
 }
 
 void DeferredLighting::createDescriptorSetLayout() {
-    {
-        std::array<VkDescriptorSetLayoutBinding, GBufferTarget::NumAttachments> samplers;
-        for (int i = 0; i < GBufferTarget::NumAttachments; i++) {
-            samplers[i].binding = i;
-            samplers[i].descriptorCount = 1;
-            samplers[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-            samplers[i].pImmutableSamplers = nullptr;
-            samplers[i].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-        }
+    std::vector<VkDescriptorSetLayoutBinding> samplers;
 
-        VkDescriptorSetLayoutCreateInfo layoutInfo{};
-        layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-        layoutInfo.bindingCount = samplers.size();
-        layoutInfo.pBindings = samplers.data();
-        VK_CHECK_RESULT(vkCreateDescriptorSetLayout(*device, &layoutInfo, nullptr, &samplersLayout));
+    for (int i = 0; i < GBufferTarget::NumAttachments; i++) {
+        samplers.push_back(vkutil::createSetLayoutBinding(i, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT));
     }
 
-    {
-        std::array<VkDescriptorSetLayoutBinding, 2> debug;
-        debug[0].binding = 0;
-        debug[0].descriptorCount = 1;
-        debug[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        debug[0].pImmutableSamplers = nullptr;
-        debug[0].stageFlags = VK_SHADER_STAGE_GEOMETRY_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+    samplersLayout = device->createDescriptorSetLayout(samplers);
+    computeLayout = device->createDescriptorSetLayout({
+        vkutil::createSetLayoutBinding(0, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_COMPUTE_BIT),
+        vkutil::createSetLayoutBinding(1, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT),
+        vkutil::createSetLayoutBinding(2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT),
+        vkutil::createSetLayoutBinding(3, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT),
+    });
 
-        debug[1].binding = 1;
-        debug[1].descriptorCount = 1;
-        debug[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        debug[1].pImmutableSamplers = nullptr;
-        debug[1].stageFlags = VK_SHADER_STAGE_GEOMETRY_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
-
-        VkDescriptorSetLayoutCreateInfo layoutInfo{};
-        layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-        layoutInfo.bindingCount = debug.size();
-        layoutInfo.pBindings = debug.data();
-        VK_CHECK_RESULT(vkCreateDescriptorSetLayout(*device, &layoutInfo, nullptr, &debugLayout));
-    }
+    debugLayout = device->createDescriptorSetLayout({
+        vkutil::createSetLayoutBinding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_GEOMETRY_BIT | VK_SHADER_STAGE_FRAGMENT_BIT),
+        vkutil::createSetLayoutBinding(1, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_GEOMETRY_BIT | VK_SHADER_STAGE_FRAGMENT_BIT),
+    });
 }
 
-void DeferredLighting::createDescriptorSets(VkDescriptorPool pool, const RenderTarget& sourceBuffer) {
+void DeferredLighting::createDescriptorSets(VkDescriptorPool pool, const RenderTarget& sourceBuffer, Scene *scene) {
 
     this->samplersSets =
         VulkanHelper::createDescriptorSetsFromLayout(*device, pool, samplersLayout, MAX_FRAMES_IN_FLIGHT);
     this->debugSets =
         VulkanHelper::createDescriptorSetsFromLayout(*device, pool, debugLayout, MAX_FRAMES_IN_FLIGHT);
+    this->computeSets =
+        VulkanHelper::createDescriptorSetsFromLayout(*device, pool, computeLayout, MAX_FRAMES_IN_FLIGHT);
 
-    updateSamplerBindings(sourceBuffer);
+    updateDescriptors(sourceBuffer, scene);
 }
 
-void DeferredLighting::updateSamplerBindings(const RenderTarget& gBuffer) {
+void DeferredLighting::setupBarriers() {
+    preComputeBarriers.resize(MAX_FRAMES_IN_FLIGHT);
+    postComputeBarriers.resize(MAX_FRAMES_IN_FLIGHT);
+
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-        std::vector<VkWriteDescriptorSet> descriptorWrites((int)GBufferTarget::NumAttachments);
-        std::vector<VkDescriptorImageInfo> imageInfos((int)GBufferTarget::NumAttachments);
+        preComputeBarriers[i].resize(1);
+        postComputeBarriers[i].resize(1);
 
-        for (size_t j = 0; j < descriptorWrites.size(); j++) {
-            imageInfos[j].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-            imageInfos[j].imageView = gBuffer.imageViews[i][j];
-            imageInfos[j].sampler = samplers[i][j];
+        // Transition compositedLight[i] to the correct layout: before the compute pass,
+        // UNDEFINED -> GENERAL.
+        //
+        // After the compute, GENERAL -> READ_ONLY_OPTIMAL
+        preComputeBarriers[i].back().sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        preComputeBarriers[i].back().oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        preComputeBarriers[i].back().newLayout = VK_IMAGE_LAYOUT_GENERAL;
+        preComputeBarriers[i].back().image = compositedLight.images[i][0];
+        preComputeBarriers[i].back().subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
+        preComputeBarriers[i].back().srcAccessMask = 0;
+        preComputeBarriers[i].back().dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+        preComputeBarriers[i].back().srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        preComputeBarriers[i].back().dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 
-            descriptorWrites[j].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            descriptorWrites[j].dstSet = samplersSets[i];
-            descriptorWrites[j].dstBinding = j;
-            descriptorWrites[j].dstArrayElement = 0;
-            descriptorWrites[j].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-            descriptorWrites[j].descriptorCount = 1;
-            descriptorWrites[j].pImageInfo = &imageInfos[j];
-            descriptorWrites[j].pNext = NULL;
+        postComputeBarriers[i].back() = preComputeBarriers[i].back();
+        postComputeBarriers[i].back().oldLayout = VK_IMAGE_LAYOUT_GENERAL;
+        postComputeBarriers[i].back().newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        postComputeBarriers[i].back().srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+        postComputeBarriers[i].back().dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    }
+}
+
+void DeferredLighting::updateDescriptors(const RenderTarget& gBuffer, Scene *scene) {
+    auto [pointLights, pointLightsNum] = scene->getPointLights();
+    auto pointLightsBuffer =
+        vkutil::createDescriptorBufferInfo(pointLights, 0, pointLightsNum * sizeof(LightData));
+
+    ComputeParamsBuffer computeParams;
+    computeParams.nPointLights = pointLightsNum;
+    computeParamsUBO.update(&computeParams, sizeof(computeParams), 0);
+    auto computeParamsBuffer =
+        vkutil::createDescriptorBufferInfo(computeParamsUBO.buffers[0], 0, sizeof(computeParams));
+
+    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+        std::vector<VkWriteDescriptorSet> descriptorWrites;
+        std::vector<VkDescriptorImageInfo> imageInfos(GBufferTarget::NumAttachments + 1);
+
+        // SamplerSets
+        for (size_t j = 0; j < GBufferTarget::NumAttachments; j++) {
+            imageInfos[j] = vkutil::createDescriptorImageInfo(gBuffer.imageViews[i][j], linearSampler);
+            descriptorWrites.push_back(vkutil::createDescriptorWriteSampler(imageInfos[j], samplersSets[i], j));
         }
 
-        VkDescriptorBufferInfo bufferInfo;
-        bufferInfo.buffer = debugUBO.buffers[i];
-        bufferInfo.offset = 0;
-        bufferInfo.range = sizeof(DebugOptions);
+        // computeSets
+        imageInfos.back().imageView = compositedLight.imageViews[i][0];
+        imageInfos.back().sampler = linearSampler;
+        imageInfos.back().imageLayout = VK_IMAGE_LAYOUT_GENERAL;
 
-        VkWriteDescriptorSet debugWrite{};
-        debugWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        debugWrite.dstSet = debugSets[i];
-        debugWrite.dstBinding = 0;
-        debugWrite.dstArrayElement = 0;
-        debugWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        debugWrite.descriptorCount = 1;
-        debugWrite.pBufferInfo = &bufferInfo;
-        descriptorWrites.push_back(debugWrite);
+        auto lightInfo = vkutil::createDescriptorBufferInfo(lightUBO.buffers[i], 0, sizeof(LightingBuffer));
 
-        VkDescriptorBufferInfo bufferInfoInvTr;
-        bufferInfoInvTr.buffer = lightUBO.buffers[i];
-        bufferInfoInvTr.offset = 0;
-        bufferInfoInvTr.range = sizeof(LightingBuffer);
+        descriptorWrites.push_back(vkutil::createDescriptorWriteSampler(imageInfos.back(), computeSets[i],
+                0, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE));
+        descriptorWrites.push_back(vkutil::createDescriptorWriteUBO(lightInfo, computeSets[i], 1));
+        descriptorWrites.push_back(vkutil::createDescriptorWriteSBO(pointLightsBuffer, computeSets[i], 2));
+        descriptorWrites.push_back(vkutil::createDescriptorWriteUBO(computeParamsBuffer, computeSets[i], 3));
 
-        VkWriteDescriptorSet debugWriteInvTr{};
-        debugWriteInvTr.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        debugWriteInvTr.dstSet = debugSets[i];
-        debugWriteInvTr.dstBinding = 1;
-        debugWriteInvTr.dstArrayElement = 0;
-        debugWriteInvTr.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        debugWriteInvTr.descriptorCount = 1;
-        debugWriteInvTr.pBufferInfo = &bufferInfoInvTr;
-        descriptorWrites.push_back(debugWriteInvTr);
-
+        // debug, light sets
+        auto bufferInfo = vkutil::createDescriptorBufferInfo(debugUBO.buffers[i], 0, sizeof(DebugOptions));
+        descriptorWrites.push_back(vkutil::createDescriptorWriteUBO(bufferInfo, debugSets[i], 0));
+        descriptorWrites.push_back(vkutil::createDescriptorWriteUBO(lightInfo, debugSets[i], 1));
         vkUpdateDescriptorSets(*device, descriptorWrites.size(), descriptorWrites.data(), 0, nullptr);
     }
 }
@@ -313,6 +348,7 @@ void DeferredLighting::updateSamplerBindings(const RenderTarget& gBuffer) {
 void DeferredLighting::setupBuffers() {
     debugUBO.allocate(device, sizeof(DebugOptions), MAX_FRAMES_IN_FLIGHT);
     lightUBO.allocate(device, sizeof(LightingBuffer), MAX_FRAMES_IN_FLIGHT);
+    computeParamsUBO.allocate(device, sizeof(ComputeParamsBuffer), 1);
 }
 
 void DeferredLighting::updateBuffers(glm::mat4 vp, glm::vec3 cameraPos, glm::vec3 cameraUp) {
@@ -334,20 +370,22 @@ void DeferredLighting::updateBuffers(glm::mat4 vp, glm::vec3 cameraPos, glm::vec
 RequiredDescriptors DeferredLighting::getNumDescriptors() {
     return {
         .requireUniformBuffers = MAX_FRAMES_IN_FLIGHT,
-        .requireSamplers = MAX_FRAMES_IN_FLIGHT * GBufferTarget::NumAttachments,
+        .requireSamplers = 2 * MAX_FRAMES_IN_FLIGHT * GBufferTarget::NumAttachments + MAX_FRAMES_IN_FLIGHT,
     };
 }
 
 void DeferredLighting::handleResize(const RenderTarget& gBuffer, VkDescriptorSetLayout mvpSetLayout, Scene *scene) {
     compositedLight.destroyAll();
     setupRenderTarget();
-    updateSamplerBindings(gBuffer);
+    updateDescriptors(gBuffer, scene);
     createPipeline(false, mvpSetLayout, scene);
 }
 
 void DeferredLighting::setupRenderTarget() {
     compositedLight.init(device, MAX_FRAMES_IN_FLIGHT);
     compositedLight.addAttachment(swapchain->swapChainExtent, LIGHT_ACCUMULATION_FORMAT,
-        VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
+        VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT,
+        VK_IMAGE_ASPECT_COLOR_BIT);
     compositedLight.createFramebuffers(renderPass, swapchain->swapChainExtent);
+    setupBarriers();
 }

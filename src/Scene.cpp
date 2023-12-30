@@ -381,7 +381,7 @@ void Scene::setupUniformBuffers() {
         VkDeviceMemory bufferMemory;
         VkDeviceSize bufferSize = sizeof(LightData) * lights.size();
         VulkanHelper::createBuffer(*device, device->physicalDevice, bufferSize,
-                                   VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                                   VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                                    VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, buffer, bufferMemory);
 
         VulkanHelper::uploadBuffer(*device, device->physicalDevice, bufferSize, buffer, lights.data(),
@@ -399,6 +399,10 @@ void Scene::setupUniformBuffers() {
     for (glm::int32_t v = 0; v < 2; v++) {
         constantsBuffers.update(&v, sizeof(v), v);
     }
+}
+
+std::pair<VkBuffer, size_t> Scene::getPointLights() {
+    return {buffers[lightsBuffer], lights.size()};
 }
 
 void Scene::destroyBuffers() {

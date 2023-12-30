@@ -238,6 +238,8 @@ ComputePipeline::ComputePipeline(VulkanDevice* device, const Parameters& params)
     if (vkCreateComputePipelines(*device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline) != VK_SUCCESS) {
         throw std::runtime_error("failed to create compute pipeline!");
     }
+
+    vkDestroyShaderModule(*device, module, nullptr);
 }
 
 ComputePipeline::~ComputePipeline()

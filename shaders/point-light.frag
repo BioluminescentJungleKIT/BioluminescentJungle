@@ -1,7 +1,5 @@
 #version 450
 
-#include "util.glsl"
-
 layout(location = 0) flat in vec3 fPosition;
 layout(location = 1) flat in vec3 fIntensity;
 layout(location = 2) flat in vec2 projPosition;
@@ -13,30 +11,21 @@ layout(set = 1, binding = 1) uniform sampler2D depth;
 layout(set = 1, binding = 2) uniform sampler2D normal;
 layout(set = 1, binding = 3) uniform sampler2D motion;
 
+#include "util.glsl"
+
 layout(set = 2, binding = 0, std140) uniform DebugOptions {
     int showLightBoxes;
     int compositionMode;
     float radius;
 } debug;
 
-layout(set = 2, binding = 1, std140) uniform LightInfo {
-    mat4 inverseMVP;
-    vec3 cameraPos;
-    vec3 cameraUp;
-    float viewportWidth;
-    float viewportHeight;
-    float fogAbsorption;
-    float scatterStrength;
-    float bleed;
-} info;
+layout(set = 2, binding = 1, std140) uniform LightInfoBlock {
+    SceneLightInfo info;
+};
 
 vec3 rndColor(vec3 pos) {
     pos = mat3(5.4, -6.3, 1.2, 3.2, 7.9, -2.8, -8.0, 1.5, 4.6) * pos;
     return abs(normalize(pos));
-}
-
-float max3 (vec3 v) {
-    return max (max (v.x, v.y), v.z);
 }
 
 void main() {
@@ -51,33 +40,20 @@ void main() {
     }
 
     float depth = texelFetch(depth, ivec2(gl_FragCoord), 0).r;
-    vec3 fragmentWorldPos = calculatePosition(depth, vec2(info.viewportWidth, info.viewportHeight), info.inverseMVP);
+    vec3 fragmentWorldPos = calculatePosition(depth, gl_FragCoord.xy, info);
 
     if (debug.compositionMode == 7) {
-        vec3 L = fPosition - fragmentWorldPos;
-        float dist = length(L);
-        L /= dist;
-        float b = max3(fIntensity);
-        float r = debug.radius;
-        float f = max(min(1.0 - pow(dist / (r * sqrt(b)), 4), 1), 0) / (dist * dist);
+        SurfacePoint point;
+        point.worldPos = fragmentWorldPos;
+        point.albedo = texelFetch(albedo, ivec2(gl_FragCoord), 0).rgb;
+        point.N = texelFetch(normal, ivec2(gl_FragCoord), 0).xyz;
 
-        if (f > 0.0) {
-            vec3 albedo = texelFetch(albedo, ivec2(gl_FragCoord), 0).rgb;
-            vec3 N = texelFetch(normal, ivec2(gl_FragCoord), 0).xyz;
-            outColor = vec4(fIntensity * f * albedo * max(0.0, dot(L, N)), 1.0);
-        } else {
-            outColor = vec4(0.0, 0.0, 0.0, 1.0);
-        }
-        // fog
-        vec3 lightray = info.cameraPos - fragmentWorldPos;
-        float lightdist = distance(fPosition, info.cameraPos);
-        float d = length(lightray);
-        outColor *= exp(-info.fogAbsorption*d);
-        //scattering
-        float h = length(cross(lightray, (fragmentWorldPos - fPosition)))/d;
-        if (h*h < r*r) {
-            outColor += vec4(smoothstep(lightdist - info.bleed, lightdist + info.bleed, d) * exp(-info.fogAbsorption*lightdist) * max(min(1.0 - pow(h / (r * sqrt(b)),1), 1), 0) * (atan(d/h)/h) * fIntensity * info.scatterStrength, 1);
-        }
+        PointLightParams light;
+        light.pos = fPosition;
+        light.intensity = fIntensity;
+        light.r = debug.radius;
+
+        outColor = vec4(evalPointLight(point, light, info), 1.0);
     } else if (debug.compositionMode == 1) {
         outColor = vec4(texelFetch(albedo, ivec2(gl_FragCoord), 0).rgb, 1.0);
     } else if (debug.compositionMode == 2) {

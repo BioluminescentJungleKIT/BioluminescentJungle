@@ -179,31 +179,46 @@ inline VkDescriptorImageInfo createDescriptorImageInfo(VkImageView imageView, Vk
     return imageInfo;
 }
 
-inline VkWriteDescriptorSet createDescriptorWriteUBO(
-    VkDescriptorBufferInfo& bufferInfo, VkDescriptorSet dset, int bindingId)
+inline VkWriteDescriptorSet createDescriptorWriteGenBuffer(
+    VkDescriptorBufferInfo& bufferInfo, VkDescriptorSet dset, int bindingId,
+    VkDescriptorType type)
 {
     VkWriteDescriptorSet descriptorWrite{};
     descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
     descriptorWrite.dstSet = dset;
     descriptorWrite.dstBinding = bindingId;
     descriptorWrite.dstArrayElement = 0;
-    descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    descriptorWrite.descriptorType = type;
     descriptorWrite.descriptorCount = 1;
     descriptorWrite.pBufferInfo = &bufferInfo;
     return descriptorWrite;
 }
 
+inline VkWriteDescriptorSet createDescriptorWriteUBO(
+    VkDescriptorBufferInfo& bufferInfo, VkDescriptorSet dset, int bindingId)
+{
+    return createDescriptorWriteGenBuffer(bufferInfo, dset, bindingId, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
+}
+
+inline VkWriteDescriptorSet createDescriptorWriteSBO(
+    VkDescriptorBufferInfo& bufferInfo, VkDescriptorSet dset, int bindingId)
+{
+    return createDescriptorWriteGenBuffer(bufferInfo, dset, bindingId, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+}
+
 inline VkWriteDescriptorSet createDescriptorWriteSampler(
-    VkDescriptorImageInfo& imageInfo, VkDescriptorSet dset, int bindingId)
+    VkDescriptorImageInfo& imageInfo, VkDescriptorSet dset, int bindingId,
+    VkDescriptorType type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
 {
     VkWriteDescriptorSet descriptorWrite{};
     descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
     descriptorWrite.dstSet = dset;
     descriptorWrite.dstBinding = bindingId;
     descriptorWrite.dstArrayElement = 0;
-    descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    descriptorWrite.descriptorType = type;
     descriptorWrite.descriptorCount = 1;
     descriptorWrite.pImageInfo = &imageInfo;
+    descriptorWrite.pNext = NULL;
     return descriptorWrite;
 }
 }

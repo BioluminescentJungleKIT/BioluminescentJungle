@@ -20,9 +20,9 @@ struct ModelTransform {
     glm::mat4 model;
 };
 struct LightData {
-    glm::vec3 position;
-    glm::vec3 color;
-    glm::float32 intensity;
+    glm::vec3 position alignas(16);
+    glm::vec3 color alignas(16);
+    glm::float32 intensity alignas(16);
 };
 struct CameraData{
     std::string name;
@@ -91,6 +91,8 @@ public:
     void destroyBuffers();
     std::tuple<std::vector<VkVertexInputAttributeDescription>, std::vector<VkVertexInputBindingDescription>>
     getLightsAttributeAndBindingDescriptions();
+
+    std::pair<VkBuffer, size_t> getPointLights();
 
     RequiredDescriptors getNumDescriptors();
 

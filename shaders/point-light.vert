@@ -19,5 +19,5 @@ void main() {
     clipPos += vec4(ubo.jitt, 0, 0) * clipPos.w;
     position = (inverse(ubo.proj * ubo.view) * clipPos).xyz;
 
-    intensity = inColor * inIntensity/250;
+    intensity = inColor * inIntensity/55;
 }
