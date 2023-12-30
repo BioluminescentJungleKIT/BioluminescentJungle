@@ -20,7 +20,8 @@ struct RequiredDescriptors {
     unsigned int requireSamplers = 0;
 };
 
-using ShaderList = std::vector<std::pair<VkShaderStageFlagBits, std::string>>;
+using ShaderSource = std::pair<VkShaderStageFlagBits, std::string>;
+using ShaderList = std::vector<ShaderSource>;
 
 struct PipelineParameters {
     ShaderList shadersList;
@@ -44,6 +45,24 @@ class GraphicsPipeline {
     ~GraphicsPipeline();
 
     static std::vector<std::pair<std::string, std::string>> errorsFromShaderCompilation;
+
+    VkPipeline pipeline;
+    VkPipelineLayout layout;
+
+  private:
+    VulkanDevice *device;
+};
+
+class ComputePipeline {
+  public:
+    struct Parameters {
+        ShaderSource source;
+        std::vector<VkDescriptorSetLayout> descriptorSetLayouts;
+        bool recompileShaders = false;
+    };
+
+    ComputePipeline(VulkanDevice* device, const Parameters& params);
+    ~ComputePipeline();
 
     VkPipeline pipeline;
     VkPipelineLayout layout;

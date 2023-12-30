@@ -87,6 +87,8 @@ void DeferredLighting::createPipeline(bool recompileShaders, VkDescriptorSetLayo
     params.useDepthTest = false;
     params.descriptorSetLayouts = {mvpLayout, samplersLayout, debugLayout};
     this->debugPipeline = std::make_unique<GraphicsPipeline>(device, renderPass, 0, params);
+
+    // Compute raytracing pipeline
 }
 
 void DeferredLighting::createRenderPass() {
