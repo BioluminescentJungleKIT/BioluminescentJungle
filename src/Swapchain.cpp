@@ -6,6 +6,7 @@
 void RenderTarget::init(VulkanDevice* device, int nrFrames) {
     this->device = device;
     this->nrFrames = nrFrames;
+    images.resize(nrFrames);
     imageViews.resize(nrFrames);
     framebuffers.resize(nrFrames);
 }
@@ -24,8 +25,10 @@ void RenderTarget::destroyAll() {
 
     imageViews.clear();
 
-    for (auto& img : images) {
-        vkDestroyImage(*device, img, nullptr);
+    for (auto& set : images) {
+        for (auto& img : set) {
+            vkDestroyImage(*device, img, nullptr);
+        }
     }
     images.clear();
 
@@ -52,7 +55,7 @@ void RenderTarget::addAttachment(VkExtent2D extent, VkFormat fmt,
         device->createImage(extent.width, extent.height, fmt, VK_IMAGE_TILING_OPTIMAL, usageFlags,
             VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, image, memory);
         deviceMemories.push_back(memory);
-        images.push_back(image);
+        images[i].push_back(image);
         imageViews[i].push_back(device->createImageView(image, fmt, aspectFlags));
     }
 }
