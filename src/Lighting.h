@@ -4,6 +4,7 @@
 #include "Scene.h"
 #include "Swapchain.h"
 #include "UniformBuffer.h"
+#include <vulkan/vulkan_core.h>
 #define GLFW_INCLUDE_VULKAN
 
 #include <GLFW/glfw3.h>
@@ -47,7 +48,9 @@ class DeferredLighting {
     std::vector<std::vector<VkSampler>> samplers;
 
     void setup(bool recompileshaders, Scene *scene, VkDescriptorSetLayout mvpLayout);
-    void recordCommandBuffer(VkCommandBuffer commandBuffer, VkDescriptorSet mvpSet, Scene *scene);
+
+    void recordCommandBuffer(VkCommandBuffer commandBuffer, VkDescriptorSet mvpSet, Scene* scene);
+
     void createDescriptorSetLayout();
 
     void createDescriptorSets(VkDescriptorPool pool, const RenderTarget& gBuffer);
@@ -70,11 +73,26 @@ class DeferredLighting {
     float lightBleed{0.1};
     float scatterStrength{0.05};
 
+    bool useRaytracingPipeline() {
+        return debug.compositionMode == 0;
+    }
+
+    bool useRasterPipeline() {
+        return debug.compositionMode == 7;
+    }
+
+    bool useDebugPipeline() {
+        return !useRaytracingPipeline() && !useRasterPipeline();
+    }
+
   private:
     VulkanDevice *device;
     Swapchain *swapchain;
     UniformBuffer debugUBO;
     UniformBuffer lightUBO;
+
+    void recordRasterBuffer(VkCommandBuffer commandBuffer, VkDescriptorSet mvpSet, Scene *scene);
+    void recordRaytraceBuffer(VkCommandBuffer commandBuffer, VkDescriptorSet mvpSet, Scene* scene);
 };
 
 #endif /* end of include guard: LIGHTIG_H */

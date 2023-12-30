@@ -155,7 +155,11 @@ void DeferredLighting::setup(bool recompileShaders, Scene *scene, VkDescriptorSe
     setupRenderTarget();
 }
 
-void DeferredLighting::recordCommandBuffer(VkCommandBuffer commandBuffer, VkDescriptorSet mvpSet, Scene *scene) {
+void DeferredLighting::recordRaytraceBuffer(
+    VkCommandBuffer commandBuffer, VkDescriptorSet mvpSet, Scene* scene)
+{}
+
+void DeferredLighting::recordRasterBuffer(VkCommandBuffer commandBuffer, VkDescriptorSet mvpSet, Scene *scene) {
     VkRenderPassBeginInfo renderPassInfo{};
     renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
     renderPassInfo.renderPass = renderPass;
@@ -169,7 +173,7 @@ void DeferredLighting::recordCommandBuffer(VkCommandBuffer commandBuffer, VkDesc
     renderPassInfo.pClearValues = clearValues.data();
     vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-    GraphicsPipeline *currentPipeline = debug.compositionMode ? debugPipeline.get() : pipeline.get();
+    GraphicsPipeline *currentPipeline = useDebugPipeline() ? debugPipeline.get() : pipeline.get();
 
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, currentPipeline->pipeline);
 
@@ -181,13 +185,23 @@ void DeferredLighting::recordCommandBuffer(VkCommandBuffer commandBuffer, VkDesc
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
         currentPipeline->layout, 0, neededSets.size(), neededSets.data(), 0, nullptr);
 
-    if (debug.compositionMode) {
+    if (useDebugPipeline()) {
         vkCmdDraw(commandBuffer, 6, 1, 0, 0);
     } else {
         scene->drawPointLights(commandBuffer);
     }
 
     vkCmdEndRenderPass(commandBuffer);
+}
+
+void DeferredLighting::recordCommandBuffer(
+    VkCommandBuffer commandBuffer, VkDescriptorSet mvpSet, Scene* scene)
+{
+    if (useRaytracingPipeline()) {
+        recordRaytraceBuffer(commandBuffer, mvpSet, scene);
+    } else {
+        recordRasterBuffer(commandBuffer, mvpSet, scene);
+    }
 }
 
 void DeferredLighting::createDescriptorSetLayout() {

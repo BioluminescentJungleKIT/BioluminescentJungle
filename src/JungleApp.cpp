@@ -96,7 +96,7 @@ void JungleApp::drawImGUI() {
         }
         if (ImGui::CollapsingHeader("Debug Settings")) {
             ImGui::Combo("G-Buffer Visualization", &lighting->debug.compositionMode,
-                         "None\0Albedo\0Depth\0Position\0Normal\0Motion\0SSR Region\0\0");
+                         "None\0Albedo\0Depth\0Position\0Normal\0Motion\0SSR Region\0Point Lights\0\0");
             ImGui::Checkbox("Show Light BBoxes", (bool *) &lighting->debug.showLightBoxes);
             ImGui::SliderFloat("Light bbox log size", &lighting->lightRadiusLog, -5.f, 5.f);
         }
@@ -459,7 +459,7 @@ void JungleApp::updateUniformBuffers(uint32_t currentImage) {
     lighting->updateBuffers(ubo.proj * ubo.view, cameraPosition, cameraUpVector);
 
     // TODO: is there a better way to integrate this somehow? Too lazy to skip the tonemapping render pass completely.
-    if (lighting->debug.compositionMode != 0) {
+    if (lighting->useDebugPipeline()) {
         postprocessing->disable();
     } else {
         postprocessing->enable();

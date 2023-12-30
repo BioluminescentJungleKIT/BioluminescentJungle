@@ -62,7 +62,7 @@ void main() {
         return;
     }
 
-    if (debug.compositionMode == 0) {
+    if (debug.compositionMode == 7) {
         vec3 fragmentWorldPos = calculatePosition();
         vec3 L = fPosition - fragmentWorldPos;
         float dist = length(L);
