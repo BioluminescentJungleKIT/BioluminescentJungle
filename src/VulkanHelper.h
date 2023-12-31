@@ -19,6 +19,7 @@
 #include <GLFW/glfw3.h>
 #include <vulkan/vulkan_core.h>
 #include "PhysicalDevice.h"
+#include "GlslIncluder.hpp"
 
 static std::string errorString(VkResult errorCode) {
     switch (errorCode) {
@@ -66,21 +67,6 @@ static std::string errorString(VkResult errorCode) {
     }
 }
 
-static std::vector<char> readFile(const std::string &filename) {
-    std::ifstream file(filename, std::ios::ate | std::ios::binary);
-
-    if (!file.is_open()) {
-        throw std::runtime_error("failed to open file!");
-    }
-
-    auto fileSize = file.tellg();
-    std::vector<char> buffer(fileSize);
-    file.seekg(0);
-    file.read(buffer.data(), fileSize);
-    file.close();
-    return buffer;
-}
-
 static void writeFile(const std::string &filename, const std::vector<char> &buffer) {
     std::ofstream file(filename, std::ios::binary);
 
@@ -92,11 +78,6 @@ static void writeFile(const std::string &filename, const std::vector<char> &buff
     file.close();
 }
 
-static bool fileExists(const std::string &filename) {
-    std::ifstream file(filename);
-    return file.good();
-}
-
 static std::tuple<std::vector<char>, std::string> getShaderCode(const std::string &filename, shaderc_shader_kind kind, bool recompile) {
     std::string message;
     auto sourceName = filename.substr(filename.find_last_of("/\\") + 1, filename.find_last_of('.'));
@@ -104,6 +85,7 @@ static std::tuple<std::vector<char>, std::string> getShaderCode(const std::strin
     if (recompile || !fileExists(spvFilename)) {
         shaderc::Compiler compiler;
         shaderc::CompileOptions options;
+        options.SetIncluder(std::make_unique<GlslIncluder>());
 
         auto file_content = readFile(filename);
         file_content.push_back('\0');

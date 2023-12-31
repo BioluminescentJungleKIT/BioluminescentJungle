@@ -1,5 +1,7 @@
 #version 450
 
+#include "util.glsl"
+
 layout(location = 0) flat in vec3 fPosition;
 layout(location = 1) flat in vec3 fIntensity;
 layout(location = 2) flat in vec2 projPosition;
@@ -28,20 +30,6 @@ layout(set = 2, binding = 1, std140) uniform LightInfo {
     float bleed;
 } info;
 
-vec3 calculatePosition() {
-    float depth = texelFetch(depth, ivec2(gl_FragCoord), 0).r;
-
-    // Convert screen coordinates to normalized device coordinates (NDC)
-    vec4 ndc = vec4(
-            (gl_FragCoord.x / info.viewportWidth - 0.5) * 2.0,
-            (gl_FragCoord.y / info.viewportHeight - 0.5) * 2.0,
-            depth, 1.0);
-
-    // Convert NDC throuch inverse clip coordinates to view coordinates
-    vec4 clip = info.inverseMVP * ndc;
-    return (clip / clip.w).xyz;
-}
-
 vec3 rndColor(vec3 pos) {
     pos = mat3(5.4, -6.3, 1.2, 3.2, 7.9, -2.8, -8.0, 1.5, 4.6) * pos;
     return abs(normalize(pos));
@@ -62,8 +50,10 @@ void main() {
         return;
     }
 
+    float depth = texelFetch(depth, ivec2(gl_FragCoord), 0).r;
+    vec3 fragmentWorldPos = calculatePosition(depth, vec2(info.viewportWidth, info.viewportHeight), info.inverseMVP);
+
     if (debug.compositionMode == 7) {
-        vec3 fragmentWorldPos = calculatePosition();
         vec3 L = fPosition - fragmentWorldPos;
         float dist = length(L);
         L /= dist;
@@ -91,9 +81,9 @@ void main() {
     } else if (debug.compositionMode == 1) {
         outColor = vec4(texelFetch(albedo, ivec2(gl_FragCoord), 0).rgb, 1.0);
     } else if (debug.compositionMode == 2) {
-        outColor = vec4(vec3(pow(texelFetch(depth, ivec2(gl_FragCoord), 0).r, 70)), 1.0);
+        outColor = vec4(vec3(pow(depth, 70)), 1.0);
     } else if (debug.compositionMode == 3) {
-        outColor = vec4(calculatePosition(), 1.0);
+        outColor = vec4(fragmentWorldPos, 1.0);
     } else if (debug.compositionMode == 4) {
         outColor = vec4(texelFetch(normal, ivec2(gl_FragCoord), 0).xyz, 1.0);
     } else if (debug.compositionMode == 5) {
