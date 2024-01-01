@@ -74,6 +74,10 @@ class BVH {
         return triangleBuffer.getDescriptor();
     }
 
+    size_t getNTriangles() {
+        return triangleBuffer.size / sizeof(Triangle);
+    }
+
     ~BVH() {
         bvhBuffer.destroy(device);
         triangleBuffer.destroy(device);

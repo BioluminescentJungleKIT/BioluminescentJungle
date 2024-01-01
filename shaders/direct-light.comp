@@ -1,6 +1,7 @@
 #version 450
 
 #include "util.glsl"
+#include "geometry.glsl"
 
 layout(set = 0, binding = 0) uniform sampler2D albedo;
 layout(set = 0, binding = 1) uniform sampler2D depth;
@@ -24,17 +25,30 @@ layout(std140, set = 1, binding = 2) readonly buffer PointLightIn {
 
 layout(std140, set = 1, binding = 3) uniform Params {
     int nPointLights;
-};
-
-struct Triangle {
-    vec4 x; // just xyz
-    vec4 y; // just xyz
-    vec4 z; // just xyz
+    int nTriangles;
 };
 
 layout(std140, set = 1, binding = 4) readonly buffer TrianglesIn {
     Triangle tris[];
 };
+
+bool testShadow(vec3 worldPos, vec3 lightPos) {
+    Ray lightRay;
+    lightRay.origin = worldPos;
+    lightRay.dir = lightPos - worldPos;
+
+    float len = length(lightRay.dir);
+    lightRay.dir /= len;
+
+    for (int i = 0; i < nTriangles; i++) {
+        float f = intersectTriangle(tris[i], lightRay);
+        if (0.03 <= f && f < len) {
+            return true;
+        }
+    }
+
+    return false;
+}
 
 layout (local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
 
@@ -60,7 +74,9 @@ void main()
         light.intensity = pointLights[i].color.rgb * pointLights[i].intensity.x/55;
         light.r = exp(0.01);
 
-        finalColor += evalPointLight(point, light, slInfo);
+        if (!testShadow(point.worldPos, light.pos)) {
+            finalColor += evalPointLight(point, light, slInfo);
+        }
     }
 
     imageStore(compositeLight, ivec2(pos), vec4(finalColor, 1.0));

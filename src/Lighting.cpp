@@ -20,6 +20,7 @@ struct LightingBuffer {
 
 struct ComputeParamsBuffer {
     glm::int32_t nPointLights;
+    glm::int32_t nTriangles;
 };
 
 DeferredLighting::DeferredLighting(VulkanDevice* device, Swapchain* swapChain) {
@@ -313,6 +314,7 @@ void DeferredLighting::updateDescriptors(const RenderTarget& gBuffer, Scene *sce
 
     ComputeParamsBuffer computeParams;
     computeParams.nPointLights = pointLightsNum;
+    computeParams.nTriangles = bvh->getNTriangles();
     computeParamsUBO.update(&computeParams, sizeof(computeParams), 0);
     auto computeParamsBuffer =
         vkutil::createDescriptorBufferInfo(computeParamsUBO.buffers[0], 0, sizeof(computeParams));
