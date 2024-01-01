@@ -78,7 +78,12 @@ static void writeFile(const std::string &filename, const std::vector<char> &buff
     file.close();
 }
 
+#include <chrono>
+
 static std::tuple<std::vector<char>, std::string> getShaderCode(const std::string &filename, shaderc_shader_kind kind, bool recompile) {
+    auto startTS = std::chrono::system_clock::now();
+    std::cout << "Compiling source file " << filename << std::endl;
+
     std::string message;
     auto sourceName = filename.substr(filename.find_last_of("/\\") + 1, filename.find_last_of('.'));
     auto spvFilename = filename + ".spv";
@@ -103,6 +108,11 @@ static std::tuple<std::vector<char>, std::string> getShaderCode(const std::strin
             writeFile(spvFilename, spirv);
         }
     }
+
+    auto endTS = std::chrono::system_clock::now();
+    std::cout << "Compilation of " << filename << " took " <<
+        std::chrono::duration_cast<std::chrono::milliseconds>(endTS-startTS).count() << "ms" << std::endl;
+
     return {readFile(spvFilename), message};
 }
 
