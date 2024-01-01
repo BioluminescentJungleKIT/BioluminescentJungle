@@ -15,6 +15,7 @@
 #include "UniformBuffer.h"
 #include "tiny_gltf.h"
 #include "PhysicalDevice.h"
+#include "DataBuffer.h"
 
 struct ModelTransform {
     glm::mat4 model;
@@ -117,8 +118,7 @@ public:
     VulkanDevice *device;
     Swapchain *swapchain;
 
-    std::vector<VkBuffer> buffers;
-    std::vector<VkDeviceMemory> bufferMemories;
+    std::vector<StaticDataBuffer> buffers;
 
     std::map<PipelineDescription, std::unique_ptr<GraphicsPipeline>> pipelines;
 

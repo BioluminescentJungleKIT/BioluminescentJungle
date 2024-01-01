@@ -154,7 +154,7 @@ void Scene::renderPrimitiveInstances(int meshId, int primitiveId, VkCommandBuffe
     std::vector<VkDeviceSize> offsets;
     const auto &addBufferOffset = [&](const char *attribute) {
         const auto &bufferView = model.bufferViews[model.accessors[primitive.attributes[attribute]].bufferView];
-        vertexBuffers.push_back(buffers[bufferView.buffer]);
+        vertexBuffers.push_back(buffers[bufferView.buffer].buffer);
         offsets.push_back(bufferView.byteOffset);
     };
 
@@ -181,7 +181,7 @@ void Scene::renderPrimitiveInstances(int meshId, int primitiveId, VkCommandBuffe
         uint32_t numIndices = model.accessors[indexAccessorIndex].count;
         auto indexBufferType = VulkanHelper::gltfTypeToVkIndexType(
                 model.accessors[indexAccessorIndex].componentType);
-        vkCmdBindIndexBuffer(commandBuffer, indexBuffer, indexBufferOffset, indexBufferType);
+        vkCmdBindIndexBuffer(commandBuffer, indexBuffer.buffer, indexBufferOffset, indexBufferType);
         vkCmdDrawIndexed(commandBuffer, numIndices, meshTransforms[meshId].size(), 0, 0, 0);
     } else {
         throw std::runtime_error("Non-indexed geometry is currently not supported.");
@@ -191,7 +191,7 @@ void Scene::renderPrimitiveInstances(int meshId, int primitiveId, VkCommandBuffe
 void Scene::drawPointLights(VkCommandBuffer commandBuffer) {
     if (lights.size()) {
         VkDeviceSize offset = 0;
-        vkCmdBindVertexBuffers(commandBuffer, 0, 1, &buffers[lightsBuffer], &offset);
+        vkCmdBindVertexBuffers(commandBuffer, 0, 1, &buffers[lightsBuffer].buffer, &offset);
         vkCmdDraw(commandBuffer, lights.size(), 1, 0, 0);
     }
 }
@@ -205,7 +205,7 @@ void Scene::setupDescriptorSets(VkDescriptorPool descriptorPool) {
         if (meshTransforms.find(mesh) == meshTransforms.end()) continue; // 0 instances. skip.
         auto meshTransformsBufferIndex = buffersMap[mesh];
         VkDescriptorBufferInfo bufferInfo{};
-        bufferInfo.buffer = buffers[meshTransformsBufferIndex];
+        bufferInfo.buffer = buffers[meshTransformsBufferIndex].buffer;
         bufferInfo.offset = 0;
         bufferInfo.range = sizeof(ModelTransform) * meshTransforms[mesh].size();
 
@@ -293,18 +293,10 @@ RequiredDescriptors Scene::getNumDescriptors() {
 
 void Scene::setupBuffers() {
     unsigned long numBuffers = model.buffers.size();
-    buffers.resize(model.buffers.size());
-    bufferMemories.resize(model.buffers.size());
+    buffers.resize(numBuffers);
     for (unsigned long i = 0; i < numBuffers; ++i) {
-        auto gltfBuffer = model.buffers[i];
-        VkDeviceSize bufferSize = sizeof(gltfBuffer.data[0]) * gltfBuffer.data.size();
-        VulkanHelper::createBuffer(*device, device->physicalDevice, bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT |
-                                                                                VK_BUFFER_USAGE_INDEX_BUFFER_BIT |
-                                                                                VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-                                   VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, buffers[i], bufferMemories[i]);
-
-        VulkanHelper::uploadBuffer(*device, device->physicalDevice, bufferSize, buffers[i],
-                                   gltfBuffer.data.data(), device->commandPool, device->graphicsQueue);
+        buffers[i].uploadData(device, model.buffers[i].data,
+            VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
     }
     for (auto node: model.scenes[model.defaultScene].nodes) {
         generateTransforms(node, glm::mat4(1.f), MAX_RECURSION);
@@ -362,34 +354,15 @@ void Scene::generateTransforms(int nodeIndex, glm::mat4 oldTransform, int maxRec
 
 void Scene::setupUniformBuffers() {
     for (auto [mesh, transforms]: meshTransforms) {
-        VkBuffer buffer;
-        VkDeviceMemory bufferMemory;
-        VkDeviceSize bufferSize = sizeof(ModelTransform) * transforms.size();
-        VulkanHelper::createBuffer(*device, device->physicalDevice, bufferSize,
-                                   VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-                                   VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, buffer, bufferMemory);
-
-        VulkanHelper::uploadBuffer(*device, device->physicalDevice, bufferSize, buffer, transforms.data(),
-                                   device->commandPool, device->graphicsQueue);
-
         buffersMap[mesh] = buffers.size();
-        buffers.push_back(buffer);
-        bufferMemories.push_back(bufferMemory);
+        buffers.push_back({});
+        buffers.back().uploadData(device, transforms, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
     }
     if (lights.size() > 0) {
-        VkBuffer buffer;
-        VkDeviceMemory bufferMemory;
-        VkDeviceSize bufferSize = sizeof(LightData) * lights.size();
-        VulkanHelper::createBuffer(*device, device->physicalDevice, bufferSize,
-                                   VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-                                   VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, buffer, bufferMemory);
-
-        VulkanHelper::uploadBuffer(*device, device->physicalDevice, bufferSize, buffer, lights.data(),
-                                   device->commandPool, device->graphicsQueue);
-
         lightsBuffer = buffers.size();
-        buffers.push_back(buffer);
-        bufferMemories.push_back(bufferMemory);
+        buffers.push_back({});
+        buffers.back().uploadData(device, lights,
+            VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
     }
 
     materialBuffer.allocate(device, sizeof(MaterialSettings), MAX_FRAMES_IN_FLIGHT);
@@ -402,12 +375,11 @@ void Scene::setupUniformBuffers() {
 }
 
 std::pair<VkBuffer, size_t> Scene::getPointLights() {
-    return {buffers[lightsBuffer], lights.size()};
+    return {buffers[lightsBuffer].buffer, lights.size()};
 }
 
 void Scene::destroyBuffers() {
-    for (auto buffer: buffers) vkDestroyBuffer(*device, buffer, nullptr);
-    for (auto bufferMemory: bufferMemories) vkFreeMemory(*device, bufferMemory, nullptr);
+    for (auto buffer: buffers) buffer.destroy(device);
     materialBuffer.destroy(device);
     constantsBuffers.destroy(device);
 }
