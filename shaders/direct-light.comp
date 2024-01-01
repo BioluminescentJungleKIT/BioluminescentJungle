@@ -74,7 +74,7 @@ void main()
         light.intensity = pointLights[i].color.rgb * pointLights[i].intensity.x/55;
         light.r = exp(0.01);
 
-        if (!testShadow(point.worldPos, light.pos)) {
+        if (depth >= 0.999 || !testShadow(point.worldPos, light.pos)) {
             finalColor += evalPointLight(point, light, slInfo);
         }
     }
