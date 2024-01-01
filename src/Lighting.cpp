@@ -5,6 +5,7 @@
 #include "GBufferDescription.h"
 #include <cmath>
 #include <vulkan/vulkan_core.h>
+#include "BVH.hpp"
 
 struct LightingBuffer {
     glm::mat4 inverseMVP;
@@ -149,8 +150,9 @@ void DeferredLighting::createRenderPass() {
 }
 
 void DeferredLighting::setup(bool recompileShaders, Scene *scene, VkDescriptorSetLayout mvpLayout) {
-    createRenderPass();
+    this->bvh = std::make_unique<BVH>(device, scene);
 
+    createRenderPass();
     linearSampler = VulkanHelper::createSampler(device, true);
     createDescriptorSetLayout();
     createPipeline(recompileShaders, mvpLayout, scene);
@@ -253,6 +255,7 @@ void DeferredLighting::createDescriptorSetLayout() {
         vkutil::createSetLayoutBinding(1, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT),
         vkutil::createSetLayoutBinding(2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT),
         vkutil::createSetLayoutBinding(3, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT),
+        vkutil::createSetLayoutBinding(4, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT),
     });
 
     debugLayout = device->createDescriptorSetLayout({
@@ -314,6 +317,8 @@ void DeferredLighting::updateDescriptors(const RenderTarget& gBuffer, Scene *sce
     auto computeParamsBuffer =
         vkutil::createDescriptorBufferInfo(computeParamsUBO.buffers[0], 0, sizeof(computeParams));
 
+    auto triBuffer = bvh->getTriangleInfo();
+
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
         std::vector<VkWriteDescriptorSet> descriptorWrites;
         std::vector<VkDescriptorImageInfo> imageInfos(GBufferTarget::NumAttachments + 1);
@@ -336,6 +341,7 @@ void DeferredLighting::updateDescriptors(const RenderTarget& gBuffer, Scene *sce
         descriptorWrites.push_back(vkutil::createDescriptorWriteUBO(lightInfo, computeSets[i], 1));
         descriptorWrites.push_back(vkutil::createDescriptorWriteSBO(pointLightsBuffer, computeSets[i], 2));
         descriptorWrites.push_back(vkutil::createDescriptorWriteUBO(computeParamsBuffer, computeSets[i], 3));
+        descriptorWrites.push_back(vkutil::createDescriptorWriteSBO(triBuffer, computeSets[i], 4));
 
         // debug, light sets
         auto bufferInfo = vkutil::createDescriptorBufferInfo(debugUBO.buffers[i], 0, sizeof(DebugOptions));

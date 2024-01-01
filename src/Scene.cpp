@@ -99,6 +99,12 @@ Scene::Scene(VulkanDevice *device, Swapchain *swapchain, std::string filename) {
     // We precompute a list of mesh primitives to be rendered with each of the generated programs.
     for (size_t i = 0; i < model.meshes.size(); i++) {
         for (size_t j = 0; j < model.meshes[i].primitives.size(); j++) {
+            if (model.meshes[i].primitives[j].material < 0) {
+                std::cout << "Unsupported primitive meshId=" << i << " primitiveId=" << j
+                          << ": no material specified." << std::endl;
+                continue;
+            }
+
             auto descr = getPipelineDescriptionForPrimitive(model.meshes[i].primitives[j]);
 
             if (!descr.vertexTexcoordsAccessor.has_value() && !descr.vertexFixedColorAccessor.has_value()) {

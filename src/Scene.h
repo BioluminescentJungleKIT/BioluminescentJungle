@@ -112,9 +112,11 @@ public:
     void cameraButtons(glm::vec3 &lookAt, glm::vec3 &position, glm::vec3 &up, float &fovy, float &near, float &far);
     void drawImGUIMaterialSettings();
 
+    tinygltf::Model model;
+    std::map<int, std::vector<ModelTransform>> meshTransforms;
+
   private:
     tinygltf::TinyGLTF loader;
-    tinygltf::Model model;
     VulkanDevice *device;
     Swapchain *swapchain;
 
@@ -149,7 +151,6 @@ public:
 
     std::map<int, int> buffersMap;
     std::map<int, int> descriptorSetsMap;
-    std::map<int, std::vector<ModelTransform>> meshTransforms;
     std::vector<VkDescriptorSet> bindingDescriptorSets;
 
     std::map<int, LoadedTexture> textures;

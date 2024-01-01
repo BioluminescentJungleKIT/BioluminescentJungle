@@ -24,6 +24,8 @@ struct DebugOptions {
     glm::float32_t lightRadius = 1.0;
 };
 
+class BVH;
+
 /**
  * A class which encapsulates state related to accumulation of light on a framebuffer.
  * It takes the G-Buffer as input and outputs in HDR space, which then JungleApp feeds to the tonemapping pass.
@@ -40,6 +42,7 @@ class DeferredLighting {
     std::unique_ptr<GraphicsPipeline> pipeline;
     std::unique_ptr<GraphicsPipeline> debugPipeline;
     std::unique_ptr<ComputePipeline> raytracingPipeline;
+    std::unique_ptr<BVH> bvh;
 
     void createRenderPass();
     VkDescriptorSetLayout samplersLayout, debugLayout, computeLayout;

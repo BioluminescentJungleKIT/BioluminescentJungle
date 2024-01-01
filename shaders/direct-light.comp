@@ -26,6 +26,16 @@ layout(std140, set = 1, binding = 3) uniform Params {
     int nPointLights;
 };
 
+struct Triangle {
+    vec4 x; // just xyz
+    vec4 y; // just xyz
+    vec4 z; // just xyz
+};
+
+layout(std140, set = 1, binding = 4) readonly buffer TrianglesIn {
+    Triangle tris[];
+};
+
 layout (local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
 
 void main()

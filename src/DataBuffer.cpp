@@ -9,6 +9,7 @@ void StaticDataBuffer::uploadData(VulkanDevice* device, void* data,
         properties, buffer, memory);
     VulkanHelper::uploadBuffer(*device, device->physicalDevice, size, buffer,
         data, device->commandPool, device->graphicsQueue);
+    this->size = size;
 }
 
 void StaticDataBuffer::destroy(VulkanDevice* device)

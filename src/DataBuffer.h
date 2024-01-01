@@ -18,8 +18,17 @@ class StaticDataBuffer {
         uploadData(device, (void*)data.data(), sizeof(T) * data.size(), usage, properties);
     }
 
+    VkDescriptorBufferInfo getDescriptor() {
+        return VkDescriptorBufferInfo {
+            .buffer = buffer,
+            .offset = 0,
+            .range = size,
+        };
+    }
+
     void destroy(VulkanDevice* device);
 
     VkBuffer buffer = VK_NULL_HANDLE;
     VkDeviceMemory memory = VK_NULL_HANDLE;
+    size_t size = 0;
 };
