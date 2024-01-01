@@ -670,6 +670,7 @@ static ShaderList selectShaders(const PipelineDescription &descr) {
 
 void Scene::createPipelinesWithDescription(PipelineDescription descr, VkRenderPass renderPass,
                                            VkDescriptorSetLayout mvpLayout, bool forceRecompile) {
+
     if (pipelines.count(descr)) {
         return;
     }

@@ -7,6 +7,7 @@
 #include <vulkan/vulkan_core.h>
 #include <iostream>
 #include <chrono>
+#include <numeric>
 
 inline std::ostream &operator<<(std::ostream &out, const glm::vec3 &value) {
     out << std::setprecision(4) << "(" << value.x << "," << value.y << "," << value.z << ")";
@@ -30,7 +31,7 @@ class BVH {
         glm::vec3 high alignas(16);
 
         // If negative, indicates a leaf triangle node
-        glm::int32_t left;
+        glm::int32_t left alignas(16);
         glm::int32_t right;
     };
 
@@ -51,19 +52,26 @@ class BVH {
         std::cout << "Starting building BVH" << std::endl;
         auto startTS = std::chrono::system_clock::now();
 
-        auto triangles = extractTriangles(scene);
+        this->triangles = extractTriangles(scene);
+        constructBVH();
+        //std::cout << "Got triangles from the model: " << triangles.size() << std::endl;
+        //for (size_t i = 0; i < triangles.size(); i++) {
+        //    std::cout << "idx=" << i << ": "
+        //        << triangles[i].x << " " << triangles[i].y << " " << triangles[i].z << std::endl;
+        //}
 
-        std::cout << "Got triangles from the model: " << triangles.size() << std::endl;
-
-        for (auto& tri : triangles) {
-            std::cout << tri.x << " " << tri.y << " " << tri.z << std::endl;
-        }
+        //std::cout << "BVH has " << bvh.size() << std::endl;
+        //for (size_t i = 0; i < bvh.size(); i++) {
+        //    std::cout << "idx=" << i << ": " << bvh[i].low << " " << bvh[i].high <<
+        //        " " << bvh[i].left << " " << bvh[i].right << std::endl;
+        //}
 
         auto endTS = std::chrono::system_clock::now();
         std::cout << "Finished building BVH in " <<
             std::chrono::duration_cast<std::chrono::milliseconds>(endTS-startTS).count() << "ms" << std::endl;
 
         triangleBuffer.uploadData(device, triangles, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+        bvhBuffer.uploadData(device, bvh, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
     }
 
     VkDescriptorBufferInfo getBVHInfo() {
@@ -88,8 +96,67 @@ class BVH {
     StaticDataBuffer bvhBuffer;
     StaticDataBuffer triangleBuffer;
 
+    static inline glm::vec3 midpoint(const Triangle& tri) {
+        return (tri.x + tri.y + tri.z) / 3.0f;
+    }
+
+    // TODO: currently, this BVH construction is extremely simple.
+    // We simply split triangles equally on both sides, and sort them by their center points.
+    //
+    // While this algorithm gives us a very balanced BVH (which is great since we don't need a large stack
+    // in the compute shader), a better way would probably be to have a fixed constraint about the max stack
+    // size, and if we have some room to tweak the BVH, we can use a different and better strategy.
+
+    std::vector<Triangle> triangles;
+    std::vector<BVHNode> bvh;
+
+    void constructBVH() {
+        bvh.push_back({});
+        std::vector<int> triIndices(triangles.size());
+        std::iota(triIndices.begin(), triIndices.end(), 0);
+        constructBVHRec(triIndices.begin(), triIndices.end(), 0, 0);
+    }
+
+    using iter = std::vector<int>::iterator;
+    void constructBVHRec(iter fst, iter lst, int curNodeIdx, int depth)
+    {
+        const size_t size = lst - fst;
+        // Leaf
+        if (size == 1) {
+            bvh[curNodeIdx].left = -*fst;
+
+            auto& tri = triangles[*fst];
+            bvh[curNodeIdx].low = glm::min(glm::min(tri.x, tri.y), tri.z);
+            bvh[curNodeIdx].high = glm::max(glm::max(tri.x, tri.y), tri.z);
+            return;
+        }
+
+        // Sort based on x, y, z
+        std::sort(fst, lst, [&] (int a, int b) {
+            if (depth % 3 == 0) {
+                return midpoint(triangles[a]).x < midpoint(triangles[b]).x;
+            } else if (depth % 3 == 1) {
+                return midpoint(triangles[a]).y < midpoint(triangles[b]).y;
+            } else {
+                return midpoint(triangles[a]).z < midpoint(triangles[b]).z;
+            }
+        });
+
+        int leftIdx = bvh.size();
+        bvh.push_back({});
+        int rightIdx = bvh.size();
+        bvh.push_back({});
+        bvh[curNodeIdx].left = leftIdx;
+        bvh[curNodeIdx].right = rightIdx;
+
+        constructBVHRec(fst, fst + size / 2, leftIdx, depth + 1);
+        constructBVHRec(fst + size / 2, lst, rightIdx, depth + 1);
+        bvh[curNodeIdx].low = glm::min(bvh[leftIdx].low, bvh[rightIdx].low);
+        bvh[curNodeIdx].high = glm::max(bvh[leftIdx].high, bvh[rightIdx].high);
+    }
+
     // Compute a list of all triangles in the model.
-    std::vector<Triangle> extractTriangles(Scene *scene) {
+    static std::vector<Triangle> extractTriangles(Scene *scene) {
         auto& model = scene->model;
 
         std::vector<Triangle> result;

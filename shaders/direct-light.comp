@@ -32,6 +32,12 @@ layout(std140, set = 1, binding = 4) readonly buffer TrianglesIn {
     Triangle tris[];
 };
 
+layout(std140, set = 1, binding = 5) readonly buffer BVHIn {
+    BVHNode bvh[];
+};
+
+#define MAX_STACK_SIZE 32
+
 bool testShadow(vec3 worldPos, vec3 lightPos) {
     Ray lightRay;
     lightRay.origin = worldPos;
@@ -39,11 +45,39 @@ bool testShadow(vec3 worldPos, vec3 lightPos) {
 
     float len = length(lightRay.dir);
     lightRay.dir /= len;
+    lightRay.invDir = 1.0 / lightRay.dir;
 
-    for (int i = 0; i < nTriangles; i++) {
-        float f = intersectTriangle(tris[i], lightRay);
-        if (0.03 <= f && f < len) {
-            return true;
+    int stack[MAX_STACK_SIZE];
+    stack[0] = 0;
+    int cur = 0;
+
+    const vec2 tmimaxInit = vec2(0.03, len);
+
+    // Recursive test in the BVH
+    while (cur >= 0) {
+        int node = stack[cur];
+        cur -= 1;
+
+        // Leaf node
+        if (bvh[node].left <= 0) {
+            float f = intersectTriangle(tris[-bvh[node].left], lightRay);
+            if (tmimaxInit.x <= f && f < tmimaxInit.y) {
+                return true;
+            }
+
+            continue;
+        }
+
+        // Split node: test AABB, if yes, check the two children
+        vec3 aabb[2];
+        aabb[0] = bvh[node].low.xyz;
+        aabb[1] = bvh[node].high.xyz;
+
+        vec2 isec = intersectAABB(aabb, lightRay, tmimaxInit);
+        if (isec.x <= isec.y) {
+            stack[cur + 1] = bvh[node].left;
+            stack[cur + 2] = bvh[node].right;
+            cur += 2;
         }
     }
 
@@ -72,7 +106,7 @@ void main()
         PointLightParams light;
         light.pos = pointLights[i].position.xyz;
         light.intensity = pointLights[i].color.rgb * pointLights[i].intensity.x/55;
-        light.r = exp(0.01);
+        light.r = exp(0.1);
 
         if (depth >= 0.999 || !testShadow(point.worldPos, light.pos)) {
             finalColor += evalPointLight(point, light, slInfo);

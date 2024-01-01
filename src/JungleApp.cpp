@@ -459,7 +459,7 @@ void JungleApp::updateUniformBuffers(uint32_t currentImage) {
     lighting->updateBuffers(ubo.proj * ubo.view, cameraPosition, cameraUpVector);
 
     // TODO: is there a better way to integrate this somehow? Too lazy to skip the tonemapping render pass completely.
-    if (lighting->useDebugPipeline()) {
+    if (lighting->useDebugPipeline() || true) {
         postprocessing->disable();
     } else {
         postprocessing->enable();
@@ -471,9 +471,10 @@ void JungleApp::updateUniformBuffers(uint32_t currentImage) {
 
 void JungleApp::createDescriptorPool() {
 
-    std::array<VkDescriptorPoolSize, 2> poolSizes{};
+    std::array<VkDescriptorPoolSize, 3> poolSizes{};
     poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    poolSizes[2].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
 
     std::vector<RequiredDescriptors> requirements = {
             scene.getNumDescriptors(), lighting->getNumDescriptors(), postprocessing->getNumDescriptors()
@@ -488,13 +489,14 @@ void JungleApp::createDescriptorPool() {
     for (auto &req: requirements) {
         poolSizes[0].descriptorCount += req.requireUniformBuffers;
         poolSizes[1].descriptorCount += req.requireSamplers;
+        poolSizes[2].descriptorCount += req.requireSSBOs;
     }
 
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
     poolInfo.poolSizeCount = poolSizes.size();
     poolInfo.pPoolSizes = poolSizes.data();
-    poolInfo.maxSets = poolSizes[0].descriptorCount + poolSizes[1].descriptorCount;
+    poolInfo.maxSets = poolSizes[0].descriptorCount + poolSizes[1].descriptorCount + poolSizes[2].descriptorCount;
     VK_CHECK_RESULT(vkCreateDescriptorPool(device, &poolInfo, nullptr, &descriptorPool))
 }
 

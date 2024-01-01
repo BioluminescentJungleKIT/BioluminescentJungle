@@ -257,6 +257,7 @@ void DeferredLighting::createDescriptorSetLayout() {
         vkutil::createSetLayoutBinding(2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT),
         vkutil::createSetLayoutBinding(3, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT),
         vkutil::createSetLayoutBinding(4, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT),
+        vkutil::createSetLayoutBinding(5, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT),
     });
 
     debugLayout = device->createDescriptorSetLayout({
@@ -320,6 +321,7 @@ void DeferredLighting::updateDescriptors(const RenderTarget& gBuffer, Scene *sce
         vkutil::createDescriptorBufferInfo(computeParamsUBO.buffers[0], 0, sizeof(computeParams));
 
     auto triBuffer = bvh->getTriangleInfo();
+    auto bvhBuffer = bvh->getBVHInfo();
 
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
         std::vector<VkWriteDescriptorSet> descriptorWrites;
@@ -344,6 +346,7 @@ void DeferredLighting::updateDescriptors(const RenderTarget& gBuffer, Scene *sce
         descriptorWrites.push_back(vkutil::createDescriptorWriteSBO(pointLightsBuffer, computeSets[i], 2));
         descriptorWrites.push_back(vkutil::createDescriptorWriteUBO(computeParamsBuffer, computeSets[i], 3));
         descriptorWrites.push_back(vkutil::createDescriptorWriteSBO(triBuffer, computeSets[i], 4));
+        descriptorWrites.push_back(vkutil::createDescriptorWriteSBO(bvhBuffer, computeSets[i], 5));
 
         // debug, light sets
         auto bufferInfo = vkutil::createDescriptorBufferInfo(debugUBO.buffers[i], 0, sizeof(DebugOptions));
@@ -377,8 +380,9 @@ void DeferredLighting::updateBuffers(glm::mat4 vp, glm::vec3 cameraPos, glm::vec
 
 RequiredDescriptors DeferredLighting::getNumDescriptors() {
     return {
-        .requireUniformBuffers = MAX_FRAMES_IN_FLIGHT,
+        .requireUniformBuffers = MAX_FRAMES_IN_FLIGHT * 3,
         .requireSamplers = 2 * MAX_FRAMES_IN_FLIGHT * GBufferTarget::NumAttachments + MAX_FRAMES_IN_FLIGHT,
+        .requireSSBOs = MAX_FRAMES_IN_FLIGHT * 3,
     };
 }
 

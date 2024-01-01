@@ -18,6 +18,7 @@ struct BasicBlending {
 struct RequiredDescriptors {
     unsigned int requireUniformBuffers = 0;
     unsigned int requireSamplers = 0;
+    unsigned int requireSSBOs = 0;
 };
 
 using ShaderSource = std::pair<VkShaderStageFlagBits, std::string>;

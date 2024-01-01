@@ -1,4 +1,3 @@
-
 struct Triangle {
     vec4 x; // just xyz
     vec4 y; // just xyz
@@ -8,6 +7,14 @@ struct Triangle {
 struct Ray {
     vec3 origin;
     vec3 dir;
+    vec3 invDir;
+};
+
+struct BVHNode {
+    vec4 low; // just xyz
+    vec4 high; // just xyz
+    int left;
+    int right;
 };
 
 // Thanks Stackoverflow
@@ -38,4 +45,23 @@ float intersectTriangle(Triangle tri, Ray r) {
     }
 
     return -1.0;
+}
+
+// Adapted from: https://tavianator.com/2022/ray_box_boundary.html
+vec2 intersectAABB(vec3 bounds[2], Ray r, vec2 tmimaxInit) {
+    float tmin = tmimaxInit.x;
+    float tmax = tmimaxInit.y;
+
+    for (int d = 0; d < 3; ++d) {
+        int sgn = int(sign(r.invDir[d]) < 0);
+        float bmin = bounds[sgn][d];
+        float bmax = bounds[1 - sgn][d];
+
+        float dmin = (bmin - r.origin[d]) * r.invDir[d];
+        float dmax = (bmax - r.origin[d]) * r.invDir[d];
+        tmin = max(dmin, tmin);
+        tmax = min(dmax, tmax);
+    }
+
+    return vec2(tmin, tmax);
 }
