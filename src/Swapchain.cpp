@@ -4,6 +4,7 @@
 #include <vulkan/vulkan_core.h>
 
 float Swapchain::renderScale = 1.0;
+int Swapchain::rateLimit = 0;
 
 void RenderTarget::init(VulkanDevice* device, int nrFrames) {
     this->device = device;

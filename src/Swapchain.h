@@ -53,6 +53,7 @@ class Swapchain
 
     VkExtent2D finalBufferSize;
     static float renderScale;
+    static int rateLimit;
 
     VkExtent2D renderSize() {
         return {

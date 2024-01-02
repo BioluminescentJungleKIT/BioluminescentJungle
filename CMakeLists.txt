@@ -61,13 +61,6 @@ target_include_directories(Jungle PUBLIC ${ShaderC_INCLUDE_DIRS})
 target_compile_options(Jungle PUBLIC ${ShaderC_CFLAGS_OTHER})
 target_link_options(Jungle PRIVATE "${ShaderC_LDFLAGS}")
 
-if (RATELIMIT)
-    target_compile_definitions(Jungle PRIVATE RATELIMIT=${RATELIMIT})
-else()
-    target_compile_definitions(Jungle PRIVATE RATELIMIT=0)
-endif()
-
-
 add_subdirectory(lib/tinygltf)
 include_directories(lib/tinygltf)
 add_subdirectory(lib/portaudio)

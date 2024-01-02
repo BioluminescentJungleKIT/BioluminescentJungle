@@ -2,6 +2,7 @@
 #include "Lighting.h"
 #include "Pipeline.h"
 #include "Swapchain.h"
+#include <thread>
 #include <vulkan/vulkan_core.h>
 
 #define GLM_FORCE_RADIANS
@@ -67,13 +68,19 @@ void JungleApp::setupGBuffer() {
 }
 
 void JungleApp::mainLoop() {
+    using namespace std::chrono;
+
     while (!glfwWindowShouldClose(window)) {
+        auto startFrame = system_clock::now();
         glfwPollEvents();
         cameraMotion();
         drawFrame();
 
-        if constexpr (RATELIMIT > 0) {
-            usleep(1e6 / RATELIMIT);
+        if (Swapchain::rateLimit > 0) {
+            int elapsed = duration_cast<milliseconds>(system_clock::now() - startFrame).count();
+            int maxNs = 1e6 / Swapchain::rateLimit;
+            maxNs = std::max(0, 1'000 / Swapchain::rateLimit - elapsed);
+            std::this_thread::sleep_for(milliseconds(maxNs));
         }
     }
 
