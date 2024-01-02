@@ -52,18 +52,18 @@ void JungleApp::setupGBuffer() {
 
     for (int i = 0; i < GBufferTarget::NumAttachments; i++) {
         if (i == GBufferTarget::Depth) {
-            gBuffer.addAttachment(swapchain->swapChainExtent, swapchain->chooseDepthFormat(),
+            gBuffer.addAttachment(swapchain->renderSize(), swapchain->chooseDepthFormat(),
                                   VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
                                   VK_IMAGE_ASPECT_DEPTH_BIT);
         } else {
             auto fmt = getGBufferAttachmentFormat(swapchain.get(), (GBufferTarget) i);
-            gBuffer.addAttachment(swapchain->swapChainExtent, fmt,
+            gBuffer.addAttachment(swapchain->renderSize(), fmt,
                                   VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
                                   VK_IMAGE_ASPECT_COLOR_BIT);
         }
     }
 
-    gBuffer.createFramebuffers(sceneRPass, swapchain->swapChainExtent);
+    gBuffer.createFramebuffers(sceneRPass, swapchain->renderSize());
 }
 
 void JungleApp::mainLoop() {
@@ -385,7 +385,7 @@ void JungleApp::startRenderPass(VkCommandBuffer commandBuffer, uint32_t currentF
     renderPassInfo.renderPass = renderPass;
     renderPassInfo.framebuffer = gBuffer.framebuffers[currentFrame];
     renderPassInfo.renderArea.offset = {0, 0};
-    renderPassInfo.renderArea.extent = swapchain->swapChainExtent;
+    renderPassInfo.renderArea.extent = swapchain->renderSize();
 
     std::array<VkClearValue, GBufferTarget::NumAttachments> clearValues{};
     for (int i = 0; i < GBufferTarget::NumAttachments; i++) {
@@ -440,12 +440,12 @@ void JungleApp::updateUniformBuffers(uint32_t currentImage) {
     ubo.modl = glm::rotate(glm::mat4(1.0f), rotation, glm::vec3(0.0f, 0.0f, 1.0f));
     ubo.view = glm::lookAt(cameraPosition, cameraLookAt, cameraUpVector);
     ubo.proj = glm::perspective(glm::radians(cameraFOVY),
-                                (float) swapchain->swapChainExtent.width / (float) swapchain->swapChainExtent.height,
+                                (float) swapchain->renderSize().width / (float) swapchain->renderSize().height,
                                 nearPlane, farPlane);
     ubo.proj[1][1] *= -1;  // because GLM generates OpenGL projections
     if (doJitter) {
         ubo.jitt = halton23norm(jitterSequence);
-        ubo.jitt *= glm::vec2(1.f / swapchain->swapChainExtent.width, 1.f / swapchain->swapChainExtent.height);
+        ubo.jitt *= glm::vec2(1.f / swapchain->finalBufferSize.width, 1.f / swapchain->finalBufferSize.height);
         jitterSequence++;
     } else {
         ubo.jitt = glm::vec2(0, 0);
@@ -459,7 +459,7 @@ void JungleApp::updateUniformBuffers(uint32_t currentImage) {
     lighting->updateBuffers(ubo.proj * ubo.view, cameraPosition, cameraUpVector);
 
     // TODO: is there a better way to integrate this somehow? Too lazy to skip the tonemapping render pass completely.
-    if (lighting->useDebugPipeline() || true) {
+    if (lighting->useDebugPipeline()) {
         postprocessing->disable();
     } else {
         postprocessing->enable();
@@ -622,8 +622,8 @@ void JungleApp::handleGLFWMouse(GLFWwindow *window, double x, double y) {
 
     if (app->lastMouseX.has_value() && app->lastMouseY.has_value()) {
         // We are dragging the mouse with button pressed
-        float dx = -(app->lastMouseX.value() - x) * 180 / app->swapchain->swapChainExtent.width;
-        float dy = (y - app->lastMouseY.value()) * 180 / app->swapchain->swapChainExtent.height;
+        float dx = -(app->lastMouseX.value() - x) * 180 / app->swapchain->finalBufferSize.width;
+        float dy = (y - app->lastMouseY.value()) * 180 / app->swapchain->finalBufferSize.height;
         if (app->invertMouse) {
             dx *= -1;
             dy *= -1;

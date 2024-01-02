@@ -12,6 +12,9 @@ find_package(Vulkan REQUIRED)
 find_package(glfw3 REQUIRED)
 pkg_check_modules(ShaderC REQUIRED shaderc)
 
+#add_compile_options(-fsanitize=address)
+#add_link_options(-fsanitize=address)
+
 add_executable(Jungle src/main.cpp
         src/JungleApp.cpp
         src/PhysicalDevice.cpp

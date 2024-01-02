@@ -92,7 +92,7 @@ vec3 agx(vec3 rgb) {
 }
 
 void main() {
-    vec4 color = texelFetch(texSampler, ivec2(gl_FragCoord), 0);
+    vec4 color = texelFetch(texSampler, ivec2(gl_FragCoord.xy), 0);
     color.rgb *= exp2(tonemapping.exposure);
     if (tonemapping.mode == 0) {
         //clamping is automatic

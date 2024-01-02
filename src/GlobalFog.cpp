@@ -31,9 +31,9 @@ void GlobalFog::updateCamera(glm::mat4 view, glm::mat4 projection, float near, f
     ubo.view = view;
     ubo.projection = projection;
     ubo.inverseVP = glm::inverse(projection * view);
-    ubo.viewportWidth = swapchain->swapChainExtent.width;
-    ubo.viewportHeight = swapchain->swapChainExtent.height;
+    ubo.viewportWidth = swapchain->renderSize().width;
+    ubo.viewportHeight = swapchain->renderSize().height;
 }
 
 GlobalFog::GlobalFog(VulkanDevice *pDevice, Swapchain *pSwapchain) :
-        PostProcessingStep(pDevice, pSwapchain) {}
+        PostProcessingStep(pDevice, pSwapchain, 0) {}

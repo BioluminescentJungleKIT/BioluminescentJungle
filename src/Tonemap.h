@@ -2,16 +2,12 @@
 #define TONEMAP_H
 
 #include "Swapchain.h"
-#include "UniformBuffer.h"
 
 #define GLFW_INCLUDE_VULKAN
 
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
-#include "Pipeline.h"
 #include "PostProcessingStep.h"
-#include <memory>
-
 
 struct TonemappingUBO {
     glm::float32 exposure;

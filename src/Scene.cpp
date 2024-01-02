@@ -123,7 +123,7 @@ void Scene::recordCommandBuffer(VkCommandBuffer commandBuffer, VkDescriptorSet m
     for (auto &[programDescr, meshMap]: meshPrimitivesWithPipeline) {
         auto &pipeline = pipelines[programDescr];
         vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->pipeline);
-        VulkanHelper::setFullViewportScissor(commandBuffer, swapchain->swapChainExtent);
+        VulkanHelper::setFullViewportScissor(commandBuffer, swapchain->renderSize());
 
         for (auto &[meshId, primitivesList]: meshMap) {
             // bind transformations for each mesh
@@ -670,7 +670,6 @@ static ShaderList selectShaders(const PipelineDescription &descr) {
 
 void Scene::createPipelinesWithDescription(PipelineDescription descr, VkRenderPass renderPass,
                                            VkDescriptorSetLayout mvpLayout, bool forceRecompile) {
-
     if (pipelines.count(descr)) {
         return;
     }
@@ -722,7 +721,7 @@ void Scene::createPipelinesWithDescription(PipelineDescription descr, VkRenderPa
     params.vertexAttributeDescription = attributeDescriptions;
     params.vertexInputDescription = bindingDescriptions;
     params.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-    params.extent = swapchain->swapChainExtent;
+    params.extent = swapchain->renderSize();
 
     // We don't want any blending for the color attachments (-1 for the depth attachment)
     params.blending.assign(GBufferTarget::NumAttachments - 1, {});

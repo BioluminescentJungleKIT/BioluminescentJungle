@@ -56,7 +56,7 @@ void DeferredLighting::createPipeline(bool recompileShaders, VkDescriptorSetLayo
     params.vertexAttributeDescription = attributes;
     params.vertexInputDescription = inputs;
     params.topology = VK_PRIMITIVE_TOPOLOGY_POINT_LIST;
-    params.extent = swapchain->swapChainExtent;
+    params.extent = swapchain->renderSize();
 
     // One color attachment, no blending enabled for it
     params.blending = {BasicBlending{
@@ -82,7 +82,7 @@ void DeferredLighting::createPipeline(bool recompileShaders, VkDescriptorSetLayo
     params.vertexAttributeDescription = {};
     params.vertexInputDescription = {};
     params.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-    params.extent = swapchain->swapChainExtent;
+    params.extent = swapchain->renderSize();
 
     // One color attachment, no blending enabled for it
     params.blending = {{}};
@@ -185,8 +185,8 @@ void DeferredLighting::recordRaytraceBuffer(
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, raytracingPipeline->layout, 0, sets.size(), sets.data(), 0, 0);
 
     // TODO: is 16x16 the most efficient?
-    vkCmdDispatch(commandBuffer, roundUpDiv(swapchain->swapChainExtent.width, 16),
-        roundUpDiv(swapchain->swapChainExtent.height, 16), 1);
+    vkCmdDispatch(commandBuffer, roundUpDiv(swapchain->renderSize().width, 16),
+        roundUpDiv(swapchain->renderSize().height, 16), 1);
 
     // Transition attachments to SHADER_READ_OPTIMAL layout
     vkCmdPipelineBarrier(commandBuffer,
@@ -203,7 +203,7 @@ void DeferredLighting::recordRasterBuffer(VkCommandBuffer commandBuffer, VkDescr
     renderPassInfo.renderPass = renderPass;
     renderPassInfo.framebuffer = compositedLight.framebuffers[swapchain->currentFrame];
     renderPassInfo.renderArea.offset = {0, 0};
-    renderPassInfo.renderArea.extent = swapchain->swapChainExtent;
+    renderPassInfo.renderArea.extent = swapchain->renderSize();
 
     std::array<VkClearValue, 2> clearValues{};
     clearValues[0].color = {{0.0f, 0.0f, 0.0f, 0.0f}};
@@ -215,7 +215,7 @@ void DeferredLighting::recordRasterBuffer(VkCommandBuffer commandBuffer, VkDescr
 
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, currentPipeline->pipeline);
 
-    VulkanHelper::setFullViewportScissor(commandBuffer, swapchain->swapChainExtent);
+    VulkanHelper::setFullViewportScissor(commandBuffer, swapchain->renderSize());
     std::array<VkDescriptorSet, 3> neededSets = {
         mvpSet, samplersSets[swapchain->currentFrame], debugSets[swapchain->currentFrame],
     };
@@ -370,8 +370,8 @@ void DeferredLighting::updateBuffers(glm::mat4 vp, glm::vec3 cameraPos, glm::vec
     buffer.inverseMVP = glm::inverse(vp);
     buffer.cameraPos = cameraPos;
     buffer.cameraUp = cameraUp;
-    buffer.viewportWidth = swapchain->swapChainExtent.width;
-    buffer.viewportHeight = swapchain->swapChainExtent.height;
+    buffer.viewportWidth = swapchain->renderSize().width;
+    buffer.viewportHeight = swapchain->renderSize().height;
     buffer.fogAbsorption = *fogAbsorption;
     buffer.scatterStrength = scatterStrength;
     buffer.lightBleed = lightBleed;
@@ -395,9 +395,9 @@ void DeferredLighting::handleResize(const RenderTarget& gBuffer, VkDescriptorSet
 
 void DeferredLighting::setupRenderTarget() {
     compositedLight.init(device, MAX_FRAMES_IN_FLIGHT);
-    compositedLight.addAttachment(swapchain->swapChainExtent, LIGHT_ACCUMULATION_FORMAT,
+    compositedLight.addAttachment(swapchain->renderSize(), LIGHT_ACCUMULATION_FORMAT,
         VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT,
         VK_IMAGE_ASPECT_COLOR_BIT);
-    compositedLight.createFramebuffers(renderPass, swapchain->swapChainExtent);
+    compositedLight.createFramebuffers(renderPass, swapchain->renderSize());
     setupBarriers();
 }

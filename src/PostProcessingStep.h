@@ -18,15 +18,21 @@
 
 #define POST_PROCESSING_FORMAT VK_FORMAT_R32G32B32A32_SFLOAT
 
+enum StepFlags {
+    PPSTEP_RENDER_FULL_RES = (1 << 0),
+    PPSTEP_RENDER_LAST     = (1 << 1),
+};
+
 /**
  * A helper class which manages resources for a post processing step
  */
 template<class UBOType>
 class PostProcessingStep {
 public:
-    PostProcessingStep(VulkanDevice *device, Swapchain *swapChain) {
+    PostProcessingStep(VulkanDevice *device, Swapchain *swapChain, uint32_t flags) {
         this->device = device;
         this->swapchain = swapChain;
+        this->flags = flags;
     };
 
     ~PostProcessingStep() {
@@ -40,6 +46,10 @@ public:
             }
         }
     };
+
+    VkExtent2D getViewport() {
+        return (flags & PPSTEP_RENDER_FULL_RES) ? swapchain->finalBufferSize : swapchain->renderSize();
+    }
 
     // Will also destroy any old pipeline which exists
     void createPipeline(bool recompileShaders) {
@@ -56,7 +66,7 @@ public:
         params.vertexAttributeDescription = {};
         params.vertexInputDescription = {};
         params.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-        params.extent = swapchain->swapChainExtent;
+        params.extent = getViewport();
 
         // One color attachment, no blending enabled for it
         params.blending = {{}};
@@ -66,16 +76,16 @@ public:
         this->pipeline = std::make_unique<GraphicsPipeline>(device, renderPass, 0, params);
     };
 
-    void createRenderPass(bool isFinalPass) {
+    void createRenderPass() {
         VkAttachmentDescription colorAttachment{};
-        colorAttachment.format = isFinalPass ? swapchain->swapChainImageFormat : POST_PROCESSING_FORMAT;
+        colorAttachment.format = (flags & PPSTEP_RENDER_LAST) ? swapchain->swapChainImageFormat : POST_PROCESSING_FORMAT;
         colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
         colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
         colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
         colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
         colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
         colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        colorAttachment.finalLayout = isFinalPass ? VK_IMAGE_LAYOUT_PRESENT_SRC_KHR
+        colorAttachment.finalLayout = (flags & PPSTEP_RENDER_LAST) ? VK_IMAGE_LAYOUT_PRESENT_SRC_KHR
                                                   : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
         VkAttachmentReference colorAttachmentRef{};
@@ -111,9 +121,9 @@ public:
         return 0;
     }
 
-    void setupRenderStage(bool recompileShaders, bool isFinalPass) {
-        createRenderPass(isFinalPass);
-        if (isFinalPass) {
+    void setupRenderStage(bool recompileShaders) {
+        createRenderPass();
+        if (flags & PPSTEP_RENDER_LAST) {
             swapchain->createFramebuffersForRender(renderPass);
         }
 
@@ -139,12 +149,12 @@ public:
         renderPassInfo.renderPass = renderPass;
         renderPassInfo.framebuffer = target;
         renderPassInfo.renderArea.offset = {0, 0};
-        renderPassInfo.renderArea.extent = swapchain->swapChainExtent;
+        renderPassInfo.renderArea.extent = getViewport();
 
         renderPassInfo.clearValueCount = 0;
         renderPassInfo.pClearValues = nullptr;
         vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
-        VulkanHelper::setFullViewportScissor(commandBuffer, swapchain->swapChainExtent);
+        VulkanHelper::setFullViewportScissor(commandBuffer, getViewport());
 
         vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->pipeline);
 
@@ -313,6 +323,7 @@ private:
     std::unique_ptr<GraphicsPipeline> pipeline;
 
     VkDescriptorSetLayout descriptorSetLayout;
+    uint32_t flags;
 
 };
 

@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <vulkan/vulkan_core.h>
 
+float Swapchain::renderScale = 1.0;
+
 void RenderTarget::init(VulkanDevice* device, int nrFrames) {
     this->device = device;
     this->nrFrames = nrFrames;
@@ -193,7 +195,7 @@ void Swapchain::createSwapChain() {
     swapChainImages.resize(imageCount);
     vkGetSwapchainImagesKHR(*device, swapChain, &imageCount, swapChainImages.data());
     swapChainImageFormat = surfaceFormat.format;
-    swapChainExtent = extent;
+    finalBufferSize = extent;
 }
 
 void Swapchain::createImageViews() {
@@ -202,7 +204,7 @@ void Swapchain::createImageViews() {
 }
 
 void Swapchain::createFramebuffersForRender(VkRenderPass renderPass) {
-    defaultTarget.createFramebuffers(renderPass, swapChainExtent);
+    defaultTarget.createFramebuffers(renderPass, finalBufferSize);
 }
 
 static VkFormat findSupportedFormat(VkPhysicalDevice device, const std::vector<VkFormat>& candidates) {

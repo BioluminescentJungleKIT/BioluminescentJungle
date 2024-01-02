@@ -2,9 +2,6 @@
 #include "Pipeline.h"
 #include "Tonemap.h"
 #include "Swapchain.h"
-#include "VulkanHelper.h"
-#include "imgui.h"
-#include "imgui_impl_vulkan.h"
 #include <vulkan/vulkan_core.h>
 
 PostProcessing::PostProcessing(VulkanDevice *device, Swapchain *swapChain) :
@@ -14,11 +11,11 @@ PostProcessing::PostProcessing(VulkanDevice *device, Swapchain *swapChain) :
         device(device),
         swapchain(swapChain) {
     fogTarget.init(device, MAX_FRAMES_IN_FLIGHT);
-    fogTarget.addAttachment(swapchain->swapChainExtent, POST_PROCESSING_FORMAT,
+    fogTarget.addAttachment(swapchain->renderSize(), POST_PROCESSING_FORMAT,
                             VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
                             VK_IMAGE_ASPECT_COLOR_BIT);
     taaTarget.init(device, MAX_FRAMES_IN_FLIGHT);
-    taaTarget.addAttachment(swapchain->swapChainExtent, POST_PROCESSING_FORMAT,
+    taaTarget.addAttachment(swapchain->finalBufferSize, POST_PROCESSING_FORMAT,
                             VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
                             VK_IMAGE_ASPECT_COLOR_BIT);
 }
@@ -29,11 +26,11 @@ PostProcessing::~PostProcessing() {
 }
 
 void PostProcessing::setupRenderStages(bool recompileShaders) {
-    fog.setupRenderStage(recompileShaders, false);
-    fogTarget.createFramebuffers(fog.getRenderPass(), swapchain->swapChainExtent);
-    taa.setupRenderStage(recompileShaders, false);
-    taaTarget.createFramebuffers(taa.getRenderPass(), swapchain->swapChainExtent);
-    tonemap.setupRenderStage(recompileShaders, true);
+    fog.setupRenderStage(recompileShaders);
+    fogTarget.createFramebuffers(fog.getRenderPass(), swapchain->renderSize());
+    taa.setupRenderStage(recompileShaders);
+    taaTarget.createFramebuffers(taa.getRenderPass(), swapchain->finalBufferSize);
+    tonemap.setupRenderStage(recompileShaders);
 }
 
 void PostProcessing::createPipeline(bool recompileShaders) {
@@ -85,18 +82,18 @@ RequiredDescriptors PostProcessing::getNumDescriptors() {
 void PostProcessing::handleResize(const RenderTarget &sourceBuffer, const RenderTarget &gBuffer) {
     fogTarget.destroyAll();
     fogTarget.init(device, MAX_FRAMES_IN_FLIGHT);
-    fogTarget.addAttachment(swapchain->swapChainExtent, POST_PROCESSING_FORMAT,
+    fogTarget.addAttachment(swapchain->renderSize(), POST_PROCESSING_FORMAT,
                             VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
                             VK_IMAGE_ASPECT_COLOR_BIT);
-    fogTarget.createFramebuffers(fog.getRenderPass(), swapchain->swapChainExtent);
+    fogTarget.createFramebuffers(fog.getRenderPass(), swapchain->renderSize());
     fog.handleResize(sourceBuffer, gBuffer);
 
     taaTarget.destroyAll();
     taaTarget.init(device, MAX_FRAMES_IN_FLIGHT);
-    taaTarget.addAttachment(swapchain->swapChainExtent, POST_PROCESSING_FORMAT,
+    taaTarget.addAttachment(swapchain->finalBufferSize, POST_PROCESSING_FORMAT,
                             VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
                             VK_IMAGE_ASPECT_COLOR_BIT);
-    taaTarget.createFramebuffers(taa.getRenderPass(), swapchain->swapChainExtent);
+    taaTarget.createFramebuffers(taa.getRenderPass(), swapchain->finalBufferSize);
     taa.handleResize(fogTarget, gBuffer);
 
     tonemap.handleResize(taaTarget, gBuffer);

@@ -3,7 +3,6 @@
 
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
-#include <array>
 #include "PhysicalDevice.h"
 
 const int MAX_FRAMES_IN_FLIGHT = 2;
@@ -51,7 +50,17 @@ class Swapchain
     void recreateSwapChain(VkRenderPass renderPass);
 
     VkFormat swapChainImageFormat;
-    VkExtent2D swapChainExtent;
+
+    VkExtent2D finalBufferSize;
+    static float renderScale;
+
+    VkExtent2D renderSize() {
+        return {
+            (uint32_t)(finalBufferSize.width * renderScale),
+            (uint32_t)(finalBufferSize.height * renderScale),
+        };
+    }
+
     bool enableVSync = false;
     VkSwapchainKHR swapChain;
 
