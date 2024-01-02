@@ -16,6 +16,7 @@ struct LightingBuffer {
     glm::float32 fogAbsorption;
     glm::float32 scatterStrength;
     glm::float32 lightBleed;
+    glm::int32 lightAlgo;
 };
 
 struct ComputeParamsBuffer {
@@ -375,6 +376,7 @@ void DeferredLighting::updateBuffers(glm::mat4 vp, glm::vec3 cameraPos, glm::vec
     buffer.fogAbsorption = *fogAbsorption;
     buffer.scatterStrength = scatterStrength;
     buffer.lightBleed = lightBleed;
+    buffer.lightAlgo = computeLightAlgo;
     lightUBO.update(&buffer, sizeof(buffer), swapchain->currentFrame);
 }
 

@@ -82,6 +82,7 @@ class DeferredLighting {
     float *fogAbsorption;
     float lightBleed{0.1};
     float scatterStrength{0.05};
+    int computeLightAlgo = 0;
 
     bool useRaytracingPipeline() {
         return debug.compositionMode == 0;

@@ -104,6 +104,8 @@ void JungleApp::drawImGUI() {
         if (ImGui::CollapsingHeader("Debug Settings")) {
             ImGui::Combo("G-Buffer Visualization", &lighting->debug.compositionMode,
                          "None\0Albedo\0Depth\0Position\0Normal\0Motion\0SSR Region\0Point Lights\0\0");
+            ImGui::Combo("Lighting mode", &lighting->computeLightAlgo,
+                         "ReSTIR\0Bruteforce\0BVH only\0\0");
             ImGui::Checkbox("Show Light BBoxes", (bool *) &lighting->debug.showLightBoxes);
             ImGui::SliderFloat("Light bbox log size", &lighting->lightRadiusLog, -5.f, 5.f);
         }

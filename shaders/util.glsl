@@ -7,6 +7,7 @@ struct SceneLightInfo {
     float fogAbsorption;
     float scatterStrength;
     float bleed;
+    int lightAlgo;
 };
 
 vec3 calculatePosition(float depth, vec2 fragCoord, in SceneLightInfo info) {
