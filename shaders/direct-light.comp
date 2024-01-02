@@ -38,7 +38,27 @@ layout(std140, set = 1, binding = 5) readonly buffer BVHIn {
 
 #define MAX_STACK_SIZE 32
 
-bool testShadow(vec3 worldPos, vec3 lightPos) {
+bool testShadowBruteforce(vec3 worldPos, vec3 lightPos) {
+    Ray lightRay;
+    lightRay.origin = worldPos;
+    lightRay.dir = lightPos - worldPos;
+
+    float len = length(lightRay.dir);
+    lightRay.dir /= len;
+    lightRay.invDir = 1.0 / lightRay.dir;
+    const vec2 tmimaxInit = vec2(0.03, len);
+
+    for (int i = 0; i < nTriangles; i++) {
+        float f = intersectTriangle(tris[i], lightRay);
+        if (tmimaxInit.x <= f && f < tmimaxInit.y) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool testShadowAABB(vec3 worldPos, vec3 lightPos) {
     Ray lightRay;
     lightRay.origin = worldPos;
     lightRay.dir = lightPos - worldPos;
@@ -106,9 +126,9 @@ void main()
         PointLightParams light;
         light.pos = pointLights[i].position.xyz;
         light.intensity = pointLights[i].color.rgb * pointLights[i].intensity.x/55;
-        light.r = exp(0.1);
+        light.r = exp(0.5);
 
-        if (depth >= 0.999 || !testShadow(point.worldPos, light.pos)) {
+        if (depth >= 0.999 || !testShadowAABB(point.worldPos, light.pos)) {
             finalColor += evalPointLight(point, light, slInfo);
         }
     }
