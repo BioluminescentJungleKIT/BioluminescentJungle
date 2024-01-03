@@ -6,7 +6,7 @@
 /**
  * A helper class to manage buffers with static data.
  */
-class StaticDataBuffer {
+class DataBuffer {
   public:
     void uploadData(VulkanDevice* device, void* data, VkDeviceSize size,
         VkBufferUsageFlags usage, VkMemoryPropertyFlags properties = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);

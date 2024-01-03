@@ -2,6 +2,7 @@
 
 #include "util.glsl"
 #include "geometry.glsl"
+#include "restir.glsl"
 
 layout(set = 0, binding = 0) uniform sampler2D albedo;
 layout(set = 0, binding = 1) uniform sampler2D depth;
@@ -11,12 +12,6 @@ layout(set = 0, binding = 3) uniform sampler2D motion;
 layout(set = 1, binding = 0) uniform writeonly image2D compositeLight;
 layout(set = 1, binding = 1, std140) uniform LightInfoBlock {
     SceneLightInfo slInfo;
-};
-
-struct PointLight {
-    vec4 position; // just xyz
-    vec4 color; // just xyz
-    vec4 intensity; // just x
 };
 
 layout(std140, set = 1, binding = 2) readonly buffer PointLightIn {
@@ -34,6 +29,10 @@ layout(std140, set = 1, binding = 4) readonly buffer TrianglesIn {
 
 layout(std140, set = 1, binding = 5) readonly buffer BVHIn {
     BVHNode bvh[];
+};
+
+layout(std430, set = 1, binding = 6) writeonly buffer ReservoirsIn {
+    Reservoir reservoirs[];
 };
 
 #define MAX_STACK_SIZE 32
@@ -71,7 +70,7 @@ bool testShadowAABB(vec3 worldPos, vec3 lightPos) {
     stack[0] = 0;
     int cur = 0;
 
-    const vec2 tmimaxInit = vec2(0.03, len);
+    const vec2 tmimaxInit = vec2(0.05, len - 0.05);
 
     // Recursive test in the BVH
     while (cur >= 0) {
@@ -106,19 +105,11 @@ bool testShadowAABB(vec3 worldPos, vec3 lightPos) {
 
 layout (local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
 
-PointLightParams computeLightParams(int lightId) {
-    PointLightParams light;
-    light.pos = pointLights[lightId].position.xyz;
-    light.intensity = pointLights[lightId].color.rgb * pointLights[lightId].intensity.x/55;
-    light.r = exp(0.5);
-    return light;
-}
-
 // Very naive lighting: shoot a ray to each light, bruteforce hit triangles.
 vec3 naiveLighting(SurfacePoint point, float depth) {
     vec3 finalColor = vec3(0.0);
     for (int i = 0; i < nPointLights; i++) {
-        PointLightParams light = computeLightParams(i);
+        PointLightParams light = computeLightParams(pointLights[i]);
         if (depth >= 0.999 || !testShadowBruteforce(point.worldPos, light.pos)) {
             finalColor += evalPointLight(point, light, slInfo);
         }
@@ -131,13 +122,47 @@ vec3 naiveLighting(SurfacePoint point, float depth) {
 vec3 naiveLightingBVH(SurfacePoint point, float depth) {
     vec3 finalColor = vec3(0.0);
     for (int i = 0; i < nPointLights; i++) {
-        PointLightParams light = computeLightParams(i);
+        PointLightParams light = computeLightParams(pointLights[i]);
         if (depth >= 0.999 || !testShadowAABB(point.worldPos, light.pos)) {
             finalColor += evalPointLight(point, light, slInfo);
         }
     }
 
     return finalColor;
+}
+
+// Restir Step 1: fill reservoirs for each pixel
+void fillReservoir(ivec2 pos, SurfacePoint point, float depth) {
+    uint rndState = getRandSeed(uvec3(pos, slInfo.randomSeed));
+//    uint rndState = getRandSeed(uvec3(pos, 0));
+    Reservoir r = createEmptyReservoir();
+    int rIdx = reservoirIdx(pos, slInfo.viewportWidth);
+    if (depth > 0.999f) {
+        // Background
+        reservoirs[rIdx] = r;
+        return;
+    }
+
+    for (int i = 0; i < NUM_SAMPLES_PER_PIXEL; i++) {
+        int lightIdx = int(floor(nextRand(rndState) * nPointLights));
+        PointLightParams params = computeLightParams(pointLights[lightIdx]);
+
+        float pHat = evalPointLightStrength(point, params);
+        float w = pHat * nPointLights; // (pHat / p)
+        addSample(r, rndState, lightIdx, w);
+    }
+
+    // Test visibility and reject samples if that is the case.
+    // No need to waste time with them, we hope to get more samples with Spatial and Temporal reuse.
+    for (int i = 0; i < NUM_SAMPLES_PER_RESERVOIR; i++) {
+        if (testShadowAABB(point.worldPos, pointLights[r.selected[i]].position.xyz)) {
+            // Lies in shadow => ignore
+            r.selected[i] = -1;
+            r.sumW[i] = 0;
+        }
+    }
+
+    reservoirs[rIdx] = r;
 }
 
 void main()
@@ -155,8 +180,9 @@ void main()
     point.N = texelFetch(normal, pos, 0).xyz;
 
     vec3 color = vec3(1, 0, 0);
-
     if (slInfo.lightAlgo == 0) {
+        fillReservoir(pos, point, depth);
+        return;
     } else if (slInfo.lightAlgo == 1) {
         color = naiveLighting(point, depth);
     } else if (slInfo.lightAlgo == 2) {

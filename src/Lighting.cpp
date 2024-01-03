@@ -6,17 +6,19 @@
 #include <cmath>
 #include <vulkan/vulkan_core.h>
 #include "BVH.hpp"
+#include <random>
 
 struct LightingBuffer {
     glm::mat4 inverseMVP;
     alignas(16) glm::vec3 cameraPos;
     alignas(16) glm::vec3 cameraUp;
-    glm::float32_t viewportWidth;
-    glm::float32_t viewportHeight;
+    glm::int32 viewportWidth;
+    glm::int32 viewportHeight;
     glm::float32 fogAbsorption;
     glm::float32 scatterStrength;
     glm::float32 lightBleed;
     glm::int32 lightAlgo;
+    glm::int32 randomSeed;
 };
 
 struct ComputeParamsBuffer {
@@ -33,6 +35,11 @@ DeferredLighting::~DeferredLighting() {
     debugUBO.destroy(device);
     lightUBO.destroy(device);
     computeParamsUBO.destroy(device);
+
+    for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+        reservoirs[i].destroy(device);
+    }
+
     vkDestroyRenderPass(*device, renderPass, nullptr);
     vkDestroyDescriptorSetLayout(*device, debugLayout, nullptr);
     vkDestroyDescriptorSetLayout(*device, samplersLayout, nullptr);
@@ -99,6 +106,11 @@ void DeferredLighting::createPipeline(bool recompileShaders, VkDescriptorSetLayo
     p.recompileShaders = recompileShaders;
     p.descriptorSetLayouts = {samplersLayout, computeLayout};
     this->raytracingPipeline = std::make_unique<ComputePipeline>(device, p);
+
+    p.source = {VK_SHADER_STAGE_COMPUTE_BIT, "shaders/restir-eval.comp"};
+    p.recompileShaders = recompileShaders;
+    p.descriptorSetLayouts = {samplersLayout, computeLayout};
+    this->restirEvalPipeline = std::make_unique<ComputePipeline>(device, p);
 }
 
 void DeferredLighting::createRenderPass() {
@@ -177,17 +189,35 @@ void DeferredLighting::recordRaytraceBuffer(
         preComputeBarriers[0].size(), preComputeBarriers[swapchain->currentFrame].data());
 
 
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, raytracingPipeline->pipeline);
+    // First pass: naive raytracing or ReSTIR reservoir filling
 
-    std::array<VkDescriptorSet, 2> sets {
-        samplersSets[swapchain->currentFrame], computeSets[swapchain->currentFrame]
+    const auto& bindExecComputePipeline = [&] (const std::unique_ptr<ComputePipeline>& pipeline,
+        std::vector<VkDescriptorSet> descriptorSets) {
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline->pipeline);
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline->layout, 0,
+            descriptorSets.size(), descriptorSets.data(), 0, 0);
+
+        // TODO: is 16x16 the most efficient?
+        vkCmdDispatch(commandBuffer, roundUpDiv(swapchain->renderSize().width, 16),
+            roundUpDiv(swapchain->renderSize().height, 16), 1);
     };
 
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, raytracingPipeline->layout, 0, sets.size(), sets.data(), 0, 0);
+    bindExecComputePipeline(raytracingPipeline,
+        { samplersSets[swapchain->currentFrame], computeSets[swapchain->currentFrame] });
 
-    // TODO: is 16x16 the most efficient?
-    vkCmdDispatch(commandBuffer, roundUpDiv(swapchain->renderSize().width, 16),
-        roundUpDiv(swapchain->renderSize().height, 16), 1);
+    // Second pass: ReSTIR reservoir evaluation
+    if (this->computeLightAlgo == 0) {
+        // Make sure that reservoirs get filled up in the previous compute pass
+        vkCmdPipelineBarrier(commandBuffer,
+            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+            0,
+            0, nullptr,
+            preRestirEvalBarriers[0].size(), preRestirEvalBarriers[swapchain->currentFrame].data(),
+            0, nullptr);
+
+        bindExecComputePipeline(restirEvalPipeline,
+            { samplersSets[swapchain->currentFrame], computeSets[swapchain->currentFrame] });
+    }
 
     // Transition attachments to SHADER_READ_OPTIMAL layout
     vkCmdPipelineBarrier(commandBuffer,
@@ -259,6 +289,7 @@ void DeferredLighting::createDescriptorSetLayout() {
         vkutil::createSetLayoutBinding(3, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT),
         vkutil::createSetLayoutBinding(4, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT),
         vkutil::createSetLayoutBinding(5, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT),
+        vkutil::createSetLayoutBinding(6, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT),
     });
 
     debugLayout = device->createDescriptorSetLayout({
@@ -281,6 +312,7 @@ void DeferredLighting::createDescriptorSets(VkDescriptorPool pool, const RenderT
 
 void DeferredLighting::setupBarriers() {
     preComputeBarriers.resize(MAX_FRAMES_IN_FLIGHT);
+    preRestirEvalBarriers.resize(MAX_FRAMES_IN_FLIGHT);
     postComputeBarriers.resize(MAX_FRAMES_IN_FLIGHT);
 
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
@@ -306,6 +338,17 @@ void DeferredLighting::setupBarriers() {
         postComputeBarriers[i].back().newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
         postComputeBarriers[i].back().srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
         postComputeBarriers[i].back().dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+        // Make sure reservoir buffers are fully updated before starting evaluation pass
+        preRestirEvalBarriers[i].resize(1);
+        preRestirEvalBarriers[i].back().sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+        preRestirEvalBarriers[i].back().srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+        preRestirEvalBarriers[i].back().dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+        preRestirEvalBarriers[i].back().srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        preRestirEvalBarriers[i].back().dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        preRestirEvalBarriers[i].back().buffer = reservoirs[i].buffer;
+        preRestirEvalBarriers[i].back().offset = 0;
+        preRestirEvalBarriers[i].back().size = reservoirs[i].size;
     }
 }
 
@@ -348,6 +391,8 @@ void DeferredLighting::updateDescriptors(const RenderTarget& gBuffer, Scene *sce
         descriptorWrites.push_back(vkutil::createDescriptorWriteUBO(computeParamsBuffer, computeSets[i], 3));
         descriptorWrites.push_back(vkutil::createDescriptorWriteSBO(triBuffer, computeSets[i], 4));
         descriptorWrites.push_back(vkutil::createDescriptorWriteSBO(bvhBuffer, computeSets[i], 5));
+        auto reservoirInfo = vkutil::createDescriptorBufferInfo(reservoirs[i].buffer, 0, reservoirs[i].size);
+        descriptorWrites.push_back(vkutil::createDescriptorWriteSBO(reservoirInfo, computeSets[i], 6));
 
         // debug, light sets
         auto bufferInfo = vkutil::createDescriptorBufferInfo(debugUBO.buffers[i], 0, sizeof(DebugOptions));
@@ -361,6 +406,8 @@ void DeferredLighting::setupBuffers() {
     debugUBO.allocate(device, sizeof(DebugOptions), MAX_FRAMES_IN_FLIGHT);
     lightUBO.allocate(device, sizeof(LightingBuffer), MAX_FRAMES_IN_FLIGHT);
     computeParamsUBO.allocate(device, sizeof(ComputeParamsBuffer), 1);
+    updateReservoirs();
+    setupBarriers();
 }
 
 void DeferredLighting::updateBuffers(glm::mat4 vp, glm::vec3 cameraPos, glm::vec3 cameraUp) {
@@ -377,6 +424,7 @@ void DeferredLighting::updateBuffers(glm::mat4 vp, glm::vec3 cameraPos, glm::vec
     buffer.scatterStrength = scatterStrength;
     buffer.lightBleed = lightBleed;
     buffer.lightAlgo = computeLightAlgo;
+    buffer.randomSeed = std::uniform_int_distribution<glm::uint32>(0, UINT32_MAX)(rndGen);
     lightUBO.update(&buffer, sizeof(buffer), swapchain->currentFrame);
 }
 
@@ -391,8 +439,10 @@ RequiredDescriptors DeferredLighting::getNumDescriptors() {
 void DeferredLighting::handleResize(const RenderTarget& gBuffer, VkDescriptorSetLayout mvpSetLayout, Scene *scene) {
     compositedLight.destroyAll();
     setupRenderTarget();
-    updateDescriptors(gBuffer, scene);
     createPipeline(false, mvpSetLayout, scene);
+    updateReservoirs();
+    updateDescriptors(gBuffer, scene);
+    setupBarriers();
 }
 
 void DeferredLighting::setupRenderTarget() {
@@ -401,5 +451,23 @@ void DeferredLighting::setupRenderTarget() {
         VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT,
         VK_IMAGE_ASPECT_COLOR_BIT);
     compositedLight.createFramebuffers(renderPass, swapchain->renderSize());
-    setupBarriers();
+}
+
+#define NUM_SAMPLES_PER_RESERVOIR 3
+
+void DeferredLighting::updateReservoirs() {
+    struct Reservoir {
+        glm::int32 selected[NUM_SAMPLES_PER_RESERVOIR];
+        glm::float32 sumW[NUM_SAMPLES_PER_RESERVOIR];
+        glm::int32 totalNumSamples;
+    };
+
+    size_t size = swapchain->renderSize().width * swapchain->renderSize().height * sizeof(Reservoir);
+    for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+        if (reservoirs[i].size > 0) {
+            reservoirs[i].destroy(device);
+        }
+
+        reservoirs[i].uploadData(device, NULL, size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+    }
 }

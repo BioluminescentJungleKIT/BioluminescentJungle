@@ -2,12 +2,13 @@ struct SceneLightInfo {
     mat4 inverseMVP;
     vec3 cameraPos;
     vec3 cameraUp;
-    float viewportWidth;
-    float viewportHeight;
+    int viewportWidth;
+    int viewportHeight;
     float fogAbsorption;
     float scatterStrength;
     float bleed;
     int lightAlgo;
+    int randomSeed;
 };
 
 vec3 calculatePosition(float depth, vec2 fragCoord, in SceneLightInfo info) {
@@ -25,17 +26,32 @@ struct SurfacePoint {
     vec3 N;
 };
 
+struct PointLight {
+    vec4 position; // just xyz
+    vec4 color; // just xyz
+    vec4 intensity; // just x
+};
+
 struct PointLightParams {
     vec3 pos;
     vec3 intensity;
     float r;
 };
 
+PointLightParams computeLightParams(PointLight light) {
+    PointLightParams params;
+    params.pos = light.position.xyz;
+    params.intensity = light.color.rgb * light.intensity.x/55;
+    params.r = exp(100);
+    return params;
+}
+
+
 float max3 (vec3 v) {
     return max (max (v.x, v.y), v.z);
 }
 
-vec3 evalPointLight(in SurfacePoint point, in PointLightParams light, in SceneLightInfo info) {
+float evalPointLightStrength(in SurfacePoint point, in PointLightParams light) {
     vec3 L = light.pos - point.worldPos;
     float dist = length(L);
     L /= dist;
@@ -44,7 +60,13 @@ vec3 evalPointLight(in SurfacePoint point, in PointLightParams light, in SceneLi
     float f = max(min(1.0 - pow(dist / (light.r * sqrt(b)), 4), 1), 0) / (dist * dist);
     f = max(f, 0);
 
-    vec3 contribution = light.intensity * f * point.albedo * max(0.0, dot(L, point.N));
+    return f * max(0.0, dot(L, point.N));
+}
+
+vec4 _evalPointLight(in SurfacePoint point, in PointLightParams light, in SceneLightInfo info) {
+    float f = evalPointLightStrength(point, light);
+    float b = max3(light.intensity);
+    vec3 contribution = light.intensity * f * point.albedo;
 
     // Fog
     vec3 lightray = info.cameraPos - point.worldPos;
@@ -59,5 +81,9 @@ vec3 evalPointLight(in SurfacePoint point, in PointLightParams light, in SceneLi
                 max(min(1.0 - pow(h / (light.r * sqrt(b)),1), 1), 0) * (atan(d/h)/h) * light.intensity * info.scatterStrength;
     }
 
-    return contribution;
+    return vec4(contribution, f);
+}
+
+vec3 evalPointLight(in SurfacePoint point, in PointLightParams light, in SceneLightInfo info) {
+    return _evalPointLight(point, light, info).rgb;
 }

@@ -93,8 +93,8 @@ class BVH {
 
   private:
     VulkanDevice *device;
-    StaticDataBuffer bvhBuffer;
-    StaticDataBuffer triangleBuffer;
+    DataBuffer bvhBuffer;
+    DataBuffer triangleBuffer;
 
     static inline glm::vec3 midpoint(const Triangle& tri) {
         return (tri.x + tri.y + tri.z) / 3.0f;

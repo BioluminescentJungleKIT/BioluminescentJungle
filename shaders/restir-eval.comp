@@ -1,0 +1,62 @@
+#version 450
+
+#include "restir.glsl"
+#include "util.glsl"
+
+layout(set = 0, binding = 0) uniform sampler2D albedo;
+layout(set = 0, binding = 1) uniform sampler2D depth;
+layout(set = 0, binding = 2) uniform sampler2D normal;
+layout(set = 0, binding = 3) uniform sampler2D motion;
+
+
+layout(set = 1, binding = 0) uniform writeonly image2D compositeLight;
+layout(set = 1, binding = 1, std140) uniform LightInfoBlock {
+    SceneLightInfo slInfo;
+};
+
+layout(std140, set = 1, binding = 2) readonly buffer PointLightIn {
+    PointLight pointLights[];
+};
+
+layout(std140, set = 1, binding = 3) uniform Params {
+    int nPointLights;
+    int nTriangles;
+};
+
+layout(std430, set = 1, binding = 6) readonly buffer ReservoirsIn {
+    Reservoir reservoirs[];
+};
+
+layout (local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+
+void main() {
+    ivec2 pos = ivec2(gl_GlobalInvocationID.xy);
+    if (pos.x > slInfo.viewportWidth || pos.y > slInfo.viewportHeight) {
+        return;
+    }
+
+    int rIdx = reservoirIdx(pos, slInfo.viewportWidth);
+
+    float depth = texelFetch(depth, pos, 0).r;
+
+    SurfacePoint point;
+    point.worldPos = calculatePosition(depth, pos, slInfo);
+    point.albedo = texelFetch(albedo, pos, 0).rgb;
+    point.N = texelFetch(normal, pos, 0).xyz;
+
+    vec3 finalColor = vec3(0, 0, 0);
+    for (int i = 0; i < NUM_SAMPLES_PER_RESERVOIR; i++) {
+        int sel = reservoirs[rIdx].selected[i];
+
+//        finalColor[sel] += 0.5;
+
+        if (sel >= 0) {
+            vec4 contrib = _evalPointLight(point, computeLightParams(pointLights[sel]), slInfo);
+            // Equation (6) from the ReSTIR paper
+            float W = 1.0 / (contrib.w * reservoirs[rIdx].totalNumSamples) * reservoirs[rIdx].sumW[i];
+            finalColor += contrib.rgb * W;
+        }
+    }
+
+    imageStore(compositeLight, ivec2(pos), vec4(finalColor, 1.0));
+}

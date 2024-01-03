@@ -120,7 +120,7 @@ public:
     VulkanDevice *device;
     Swapchain *swapchain;
 
-    std::vector<StaticDataBuffer> buffers;
+    std::vector<DataBuffer> buffers;
 
     std::map<PipelineDescription, std::unique_ptr<GraphicsPipeline>> pipelines;
 

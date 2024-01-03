@@ -11,6 +11,7 @@
 #include <glm/glm.hpp>
 #include "Pipeline.h"
 #include <memory>
+#include <random>
 
 #define LIGHT_ACCUMULATION_FORMAT VK_FORMAT_R32G32B32A32_SFLOAT
 
@@ -42,16 +43,18 @@ class DeferredLighting {
     std::unique_ptr<GraphicsPipeline> pipeline;
     std::unique_ptr<GraphicsPipeline> debugPipeline;
     std::unique_ptr<ComputePipeline> raytracingPipeline;
+    std::unique_ptr<ComputePipeline> restirEvalPipeline;
     std::unique_ptr<BVH> bvh;
 
     void createRenderPass();
-    VkDescriptorSetLayout samplersLayout, debugLayout, computeLayout;
+    VkDescriptorSetLayout samplersLayout, debugLayout, computeLayout, restirEvalLayout;
 
     std::vector<VkDescriptorSet> samplersSets;
     std::vector<VkDescriptorSet> debugSets;
     std::vector<VkDescriptorSet> computeSets;
 
     std::vector<std::vector<VkImageMemoryBarrier>> preComputeBarriers;
+    std::vector<std::vector<VkBufferMemoryBarrier>> preRestirEvalBarriers;
     std::vector<std::vector<VkImageMemoryBarrier>> postComputeBarriers;
     void setupBarriers();
 
@@ -102,9 +105,13 @@ class DeferredLighting {
     UniformBuffer debugUBO;
     UniformBuffer lightUBO;
     UniformBuffer computeParamsUBO;
+    std::array<DataBuffer, MAX_FRAMES_IN_FLIGHT> reservoirs;
+
+    std::mt19937 rndGen{std::random_device{}()};
 
     void recordRasterBuffer(VkCommandBuffer commandBuffer, VkDescriptorSet mvpSet, Scene *scene);
     void recordRaytraceBuffer(VkCommandBuffer commandBuffer, VkDescriptorSet mvpSet, Scene* scene);
+    void updateReservoirs();
 };
 
 #endif /* end of include guard: LIGHTIG_H */
