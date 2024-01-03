@@ -1,6 +1,5 @@
 #version 450
 
-#include "util.glsl"
 #include "geometry.glsl"
 #include "restir.glsl"
 
@@ -137,17 +136,12 @@ void fillReservoir(ivec2 pos, SurfacePoint point, float depth) {
 //    uint rndState = getRandSeed(uvec3(pos, 0));
     Reservoir r = createEmptyReservoir();
     int rIdx = reservoirIdx(pos, slInfo.viewportWidth);
-    if (depth > 0.999f) {
-        // Background
-        reservoirs[rIdx] = r;
-        return;
-    }
 
     for (int i = 0; i < NUM_SAMPLES_PER_PIXEL; i++) {
         int lightIdx = int(floor(nextRand(rndState) * nPointLights));
         PointLightParams params = computeLightParams(pointLights[lightIdx]);
 
-        float pHat = evalPointLightStrength(point, params);
+        float pHat = calcPHat(point, params, slInfo, depth);
         float w = pHat * nPointLights; // (pHat / p)
         addSample(r, rndState, lightIdx, w);
     }
@@ -155,7 +149,7 @@ void fillReservoir(ivec2 pos, SurfacePoint point, float depth) {
     // Test visibility and reject samples if that is the case.
     // No need to waste time with them, we hope to get more samples with Spatial and Temporal reuse.
     for (int i = 0; i < NUM_SAMPLES_PER_RESERVOIR; i++) {
-        if (testShadowAABB(point.worldPos, pointLights[r.selected[i]].position.xyz)) {
+        if (depth <= 0.999 && testShadowAABB(point.worldPos, pointLights[r.selected[i]].position.xyz)) {
             // Lies in shadow => ignore
             r.selected[i] = -1;
             r.sumW[i] = 0;

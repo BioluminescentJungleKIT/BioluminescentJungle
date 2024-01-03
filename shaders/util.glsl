@@ -63,27 +63,29 @@ float evalPointLightStrength(in SurfacePoint point, in PointLightParams light) {
     return f * max(0.0, dot(L, point.N));
 }
 
-vec4 _evalPointLight(in SurfacePoint point, in PointLightParams light, in SceneLightInfo info) {
-    float f = evalPointLightStrength(point, light);
-    float b = max3(light.intensity);
-    vec3 contribution = light.intensity * f * point.albedo;
-
+// rgb scattering, a fog absorption
+vec4 evalFog(in SurfacePoint point, in PointLightParams light, in SceneLightInfo info) {
     // Fog
     vec3 lightray = info.cameraPos - point.worldPos;
     float lightdist = distance(light.pos, info.cameraPos);
     float d = length(lightray);
-    contribution *= exp(-info.fogAbsorption*d);
+    float b = max3(light.intensity);
+
+    vec4 contribution = vec4(0);
+    contribution.w = exp(-info.fogAbsorption*d);
 
     //scattering
     float h = length(cross(lightray, (point.worldPos - light.pos)))/d;
     if (h*h < light.r*light.r) {
-        contribution += smoothstep(lightdist - info.bleed, lightdist + info.bleed, d) * exp(-info.fogAbsorption*lightdist) *
+        contribution.rgb = smoothstep(lightdist - info.bleed, lightdist + info.bleed, d) * exp(-info.fogAbsorption*lightdist) *
                 max(min(1.0 - pow(h / (light.r * sqrt(b)),1), 1), 0) * (atan(d/h)/h) * light.intensity * info.scatterStrength;
     }
 
-    return vec4(contribution, f);
+    return contribution;
 }
 
 vec3 evalPointLight(in SurfacePoint point, in PointLightParams light, in SceneLightInfo info) {
-    return _evalPointLight(point, light, info).rgb;
+    float f = evalPointLightStrength(point, light);
+    vec4 fog = evalFog(point, light, info);
+    return f * fog.w * light.intensity * point.albedo + fog.rgb;
 }

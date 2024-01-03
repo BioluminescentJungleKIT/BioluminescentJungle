@@ -1,5 +1,9 @@
-#define NUM_SAMPLES_PER_RESERVOIR 3
-#define NUM_SAMPLES_PER_PIXEL 10
+#include "util.glsl"
+
+// NUM_SAMPLES_PER_RESERVOIR must also be adjusted in Lighting.cpp.
+// The value there must be >= than the value used by the shader, otherwise we don't have enough storage space.
+#define NUM_SAMPLES_PER_RESERVOIR 2
+#define NUM_SAMPLES_PER_PIXEL 8
 
 // Very simple pseudo-random number generators.
 // We might want something better, I just used this as a easy start
@@ -56,4 +60,29 @@ void addSample(inout Reservoir r, inout uint randState, int id, float w) {
 
 int reservoirIdx(ivec2 pos, int viewportWidth) {
     return pos.y * viewportWidth + pos.x;
+}
+
+float sum3(vec3 x) {
+    return x.x + x.y + x.z;
+}
+
+float calcPHat(SurfacePoint point, PointLightParams light, SceneLightInfo slInfo, float d) {
+    vec4 fog = evalFog(point, light, slInfo);
+    if (d > 0.999) {
+        // Background => need to estimate fog only
+        return sum3(fog.rgb);
+    } else {
+        // Estimate diffuse illumination of a surface point
+        return evalPointLightStrength(point, light) + sum3(fog.rgb);
+    }
+}
+
+float calcPHatPartial(vec4 fog, float f, float d) {
+    if (d > 0.999) {
+        // Background => need to estimate fog only
+        return sum3(fog.rgb);
+    } else {
+        // Estimate diffuse illumination of a surface point
+        return f + sum3(fog.rgb);
+    }
 }

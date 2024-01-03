@@ -1,7 +1,6 @@
 #version 450
 
 #include "restir.glsl"
-#include "util.glsl"
 
 layout(set = 0, binding = 0) uniform sampler2D albedo;
 layout(set = 0, binding = 1) uniform sampler2D depth;
@@ -51,12 +50,22 @@ void main() {
 //        finalColor[sel] += 0.5;
 
         if (sel >= 0) {
-            vec4 contrib = _evalPointLight(point, computeLightParams(pointLights[sel]), slInfo);
+            PointLightParams light = computeLightParams(pointLights[sel]);
+
+            float f = evalPointLightStrength(point, light);
+            vec4 fog = evalFog(point, light, slInfo);
+
+            float pHat = calcPHatPartial(fog, f, depth);
+
             // Equation (6) from the ReSTIR paper
-            float W = 1.0 / (contrib.w * reservoirs[rIdx].totalNumSamples) * reservoirs[rIdx].sumW[i];
-            finalColor += contrib.rgb * W;
+            float W = 1.0 / (pHat * reservoirs[rIdx].totalNumSamples) * reservoirs[rIdx].sumW[i];
+            finalColor += W * (f * fog.w * light.intensity * point.albedo + fog.rgb);
+
+            // TODO: should the fog be in or out of the W factor? Visually, outside seems better, but is this
+            // actually correct?
         }
     }
 
+    finalColor /= NUM_SAMPLES_PER_RESERVOIR;
     imageStore(compositeLight, ivec2(pos), vec4(finalColor, 1.0));
 }

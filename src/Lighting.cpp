@@ -453,7 +453,7 @@ void DeferredLighting::setupRenderTarget() {
     compositedLight.createFramebuffers(renderPass, swapchain->renderSize());
 }
 
-#define NUM_SAMPLES_PER_RESERVOIR 3
+#define NUM_SAMPLES_PER_RESERVOIR 4
 
 void DeferredLighting::updateReservoirs() {
     struct Reservoir {
