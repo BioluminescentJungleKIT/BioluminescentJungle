@@ -107,7 +107,6 @@ void JungleApp::drawImGUI() {
             ImGui::Combo("Lighting mode", &lighting->computeLightAlgo,
                          "ReSTIR\0Bruteforce\0BVH only\0\0");
             ImGui::SliderFloat("ReSTIR Temporal Factor", &lighting->restirTemporalFactor, 0.0f, 50.0f);
-            ImGui::SliderFloat("ReSTIR Spatial Factor", &lighting->restirSpatialFactor, 0.0f, 50.0f);
             ImGui::SliderInt("ReSTIR Spatial Radius", &lighting->restirSpatialRadius, 0, 50);
             ImGui::SliderInt("ReSTIR Spatial Neighbors", &lighting->restirSpatialNeighbors, 0, 20);
 

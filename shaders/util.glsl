@@ -10,7 +10,6 @@ struct SceneLightInfo {
     int lightAlgo;
     int randomSeed;
     float restirTemporalFactor;
-    float restirSpatialFactor;
     int restirSpatialRadius;
     int restirSpatialNeighbors;
 };

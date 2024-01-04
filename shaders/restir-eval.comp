@@ -36,34 +36,31 @@ Reservoir spatialReuse(ivec2 pos, int rIdx, SurfacePoint point, float ourD) {
     uint rndState = getRandSeed(uvec3(pos, slInfo.randomSeed));
     Reservoir r = reservoirsTmp[rIdx];
 
-    if (slInfo.restirSpatialFactor > 0) {
-        // Find spatial neighbors, merge reservoirs
-        for (int i = 0; i < slInfo.restirSpatialNeighbors; i++) {
-            float frad = sqrt(nextRand(rndState)) * slInfo.restirSpatialRadius;
-            float theta = nextRand(rndState) * 2 * radians(180);
-            ivec2 reuse = clamp(pos + ivec2(frad * cos(theta), frad * sin(theta)),
-                    ivec2(0, 0), ivec2(slInfo.viewportWidth - 1, slInfo.viewportHeight - 1));
+    // Find spatial neighbors, merge reservoirs
+    for (int i = 0; i < slInfo.restirSpatialNeighbors; i++) {
+        float frad = sqrt(nextRand(rndState)) * slInfo.restirSpatialRadius;
+        float theta = nextRand(rndState) * 2 * radians(180);
+        ivec2 reuse = clamp(pos + ivec2(frad * cos(theta), frad * sin(theta)),
+                ivec2(0, 0), ivec2(slInfo.viewportWidth - 1, slInfo.viewportHeight - 1));
 
-            float reuseD = texelFetch(depth, reuse, 0).r;
-            vec3 reuseN = texelFetch(normal, reuse, 0).xyz;
+        float reuseD = texelFetch(depth, reuse, 0).r;
+        vec3 reuseN = texelFetch(normal, reuse, 0).xyz;
 
-            bool shouldReuse = abs(reuseD - ourD) < 0.01 &&
-                (ourD > 0.999 || dot(reuseN, point.N) > 0.7);
+        bool shouldReuse = abs(reuseD - ourD) < 0.01 &&
+            (ourD > 0.999 || dot(reuseN, point.N) > 0.7);
 
-            if (shouldReuse) {
-                Reservoir otherR = reservoirsTmp[reservoirIdx(reuse, slInfo.viewportWidth)];
+        if (shouldReuse) {
+            Reservoir otherR = reservoirsTmp[reservoirIdx(reuse, slInfo.viewportWidth)];
 
-                float pHats[NUM_SAMPLES_PER_RESERVOIR];
-                for (int i = 0; i < NUM_SAMPLES_PER_RESERVOIR; i++) {
-                    pHats[i] = 0;
-                    if (otherR.selected[i] >= 0) {
-                        pHats[i] = calcPHat(point, computeLightParams(pointLights[otherR.selected[i]]), slInfo, ourD);
-                    }
+            float pHats[NUM_SAMPLES_PER_RESERVOIR];
+            for (int i = 0; i < NUM_SAMPLES_PER_RESERVOIR; i++) {
+                pHats[i] = 0;
+                if (otherR.selected[i] >= 0) {
+                    pHats[i] = calcPHat(point, computeLightParams(pointLights[otherR.selected[i]]), slInfo, ourD);
                 }
-
-                mergeReservoir(rndState, r, otherR, pHats,
-                        slInfo.restirSpatialFactor * NUM_SAMPLES_PER_RESERVOIR);
             }
+
+            mergeReservoir(rndState, r, otherR, pHats, otherR.totalNumSamples);
         }
     }
 
