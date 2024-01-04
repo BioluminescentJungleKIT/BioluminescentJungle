@@ -8,6 +8,8 @@
 #include <iostream>
 #include <chrono>
 #include <numeric>
+#include <iomanip>
+#include <algorithm>
 
 inline std::ostream &operator<<(std::ostream &out, const glm::vec3 &value) {
     out << std::setprecision(4) << "(" << value.x << "," << value.y << "," << value.z << ")";
