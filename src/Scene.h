@@ -33,6 +33,12 @@ struct CameraData{
     float zfar;
 };
 
+struct LoD {
+    tinygltf::Mesh mesh;
+    float dist_min;
+    float dist_max;
+};
+
 // We may need multiple pipelines for the various parts of the different meshes in the scene.
 // The pipieline description object is used to keep track of all created pipelines.
 struct PipelineDescription {
@@ -135,11 +141,14 @@ private:
     std::map<int, int> buffersMap;
     std::map<int, int> descriptorSetsMap;
     std::map<int, std::vector<ModelTransform>> meshTransforms;
+    std::map<std::string, std::vector<LoD>> lods; // map base names to LoDs. if none exist, just use the same
     std::vector<VkDescriptorSet> bindingDescriptorSets;
     std::map<int, LoadedTexture> textures;
     std::vector<LightData> lights;
     int lightsBuffer{-1};
     std::vector<CameraData> cameras;
+
+    void addLoD(tinygltf::Mesh &mesh);
 };
 
 

@@ -63,8 +63,13 @@ Scene::Scene(VulkanDevice *device, Swapchain *swapchain, std::string filename) {
         throw std::runtime_error("[loader] ERR: " + err);
     }
 
+    for (size_t i = 0; i < model.meshes.size(); i++) {
+        addLoD(model.meshes[i]);
+    }
+
     // We precompute a list of mesh primitives to be rendered with each of the generated programs.
     for (size_t i = 0; i < model.meshes.size(); i++) {
+        // TODO for all lods
         for (size_t j = 0; j < model.meshes[i].primitives.size(); j++) {
             auto descr = getPipelineDescriptionForPrimitive(model.meshes[i].primitives[j]);
 
@@ -94,7 +99,7 @@ void Scene::recordCommandBuffer(VkCommandBuffer commandBuffer, VkDescriptorSet m
             vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->layout, 0,
                                     bindingDescriptorSets.size(), bindingDescriptorSets.data(), 0, nullptr);
 
-            for (auto &primitiveId: primitivesList) {
+            for (auto &primitiveId: primitivesList) {// TODO for all lods
                 // Bind the specific texture for each primitive
                 renderPrimitiveInstances(meshId, primitiveId, commandBuffer, programDescr, pipeline->layout);
             }
@@ -105,7 +110,7 @@ void Scene::recordCommandBuffer(VkCommandBuffer commandBuffer, VkDescriptorSet m
 void Scene::renderPrimitiveInstances(int meshId, int primitiveId, VkCommandBuffer commandBuffer,
                                      const PipelineDescription &descr, VkPipelineLayout pipelineLayout) {
     if (meshTransforms.find(meshId) == meshTransforms.end()) return; // 0 instances. skip.
-    //
+
     auto &primitive = model.meshes[meshId].primitives[primitiveId];
     if (descr.vertexTexcoordsAccessor.has_value()) {
         auto &material = model.materials[primitive.material];
@@ -234,15 +239,19 @@ void Scene::setupDescriptorSets(VkDescriptorPool descriptorPool) {
 
 RequiredDescriptors Scene::getNumDescriptors() {
     return RequiredDescriptors{
-            .requireUniformBuffers = (int) meshTransforms.size(),
-            .requireSamplers = (int) textures.size(),
+            .requireUniformBuffers = std::accumulate(lods.begin(), lods.end(), 0u,
+                                                     [](const unsigned int previous,
+                                                        const std::pair<std::string, std::vector<LoD>> &p) {
+                                                         return previous + p.second.size();
+                                                     }),
+            .requireSamplers = (unsigned int) textures.size(),
     };
 }
 
 void Scene::setupBuffers() {
     unsigned long numBuffers = model.buffers.size();
-    buffers.resize(model.buffers.size());
-    bufferMemories.resize(model.buffers.size());
+    buffers.resize(numBuffers);
+    bufferMemories.resize(numBuffers);
     for (unsigned long i = 0; i < numBuffers; ++i) {
         auto gltfBuffer = model.buffers[i];
         VkDeviceSize bufferSize = sizeof(gltfBuffer.data[0]) * gltfBuffer.data.size();
@@ -285,6 +294,8 @@ void Scene::generateTransforms(int nodeIndex, glm::mat4 oldTransform, int maxRec
     if (maxRecursion <= 0) return;
 
     auto node = model.nodes[nodeIndex];
+    if (lods[model.meshes[node.mesh].name].size() == 0) return; // is lod mesh. ignore.
+
     auto transform = VulkanHelper::transformFromMatrixOrComponents(node.matrix,
                                                                    node.scale, node.rotation, node.translation);
     auto newTransform = oldTransform * transform;
@@ -330,19 +341,22 @@ void Scene::generateTransforms(int nodeIndex, glm::mat4 oldTransform, int maxRec
 
 void Scene::setupUniformBuffers() {
     for (auto [mesh, transforms]: meshTransforms) {
-        VkBuffer buffer;
-        VkDeviceMemory bufferMemory;
-        VkDeviceSize bufferSize = sizeof(ModelTransform) * transforms.size();
-        VulkanHelper::createBuffer(*device, device->physicalDevice, bufferSize,
-                                   VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-                                   VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, buffer, bufferMemory);
-
-        VulkanHelper::uploadBuffer(*device, device->physicalDevice, bufferSize, buffer, transforms.data(),
-                                   device->commandPool, device->graphicsQueue);
-
-        buffersMap[mesh] = buffers.size();
-        buffers.push_back(buffer);
-        bufferMemories.push_back(bufferMemory);
+        for (int i = 0; i < lods[model.meshes[mesh].name].size(); i++) {
+            VkBuffer buffer;
+            VkDeviceMemory bufferMemory;
+            VkDeviceSize bufferSize = sizeof(ModelTransform) * transforms.size();
+            VulkanHelper::createBuffer(*device, device->physicalDevice, bufferSize,
+                                       VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                                       VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, buffer, bufferMemory);
+            // TODO map to lods
+            if (i == 0) {
+                VulkanHelper::uploadBuffer(*device, device->physicalDevice, bufferSize, buffer, transforms.data(),
+                                           device->commandPool, device->graphicsQueue);
+                buffersMap[mesh] = buffers.size(); //TODO include lods
+            }
+            buffers.push_back(buffer);
+            bufferMemories.push_back(bufferMemory);
+        }
     }
     if (lights.size() > 0) {
         VkBuffer buffer;
@@ -671,4 +685,36 @@ void Scene::cameraButtons(glm::vec3 &lookAt, glm::vec3 &position, glm::vec3 &up,
             far = camera.zfar;
         }
     }
+}
+
+void Scene::addLoD(tinygltf::Mesh &mesh) {
+    auto name = mesh.name;
+    LoD lod{mesh, 0, INFINITY};
+    size_t index;
+    if ((index = name.find("_LOD_")) != std::string::npos) {
+        auto basename = name.substr(0, index);
+        auto indexMin = index + 5;
+        auto indexMax = name.find('_', index + 6);
+        if (indexMax == std::string::npos) {
+            auto minString = name.substr(indexMin);
+            try {
+                lod.dist_min = stof(minString);
+            } catch (std::invalid_argument exception) {
+                std::cout << "Invalid LOD distance for mesh" << name << std::endl;
+                return;
+            }
+        } else {
+            auto minString = name.substr(indexMin, indexMax);
+            auto maxString = name.substr(indexMax + 1);
+            try {
+                lod.dist_min = stof(minString);
+                lod.dist_max = stof(maxString);
+            } catch (std::invalid_argument exception) {
+                std::cout << "Invalid LOD distance for mesh" << name << std::endl;
+                return;
+            }
+        }
+        name = basename;
+    }
+    lods[name].push_back(lod);
 }
