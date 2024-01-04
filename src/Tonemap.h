@@ -26,9 +26,9 @@ public:
 
     void updateUBOContent() override;
 
-    void disable();
+    void disable() override;
 
-    void enable();
+    void enable() override;
 
     int tonemappingMode{2};
     float exposure{0};

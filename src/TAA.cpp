@@ -22,8 +22,11 @@ void TAA::updateUBOContent() {
     ubo.height = getViewport().height;
 }
 
-TAA::TAA(VulkanDevice *pDevice, Swapchain *pSwapchain, RenderTarget *pTaaTarget)
+TAA::TAA(VulkanDevice *pDevice, Swapchain *pSwapchain)
     : PostProcessingStep(pDevice, pSwapchain, PPSTEP_RENDER_FULL_RES) {
+}
+
+void TAA::setPTarget(RenderTarget* pTaaTarget) {
     taaTarget = pTaaTarget;
 }
 

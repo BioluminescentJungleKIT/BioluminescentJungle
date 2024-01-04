@@ -26,16 +26,16 @@ enum StepFlags {
 /**
  * A helper class which manages resources for a post processing step
  */
-template<class UBOType>
-class PostProcessingStep {
+class PostProcessingStepBase {
 public:
-    PostProcessingStep(VulkanDevice *device, Swapchain *swapChain, uint32_t flags) {
+    PostProcessingStepBase(VulkanDevice *device, Swapchain *swapChain, uint32_t flags, uint32_t uboSize) {
         this->device = device;
         this->swapchain = swapChain;
         this->flags = flags;
+        this->uboSize = uboSize;
     };
 
-    ~PostProcessingStep() {
+    ~PostProcessingStepBase() {
         uniformBuffer.destroy(device);
         vkDestroyRenderPass(*device, renderPass, nullptr);
         vkDestroyDescriptorSetLayout(*device, descriptorSetLayout, nullptr);
@@ -235,7 +235,7 @@ public:
             VkDescriptorBufferInfo DescriptorBufferInfo{};
             DescriptorBufferInfo.buffer = uniformBuffer.buffers[0];
             DescriptorBufferInfo.offset = 0;
-            DescriptorBufferInfo.range = sizeof(UBOType);
+            DescriptorBufferInfo.range = uboSize;
 
             VkWriteDescriptorSet descriptorWriteBuffer{};
             descriptorWriteBuffer.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -280,16 +280,6 @@ public:
         }
     };
 
-    void setupBuffers() {
-
-        uniformBuffer.allocate(device, sizeof(UBOType), 1);
-    };
-
-    void updateBuffers() {
-        updateUBOContent();
-        uniformBuffer.update(&ubo, sizeof(UBOType), 0);
-    };
-
     void createDescriptorSets(VkDescriptorPool pool, const RenderTarget &sourceBuffer, const RenderTarget &gBuffer) {
         descriptorSets = VulkanHelper::createDescriptorSetsFromLayout(*device, pool, descriptorSetLayout,
                                                                       MAX_FRAMES_IN_FLIGHT);
@@ -305,26 +295,48 @@ public:
         };
     };
 
+    virtual void enable() {}
+    virtual void disable() {}
+
+    virtual void setupBuffers() = 0;
+    virtual void updateBuffers() = 0;
 protected:
     virtual void updateUBOContent() = 0;
 
     virtual std::string getShaderName() = 0;
 
-    UBOType ubo{};
-
     std::vector<std::vector<VkSampler>> samplers;
     std::vector<VkDescriptorSet> descriptorSets;
     Swapchain *swapchain;
     VulkanDevice *device;
-private:
     UniformBuffer uniformBuffer;
 
+private:
     VkRenderPass renderPass;
     std::unique_ptr<GraphicsPipeline> pipeline;
 
     VkDescriptorSetLayout descriptorSetLayout;
     uint32_t flags;
+    uint32_t uboSize;
 
+};
+
+template<class UBOType>
+class PostProcessingStep : public PostProcessingStepBase {
+  public:
+    PostProcessingStep(VulkanDevice *device, Swapchain *swapChain, uint32_t flags) :
+        PostProcessingStepBase(device, swapChain, flags, sizeof(UBOType))
+    { }
+
+    UBOType ubo{};
+    void setupBuffers() override final {
+        uniformBuffer.allocate(device, sizeof(UBOType), 1);
+    };
+
+    void updateBuffers() override final {
+        updateUBOContent();
+        uniformBuffer.update(&ubo, sizeof(UBOType), 0);
+    };
 };
 
 #endif /* end of include guard: POSTPROCESSINGSTEP_H */
