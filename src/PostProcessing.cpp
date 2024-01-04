@@ -12,10 +12,10 @@ PostProcessing::PostProcessing(VulkanDevice *device, Swapchain *swapChain) :
         device(device),
         swapchain(swapChain) {
 
-//    // Generate a list of steps
-//    this->steps.push_back({
-//        .algorithm = &denoiser,
-//    });
+    // Generate a list of steps
+    this->steps.push_back({
+        .algorithm = &denoiser,
+    });
 
     this->steps.push_back({
         .algorithm = &fog,
@@ -32,7 +32,10 @@ PostProcessing::PostProcessing(VulkanDevice *device, Swapchain *swapChain) :
     });
 
     // Set target now, otherwise the vector might move the target to another address if it has to grow
-    taa.setPTarget(&steps[1].target);
+    for (auto& step : steps) {
+        if (step.algorithm == &taa) taa.setPTarget(&step.target);
+    }
+
     for (auto& step : steps) {
         if (step.isFinal) continue;
         step.target.init(device, MAX_FRAMES_IN_FLIGHT);
@@ -62,7 +65,7 @@ void PostProcessing::createPipeline(bool recompileShaders) {
     }
 }
 
-void PostProcessing::recordCommandBuffer(VkCommandBuffer commandBuffer, VkFramebuffer_T *finalTarget) {
+void PostProcessing::recordCommandBuffer(VkCommandBuffer commandBuffer, VkFramebuffer finalTarget) {
     for (auto& step : steps) {
         step.algorithm->recordCommandBuffer(commandBuffer,
             step.isFinal ? finalTarget : step.target.framebuffers[swapchain->currentFrame], step.isFinal);

@@ -47,6 +47,10 @@ public:
         return &tonemap;
     }
 
+    Denoiser *getDenoiser() {
+        return &denoiser;
+    }
+
     TAA *getTAAPointer() {
         return &taa;
     }
@@ -67,6 +71,7 @@ private:
     VulkanDevice *device;
     Swapchain *swapchain;
 
+    Denoiser denoiser;
     GlobalFog fog;
     Tonemap tonemap;
     TAA taa;

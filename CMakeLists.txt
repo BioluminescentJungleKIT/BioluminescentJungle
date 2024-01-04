@@ -53,6 +53,7 @@ add_executable(Jungle src/main.cpp
         src/PostProcessing.cpp
         src/PostProcessingStep.h
         src/GlobalFog.cpp
+        src/Denoiser.cpp
 )
 
 target_include_directories(Jungle PRIVATE lib/imgui lib/imgui/backends lib/imgui/misc/cpp/)
