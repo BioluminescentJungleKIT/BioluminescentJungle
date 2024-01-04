@@ -21,6 +21,8 @@ struct LightingBuffer {
     glm::int32 randomSeed;
     glm::float32 restirTemporalFactor;
     glm::float32 restirSpatialFactor;
+    glm::int32 restirSpatialRadius;
+    glm::int32 restirSpatialNeighbors;
 };
 
 struct ComputeParamsBuffer {
@@ -471,6 +473,8 @@ void DeferredLighting::updateBuffers(glm::mat4 vp, glm::vec3 cameraPos, glm::vec
     buffer.randomSeed = std::uniform_int_distribution<glm::uint32>(0, UINT32_MAX)(rndGen);
     buffer.restirTemporalFactor = restirTemporalFactor;
     buffer.restirSpatialFactor = restirSpatialFactor;
+    buffer.restirSpatialRadius = restirSpatialRadius;
+    buffer.restirSpatialNeighbors = restirSpatialNeighbors;
     lightUBO.update(&buffer, sizeof(buffer), swapchain->currentFrame);
 }
 

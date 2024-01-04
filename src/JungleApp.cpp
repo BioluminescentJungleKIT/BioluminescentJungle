@@ -108,6 +108,8 @@ void JungleApp::drawImGUI() {
                          "ReSTIR\0Bruteforce\0BVH only\0\0");
             ImGui::SliderFloat("ReSTIR Temporal Factor", &lighting->restirTemporalFactor, 0.0f, 50.0f);
             ImGui::SliderFloat("ReSTIR Spatial Factor", &lighting->restirSpatialFactor, 0.0f, 50.0f);
+            ImGui::SliderInt("ReSTIR Spatial Radius", &lighting->restirSpatialRadius, 0, 50);
+            ImGui::SliderInt("ReSTIR Spatial Neighbors", &lighting->restirSpatialNeighbors, 0, 20);
 
             ImGui::Checkbox("Show Light BBoxes", (bool *) &lighting->debug.showLightBoxes);
             ImGui::SliderFloat("Light bbox log size", &lighting->lightRadiusLog, -5.f, 5.f);

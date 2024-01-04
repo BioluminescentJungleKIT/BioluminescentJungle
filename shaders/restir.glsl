@@ -2,7 +2,7 @@
 
 // NUM_SAMPLES_PER_RESERVOIR must also be adjusted in Lighting.cpp.
 // The value there must be >= than the value used by the shader, otherwise we don't have enough storage space.
-#define NUM_SAMPLES_PER_RESERVOIR 1
+#define NUM_SAMPLES_PER_RESERVOIR 4
 #define NUM_SAMPLES_PER_PIXEL 16
 
 // Very simple pseudo-random number generators.
@@ -66,13 +66,15 @@ void addSample(inout Reservoir r, inout uint randState, int id, float w, float p
     }
 }
 
-void mergeReservoir(inout uint randState, inout Reservoir dest, Reservoir src, float[NUM_SAMPLES_PER_RESERVOIR] correctedPHats, float maxPC) {
+void mergeReservoir(inout uint randState, inout Reservoir dest, Reservoir src, float[NUM_SAMPLES_PER_RESERVOIR] correctedPHats,
+        float maxSamplesTake)
+{
     if (src.totalNumSamples <= 0) {
         return;
     }
 
     // Correction factor to make sure that the old samples don't outweigh the new ones too much.
-    const float f = min(dest.totalNumSamples * maxPC, src.totalNumSamples) / src.totalNumSamples;
+    const float f = min(maxSamplesTake, src.totalNumSamples) / src.totalNumSamples;
     for (int i = 0; i < NUM_SAMPLES_PER_RESERVOIR; i++) {
         if (src.selected[i] >= 0) {
             float w = correctedPHats[i] / src.pHat[i] * src.sumW[i] * f;

@@ -11,6 +11,8 @@ struct SceneLightInfo {
     int randomSeed;
     float restirTemporalFactor;
     float restirSpatialFactor;
+    int restirSpatialRadius;
+    int restirSpatialNeighbors;
 };
 
 vec3 calculatePosition(float depth, vec2 fragCoord, in SceneLightInfo info) {

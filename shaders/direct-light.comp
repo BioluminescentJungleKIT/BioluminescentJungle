@@ -184,24 +184,35 @@ void temporalReuse(ivec2 pos, SurfacePoint point, float depth) {
         if (all(greaterThanEqual(uv, ivec2(0,0))) && all(lessThan(uv, resolution))) {
             // TODO: reconstruct positions, that should give even more precise results
             float prevDepth = texelFetch(prevDepth, uv, 0).r;
+            bool allowReuse = false;
+
+
             if (abs(prevDepth - depth) < 0.01) {
-                vec3 prevNormal = texelFetch(prevNormal, uv, 0).xyz;
-                if (dot(prevNormal, point.N) > 0.5) {
-                    vec3 prevAlbedo = texelFetch(prevAlbedo, uv, 0).rgb;
-                    prevAlbedo -= point.albedo;
-                    if (dot(prevAlbedo, prevAlbedo) < 0.01) {
-                        // We can reuse samples!
-                        int prevRIdx = reservoirIdx(uv, slInfo.viewportWidth);
-                        prevRIdx = rIdx;
-
-                        float pHats[NUM_SAMPLES_PER_RESERVOIR];
-                        for (int i = 0; i < NUM_SAMPLES_PER_RESERVOIR; i++) {
-                            pHats[i] = calcPHat(point, computeLightParams(pointLights[reservoirsOld[prevRIdx].selected[i]]), slInfo, depth);
+                if (prevDepth > 0.999 && depth > 0.999) {
+                    allowReuse = true;
+                } else {
+                    vec3 prevNormal = texelFetch(prevNormal, uv, 0).xyz;
+                    if (dot(prevNormal, point.N) > 0.5) {
+                        vec3 prevAlbedo = texelFetch(prevAlbedo, uv, 0).rgb;
+                        prevAlbedo -= point.albedo;
+                        if (dot(prevAlbedo, prevAlbedo) < 0.01) {
+                            allowReuse = true;
                         }
-
-                        mergeReservoir(rndState, r, reservoirsOld[rIdx], pHats, slInfo.restirTemporalFactor);
                     }
                 }
+            }
+
+            if (allowReuse) {
+                // We can reuse samples!
+                int prevRIdx = reservoirIdx(uv, slInfo.viewportWidth);
+                prevRIdx = rIdx;
+
+                float pHats[NUM_SAMPLES_PER_RESERVOIR];
+                for (int i = 0; i < NUM_SAMPLES_PER_RESERVOIR; i++) {
+                    pHats[i] = calcPHat(point, computeLightParams(pointLights[reservoirsOld[prevRIdx].selected[i]]), slInfo, depth);
+                }
+
+                mergeReservoir(rndState, r, reservoirsOld[rIdx], pHats, slInfo.restirTemporalFactor * r.totalNumSamples);
             }
         }
     }
