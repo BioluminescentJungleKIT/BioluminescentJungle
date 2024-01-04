@@ -33,9 +33,9 @@ vec3 calculatePosition() {
 
     // Convert screen coordinates to normalized device coordinates (NDC)
     vec4 ndc = vec4(
-    (gl_FragCoord.x / info.viewportWidth - 0.5) * 2.0,
-    (gl_FragCoord.y / info.viewportHeight - 0.5) * 2.0,
-    depth, 1.0);
+            (gl_FragCoord.x / info.viewportWidth - 0.5) * 2.0,
+            (gl_FragCoord.y / info.viewportHeight - 0.5) * 2.0,
+            depth, 1.0);
 
     // Convert NDC throuch inverse clip coordinates to view coordinates
     vec4 clip = info.inverseMVP * ndc;
@@ -91,12 +91,19 @@ void main() {
     } else if (debug.compositionMode == 1) {
         outColor = vec4(texelFetch(albedo, ivec2(gl_FragCoord), 0).rgb, 1.0);
     } else if (debug.compositionMode == 2) {
-        outColor = vec4(vec3(texelFetch(depth, ivec2(gl_FragCoord), 0).r), 1.0);
+        outColor = vec4(vec3(pow(texelFetch(depth, ivec2(gl_FragCoord), 0).r, 70)), 1.0);
     } else if (debug.compositionMode == 3) {
         outColor = vec4(calculatePosition(), 1.0);
     } else if (debug.compositionMode == 4) {
         outColor = vec4(texelFetch(normal, ivec2(gl_FragCoord), 0).xyz, 1.0);
     } else if (debug.compositionMode == 5) {
         outColor = vec4(texelFetch(motion, ivec2(gl_FragCoord), 0).rg, 0.0, 1.0) * 100;
+    } else if (debug.compositionMode == 6) {
+        vec4 normal = texelFetch(normal, ivec2(gl_FragCoord), 0);
+        if (normal.a > 0) {
+            outColor = vec4(1.0);
+        } else {
+            outColor = vec4(0.0);
+        }
     }
 }

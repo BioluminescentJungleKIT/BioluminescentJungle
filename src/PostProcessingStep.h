@@ -305,8 +305,8 @@ protected:
     std::vector<std::vector<VkSampler>> samplers;
     std::vector<VkDescriptorSet> descriptorSets;
     Swapchain *swapchain;
-private:
     VulkanDevice *device;
+private:
     UniformBuffer uniformBuffer;
 
     VkRenderPass renderPass;

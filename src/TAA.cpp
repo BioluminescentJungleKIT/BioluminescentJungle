@@ -1,9 +1,6 @@
 #include "TAA.h"
-#include "Pipeline.h"
+#include "PostProcessingStep.h"
 #include "Swapchain.h"
-#include "VulkanHelper.h"
-#include "imgui.h"
-#include "imgui_impl_vulkan.h"
 #include <vulkan/vulkan_core.h>
 
 std::string TAA::getShaderName() {
@@ -38,9 +35,16 @@ TAA::getAdditionalSamplers(std::vector<VkWriteDescriptorSet> &descriptorWrites,
                            std::vector<VkDescriptorImageInfo> &imageInfos, int frameIndex,
                            const RenderTarget &sourceBuffer) {
     VkDescriptorImageInfo imageInfo{};
-    // TODO fix validation error, because it is actually VK_IMAGE_LAYOUT_UNDEFINED for the first frame
+
+    // On the first frame, the image is in VK_IMAGE_LAYOUT_UNDEFINED.
+    // We force transition to VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL to avoid validation errors
+    int prevIdx = (frameIndex + MAX_FRAMES_IN_FLIGHT - 1) % MAX_FRAMES_IN_FLIGHT;
+    // Format isn't important for this call
+    device->transitionImageLayout(taaTarget->images[prevIdx].at(0), VK_FORMAT_R8G8B8A8_SRGB,
+        VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+
     imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    imageInfo.imageView = taaTarget->imageViews[(frameIndex + MAX_FRAMES_IN_FLIGHT - 1) % MAX_FRAMES_IN_FLIGHT].at(0);
+    imageInfo.imageView = taaTarget->imageViews[prevIdx].at(0);
     imageInfo.sampler = samplers[frameIndex][5];
     imageInfos.push_back(imageInfo);
 

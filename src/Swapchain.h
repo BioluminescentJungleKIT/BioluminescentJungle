@@ -25,12 +25,11 @@ class RenderTarget {
 
     // A list of image views attached to the corresponding framebuffer
     std::vector<std::vector<VkImageView>> imageViews;
+    std::vector<std::vector<VkImage>> images;
 
   private:
     VulkanDevice *device;
     int nrFrames;
-
-    std::vector<VkImage> images;
     std::vector<VkDeviceMemory> deviceMemories;
 
     int framesInFlight;

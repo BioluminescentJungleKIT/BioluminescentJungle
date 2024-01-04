@@ -3,6 +3,7 @@
 #include <iostream>
 #include <set>
 #include <GLFW/glfw3.h>
+#include <vulkan/vulkan_core.h>
 #include "VulkanHelper.h"
 
 #ifdef NDEBUG
@@ -469,6 +470,12 @@ void VulkanDevice::transitionImageLayout(VkImage image,
 
         sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
         destinationStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+    } else if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED &&
+               newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
+        barrier.srcAccessMask = 0;
+        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+        destinationStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
     } else if (oldLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL &&
                newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
     {
@@ -501,4 +508,22 @@ void VulkanDevice::createCommandPool() {
     poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
     poolInfo.queueFamilyIndex = chosenQueues.graphicsFamily.value();
     VK_CHECK_RESULT(vkCreateCommandPool(device, &poolInfo, nullptr, &commandPool))
+}
+
+VkDescriptorSetLayout VulkanDevice::createDescriptorSetLayout(
+    const std::vector<VkDescriptorSetLayoutBinding>& bindings)
+{
+    VkDescriptorSetLayoutCreateInfo layoutInfo{};
+    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    layoutInfo.bindingCount = bindings.size();
+    layoutInfo.pBindings = bindings.data();
+
+    VkDescriptorSetLayout layout;
+    VK_CHECK_RESULT(vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &layout));
+    return layout;
+}
+
+void VulkanDevice::writeDescriptorSets(const std::vector<VkWriteDescriptorSet>& sets)
+{
+    vkUpdateDescriptorSets(device, sets.size(), sets.data(), 0, nullptr);
 }

@@ -28,7 +28,7 @@ void JungleApp::initVulkan(const std::string &sceneName, bool recompileShaders) 
     lighting = std::make_unique<DeferredLighting>(&device, swapchain.get());
     lighting->setup(recompileShaders, &scene, mvpSetLayout);
 
-    postprocessing = std::make_unique<PostProcessing>(&device, swapchain.get(), &nearPlane, &farPlane);
+    postprocessing = std::make_unique<PostProcessing>(&device, swapchain.get());
     lighting->fogAbsorption = &postprocessing->getFogPointer()->absorption;
     postprocessing->setupRenderStages(recompileShaders);
 
@@ -71,6 +71,10 @@ void JungleApp::mainLoop() {
         glfwPollEvents();
         cameraMotion();
         drawFrame();
+
+        if constexpr (RATELIMIT > 0) {
+            usleep(1e6 / RATELIMIT);
+        }
     }
 
     vkDeviceWaitIdle(device.device);
@@ -92,7 +96,7 @@ void JungleApp::drawImGUI() {
         }
         if (ImGui::CollapsingHeader("Debug Settings")) {
             ImGui::Combo("G-Buffer Visualization", &lighting->debug.compositionMode,
-                         "None\0Albedo\0Depth\0Position\0Normal\0Motion\0\0");
+                         "None\0Albedo\0Depth\0Position\0Normal\0Motion\0SSR Region\0\0");
             ImGui::Checkbox("Show Light BBoxes", (bool *) &lighting->debug.showLightBoxes);
             ImGui::SliderFloat("Light bbox log size", &lighting->lightRadiusLog, -5.f, 5.f);
         }
@@ -116,6 +120,10 @@ void JungleApp::drawImGUI() {
         if (ImGui::CollapsingHeader("Scene Settings")) {
             ImGui::Checkbox("Spin", &spinScene);
             ImGui::SliderFloat("Fixed spin", &fixedRotation, 0.0f, 360.0f);
+            ImGui::SliderFloat("SSR strength", &postprocessing->getFogPointer()->ssrStrength, 0, 1);
+            ImGui::SliderFloat("SSR Edge Smoothing", &postprocessing->getFogPointer()->ssrEdgeSmoothing, 0, 4);
+            ImGui::SliderFloat("SSR Hit Threshold", &postprocessing->getFogPointer()->ssrHitThreshold, 0, 0.01, "%.6f");
+            ImGui::SliderInt("SSR Raymarch Steps", &postprocessing->getFogPointer()->ssrRaySteps, 1, 1000);
         }
         if (ImGui::CollapsingHeader("Fog Settings")) {
             ImGui::ColorEdit3("Color", &postprocessing->getFogPointer()->color.r);
@@ -131,6 +139,7 @@ void JungleApp::drawImGUI() {
             ImGui::Combo("Tonemapping", &postprocessing->getTonemappingPointer()->tonemappingMode,
                          "None\0Hable\0AgX\0\0");
         }
+        scene.drawImGUIMaterialSettings();
     }
     ImGui::End();
 
@@ -446,6 +455,7 @@ void JungleApp::updateUniformBuffers(uint32_t currentImage) {
     mvpUBO.copyTo(lastmvpUBO, (currentImage + MAX_FRAMES_IN_FLIGHT - 1) % MAX_FRAMES_IN_FLIGHT, currentImage,
                   sizeof(ubo));
     mvpUBO.update(&ubo, sizeof(ubo), currentImage);
+    scene.updateBuffers();
     lighting->updateBuffers(ubo.proj * ubo.view, cameraPosition, cameraUpVector);
 
     // TODO: is there a better way to integrate this somehow? Too lazy to skip the tonemapping render pass completely.
@@ -454,6 +464,8 @@ void JungleApp::updateUniformBuffers(uint32_t currentImage) {
     } else {
         postprocessing->enable();
     }
+
+    postprocessing->getFogPointer()->updateCamera(ubo.view, ubo.proj, nearPlane, farPlane);
     postprocessing->updateBuffers();
 }
 
@@ -547,12 +559,11 @@ void JungleApp::setupScene(const std::string &sceneName) {
     scene = Scene(&device, swapchain.get(), sceneName);
     scene.setupBuffers();
     scene.setupTextures();
-    scene.computeDefaultCameraPos(cameraFinalLookAt, cameraFinalPosition, cameraFOVY);
+    scene.computeDefaultCameraPos(cameraFinalLookAt, cameraFinalPosition, cameraUpVector, cameraFOVY, nearPlane, farPlane);
 }
 
 void JungleApp::handleMotion() {
     glm::vec3 viewDir = cameraFinalLookAt - cameraFinalPosition;
-
     glm::vec3 fwd = glm::normalize(glm::vec3(viewDir.x, viewDir.y, 0.0));
     glm::vec3 side = glm::cross(fwd, glm::vec3(0.0, 0.0, 1.0));
 
@@ -618,6 +629,8 @@ void JungleApp::handleGLFWMouse(GLFWwindow *window, double x, double y) {
 
         // Button is pressed, we have previous values => compute change in the target
         glm::vec3 viewDir = glm::normalize(app->cameraFinalLookAt - app->cameraFinalPosition);
+        dx *= std::copysign(1, app->cameraUpVector.z);
+        dy *= std::copysign(1, app->cameraUpVector.z);
 
         float yaw = glm::degrees(atan2(viewDir.y, viewDir.x));
         float pitch = glm::degrees(asin(viewDir.z));
