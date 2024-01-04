@@ -66,7 +66,7 @@ class VulkanDevice
     void endSingleTimeCommands(VkCommandBuffer commandBuffer);
 
     void transitionImageLayout(VkImage image, VkFormat format,
-        VkImageLayout oldLayout, VkImageLayout newLayout);
+        VkImageLayout oldLayout, VkImageLayout newLayout, VkImageAspectFlags aspectFlags = VK_IMAGE_ASPECT_COLOR_BIT);
 
     // Helper functions
     VkDescriptorSetLayout createDescriptorSetLayout(

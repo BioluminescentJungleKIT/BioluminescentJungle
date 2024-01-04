@@ -54,7 +54,6 @@ class DeferredLighting {
     std::vector<VkDescriptorSet> computeSets;
 
     std::vector<std::vector<VkImageMemoryBarrier>> preComputeBarriers;
-    std::vector<std::vector<VkBufferMemoryBarrier>> preRestirEvalBarriers;
     std::vector<std::vector<VkImageMemoryBarrier>> postComputeBarriers;
     void setupBarriers();
 
@@ -86,6 +85,8 @@ class DeferredLighting {
     float lightBleed{0.1};
     float scatterStrength{0.05};
     int computeLightAlgo = 0;
+    float restirTemporalFactor = 5;
+    float restirSpatialFactor = 1;
 
     bool useRaytracingPipeline() {
         return debug.compositionMode == 0;
@@ -99,13 +100,28 @@ class DeferredLighting {
         return !useRaytracingPipeline() && !useRasterPipeline();
     }
 
+    inline int lastFrame() {
+        return lastFrame(swapchain->currentFrame);
+    }
+
+    inline int lastFrame(int idx) {
+        return (idx + MAX_FRAMES_IN_FLIGHT - 1) % MAX_FRAMES_IN_FLIGHT;
+    }
+
+    inline int curFrame() {
+        return swapchain->currentFrame;
+    }
+
   private:
     VulkanDevice *device;
     Swapchain *swapchain;
     UniformBuffer debugUBO;
     UniformBuffer lightUBO;
     UniformBuffer computeParamsUBO;
+
+    // *2 for temporary reservoirs while using temporal and spatial reuse
     std::array<DataBuffer, MAX_FRAMES_IN_FLIGHT> reservoirs;
+    std::array<DataBuffer, MAX_FRAMES_IN_FLIGHT> tmpReservoirs;
 
     std::mt19937 rndGen{std::random_device{}()};
 

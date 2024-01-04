@@ -22,11 +22,23 @@ layout(std140, set = 1, binding = 3) uniform Params {
     int nTriangles;
 };
 
-layout(std430, set = 1, binding = 6) readonly buffer ReservoirsIn {
-    Reservoir reservoirs[];
+layout(std430, set = 1, binding = 7) readonly buffer ReservoirsTmp {
+    Reservoir reservoirsTmp[];
 };
 
+layout(std430, set = 1, binding = 8) writeonly buffer ReservoirsOut {
+    Reservoir reservoirsOut[];
+};
+
+
 layout (local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+
+Reservoir spatialReuse(ivec2 pos, int rIdx, SurfacePoint point, float depth) {
+    Reservoir r = reservoirsTmp[rIdx];
+    // TODO: Spatial reuse
+    reservoirsOut[rIdx] = r;
+    return r;
+}
 
 void main() {
     ivec2 pos = ivec2(gl_GlobalInvocationID.xy);
@@ -42,10 +54,13 @@ void main() {
     point.worldPos = calculatePosition(depth, pos, slInfo);
     point.albedo = texelFetch(albedo, pos, 0).rgb;
     point.N = texelFetch(normal, pos, 0).xyz;
-
     vec3 finalColor = vec3(0, 0, 0);
+
+    Reservoir r = spatialReuse(pos, rIdx, point, depth);
+
+
     for (int i = 0; i < NUM_SAMPLES_PER_RESERVOIR; i++) {
-        int sel = reservoirs[rIdx].selected[i];
+        int sel = r.selected[i];
 
 //        finalColor[sel] += 0.5;
 
@@ -55,10 +70,9 @@ void main() {
             float f = evalPointLightStrength(point, light);
             vec4 fog = evalFog(point, light, slInfo);
 
-            float pHat = calcPHatPartial(fog, f, depth);
-
             // Equation (6) from the ReSTIR paper
-            float W = 1.0 / (pHat * reservoirs[rIdx].totalNumSamples) * reservoirs[rIdx].sumW[i];
+            float W = 1.0 / (r.pHat[i] * r.totalNumSamples) * r.sumW[i];
+
             finalColor += W * (f * fog.w * light.intensity * point.albedo + fog.rgb);
 
             // TODO: should the fog be in or out of the W factor? Visually, outside seems better, but is this

@@ -18,12 +18,14 @@ class DataBuffer {
         uploadData(device, (void*)data.data(), sizeof(T) * data.size(), usage, properties);
     }
 
-    VkDescriptorBufferInfo getDescriptor() {
-        return VkDescriptorBufferInfo {
+    VkDescriptorBufferInfo& getDescriptor() {
+        this->descriptor = VkDescriptorBufferInfo {
             .buffer = buffer,
             .offset = 0,
             .range = size,
         };
+
+        return descriptor;
     }
 
     void destroy(VulkanDevice* device);
@@ -31,4 +33,7 @@ class DataBuffer {
     VkBuffer buffer = VK_NULL_HANDLE;
     VkDeviceMemory memory = VK_NULL_HANDLE;
     size_t size = 0;
+
+  private:
+    VkDescriptorBufferInfo descriptor;
 };

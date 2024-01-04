@@ -30,9 +30,18 @@ layout(std140, set = 1, binding = 5) readonly buffer BVHIn {
     BVHNode bvh[];
 };
 
-layout(std430, set = 1, binding = 6) writeonly buffer ReservoirsIn {
-    Reservoir reservoirs[];
+layout(std430, set = 1, binding = 6) readonly buffer ReservoirsOld {
+    Reservoir reservoirsOld[];
 };
+
+layout(std430, set = 1, binding = 7) writeonly buffer ReservoirsTmp {
+    Reservoir reservoirsTmp[];
+};
+
+layout(set = 2, binding = 0) uniform sampler2D prevAlbedo;
+layout(set = 2, binding = 1) uniform sampler2D prevDepth;
+layout(set = 2, binding = 2) uniform sampler2D prevNormal;
+layout(set = 2, binding = 3) uniform sampler2D prevMotion;
 
 #define MAX_STACK_SIZE 32
 
@@ -69,7 +78,7 @@ bool testShadowAABB(SurfacePoint point, vec3 lightPos) {
     stack[0] = 0;
     int cur = 0;
 
-    const vec2 tmimaxInit = vec2(0.0, len - 0.03);
+    const vec2 tmimaxInit = vec2(0.1, len - 0.03);
 
     // Recursive test in the BVH
     while (cur >= 0) {
@@ -131,8 +140,7 @@ vec3 naiveLightingBVH(SurfacePoint point, float depth) {
 }
 
 // Restir Step 1: fill reservoirs for each pixel
-void fillReservoir(ivec2 pos, SurfacePoint point, float depth) {
-    uint rndState = getRandSeed(uvec3(pos, slInfo.randomSeed));
+Reservoir fillReservoir(ivec2 pos, SurfacePoint point, float depth, inout uint rndState) {
 //    uint rndState = getRandSeed(uvec3(pos, 0));
     Reservoir r = createEmptyReservoir();
     int rIdx = reservoirIdx(pos, slInfo.viewportWidth);
@@ -143,7 +151,7 @@ void fillReservoir(ivec2 pos, SurfacePoint point, float depth) {
 
         float pHat = calcPHat(point, params, slInfo, depth);
         float w = pHat * nPointLights; // (pHat / p)
-        addSample(r, rndState, lightIdx, w);
+        addSample(r, rndState, lightIdx, w, pHat);
     }
 
     // Test visibility and reject samples if that is the case.
@@ -152,11 +160,53 @@ void fillReservoir(ivec2 pos, SurfacePoint point, float depth) {
         if (depth <= 0.999 && testShadowAABB(point, pointLights[r.selected[i]].position.xyz)) {
             // Lies in shadow => ignore
             r.selected[i] = -1;
-            r.sumW[i] = 0;
+            r.pHat[i] = 0;
         }
     }
 
-    reservoirs[rIdx] = r;
+    return r;
+}
+
+void temporalReuse(ivec2 pos, SurfacePoint point, float depth) {
+    uint rndState = getRandSeed(uvec3(pos, slInfo.randomSeed));
+    Reservoir r = fillReservoir(pos, point, depth, rndState);
+
+    int rIdx = reservoirIdx(pos, slInfo.viewportWidth);
+
+    if (slInfo.restirTemporalFactor > 0) {
+        ivec2 resolution = ivec2(slInfo.viewportWidth, slInfo.viewportHeight);
+
+        vec2 motion = texelFetch(motion, pos, 0).xy * 0.5 * vec2(resolution);
+        ivec2 uv = ivec2(pos + motion);
+
+        bool enableTemporalReuse = false;
+
+        if (all(greaterThanEqual(uv, ivec2(0,0))) && all(lessThan(uv, resolution))) {
+            // TODO: reconstruct positions, that should give even more precise results
+            float prevDepth = texelFetch(prevDepth, uv, 0).r;
+            if (abs(prevDepth - depth) < 0.01) {
+                vec3 prevNormal = texelFetch(prevNormal, uv, 0).xyz;
+                if (dot(prevNormal, point.N) > 0.5) {
+                    vec3 prevAlbedo = texelFetch(prevAlbedo, uv, 0).rgb;
+                    prevAlbedo -= point.albedo;
+                    if (dot(prevAlbedo, prevAlbedo) < 0.01) {
+                        // We can reuse samples!
+                        int prevRIdx = reservoirIdx(uv, slInfo.viewportWidth);
+                        prevRIdx = rIdx;
+
+                        float pHats[NUM_SAMPLES_PER_RESERVOIR];
+                        for (int i = 0; i < NUM_SAMPLES_PER_RESERVOIR; i++) {
+                            pHats[i] = calcPHat(point, computeLightParams(pointLights[reservoirsOld[prevRIdx].selected[i]]), slInfo, depth);
+                        }
+
+                        mergeReservoir(rndState, r, reservoirsOld[rIdx], pHats, slInfo.restirTemporalFactor);
+                    }
+                }
+            }
+        }
+    }
+
+    reservoirsTmp[rIdx] = r;
 }
 
 void main()
@@ -175,7 +225,7 @@ void main()
 
     vec3 color = vec3(1, 0, 0);
     if (slInfo.lightAlgo == 0) {
-        fillReservoir(pos, point, depth);
+        temporalReuse(pos, point, depth);
         return;
     } else if (slInfo.lightAlgo == 1) {
         color = naiveLighting(point, depth);

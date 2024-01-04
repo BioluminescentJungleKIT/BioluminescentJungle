@@ -9,6 +9,8 @@ struct SceneLightInfo {
     float bleed;
     int lightAlgo;
     int randomSeed;
+    float restirTemporalFactor;
+    float restirSpatialFactor;
 };
 
 vec3 calculatePosition(float depth, vec2 fragCoord, in SceneLightInfo info) {
