@@ -119,6 +119,15 @@ void JungleApp::drawImGUI() {
             ImGui::SliderFloat("TAA alpha", &postprocessing->getTAAPointer()->alpha, 0.f, 1.f);
             ImGui::Combo("TAA Neighborhood Clamping", &postprocessing->getTAAPointer()->mode,
                          "Off\0Min-Max\0Moment-Based\0\0");
+
+            ImGui::SliderInt("Denoiser iterations",
+                &postprocessing->getDenoiser()->iterationCount, 0, 20);
+            ImGui::SliderFloat("Denoiser Albedo Sigma",
+                &postprocessing->getDenoiser()->ubo.albedoSigma, 0, 1);
+            ImGui::SliderFloat("Denoiser Normal Sigma",
+                &postprocessing->getDenoiser()->ubo.normalSigma, 0, 1);
+            ImGui::SliderFloat("Denoiser Position Sigma",
+                &postprocessing->getDenoiser()->ubo.positionSigma, 0, 1);
         }
         if (ImGui::CollapsingHeader("Camera Settings")) {
             ImGui::DragFloatRange2("Clipping Planes", &nearPlane, &farPlane, 0.07f, .01f, 100000.f);
@@ -479,6 +488,7 @@ void JungleApp::updateUniformBuffers(uint32_t currentImage) {
     }
 
     postprocessing->getFogPointer()->updateCamera(ubo.view, ubo.proj, nearPlane, farPlane);
+    postprocessing->getDenoiser()->updateCamera(ubo.proj);
     postprocessing->updateBuffers();
 }
 

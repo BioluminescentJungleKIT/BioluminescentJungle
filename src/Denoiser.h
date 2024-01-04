@@ -9,17 +9,41 @@
 
 
 struct DenoiserUBO {
-    glm::int32 enabled = 1;
+    // Stupid alignment rules ...
+    glm::vec4 weights[25];
+    glm::ivec4 offsets[25];
+    glm::mat4 inverseP;
+    glm::int32 iterationCount = 3;
+
+    glm::float32 albedoSigma = 0.1;
+    glm::float32 normalSigma = 0.1;
+    glm::float32 positionSigma = 0.1;
 };
 
 class Denoiser : public PostProcessingStep<DenoiserUBO> {
 public:
     Denoiser(VulkanDevice *pDevice, Swapchain *pSwapchain);
+    ~Denoiser();
     std::string getShaderName() override;
     void updateUBOContent() override;
 
-    void denoiserImGUI();
+    void updateCamera(glm::mat4 projection);
 
     void disable() override;
     void enable() override;
+
+    void createRenderPass() override;
+    void handleResize(const RenderTarget& sourceBuffer, const RenderTarget& gBuffer) override;
+    RequiredDescriptors getNumDescriptors() override;
+    void createDescriptorSets(VkDescriptorPool pool,
+        const RenderTarget& sourceBuffer, const RenderTarget& gBuffer) override;
+    void recordCommandBuffer( VkCommandBuffer commandBuffer, VkFramebuffer target, bool renderImGUI) override;
+
+    RenderTarget tmpTarget;
+    std::vector<VkDescriptorSet> tmpTargetSets;
+
+    int32_t iterationCount = 3;
+    bool enabled = true;
+
+    void recreateTmpTargets();
 };

@@ -14,13 +14,17 @@ struct SceneLightInfo {
     int restirSpatialNeighbors;
 };
 
-vec3 calculatePosition(float depth, vec2 fragCoord, in SceneLightInfo info) {
+vec3 calculatePositionFromUV(float depth, vec2 uv, mat4 inverseVP) {
     // Convert screen coordinates to normalized device coordinates (NDC)
-    vec4 ndc = vec4((fragCoord / vec2(info.viewportWidth, info.viewportHeight) - 0.5) * 2.0, depth, 1.0);
+    vec4 ndc = vec4((uv - 0.5) * 2.0, depth, 1.0);
 
     // Convert NDC throuch inverse clip coordinates to view coordinates
-    vec4 clip = info.inverseMVP * ndc;
+    vec4 clip = inverseVP * ndc;
     return (clip / clip.w).xyz;
+}
+
+vec3 calculatePosition(float depth, vec2 fragCoord, in SceneLightInfo info) {
+    return calculatePositionFromUV(depth, fragCoord / vec2(info.viewportWidth, info.viewportHeight), info.inverseMVP);
 }
 
 struct SurfacePoint {

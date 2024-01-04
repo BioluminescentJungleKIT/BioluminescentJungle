@@ -76,7 +76,7 @@ public:
         this->pipeline = std::make_unique<GraphicsPipeline>(device, renderPass, 0, params);
     };
 
-    void createRenderPass() {
+    virtual void createRenderPass() {
         VkAttachmentDescription colorAttachment{};
         colorAttachment.format = (flags & PPSTEP_RENDER_LAST) ? swapchain->swapChainImageFormat : POST_PROCESSING_FORMAT;
         colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
@@ -143,7 +143,7 @@ public:
         return renderPass;
     }
 
-    void recordCommandBuffer(VkCommandBuffer commandBuffer, VkFramebuffer target, bool renderImGUI) {
+    void runRenderPass(VkCommandBuffer commandBuffer, VkFramebuffer target, VkDescriptorSet dSet, bool renderImGUI) {
         VkRenderPassBeginInfo renderPassInfo{};
         renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
         renderPassInfo.renderPass = renderPass;
@@ -157,9 +157,8 @@ public:
         VulkanHelper::setFullViewportScissor(commandBuffer, getViewport());
 
         vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->pipeline);
-
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                pipeline->layout, 0, 1, &descriptorSets[swapchain->currentFrame], 0, nullptr);
+                                pipeline->layout, 0, 1, &dSet, 0, nullptr);
         vkCmdDraw(commandBuffer, 6, 1, 0, 0);
 
         if (renderImGUI) {
@@ -168,7 +167,11 @@ public:
         }
 
         vkCmdEndRenderPass(commandBuffer);
-    };
+    }
+
+    virtual void recordCommandBuffer(VkCommandBuffer commandBuffer, VkFramebuffer target, bool renderImGUI) {
+        runRenderPass(commandBuffer, target, descriptorSets[swapchain->currentFrame], renderImGUI);
+    }
 
     void createDescriptorSetLayout() {
         VkDescriptorSetLayoutBinding samplerLayoutBinding{};
@@ -205,8 +208,8 @@ public:
 
     };
 
-    void handleResize(const RenderTarget &sourceBuffer, const RenderTarget &gBuffer) {
-        updateSamplerBindings(sourceBuffer, gBuffer);
+    virtual void handleResize(const RenderTarget &sourceBuffer, const RenderTarget &gBuffer) {
+        updateSamplerBindings(sourceBuffer, gBuffer, descriptorSets);
         createPipeline(false);
     };
 
@@ -215,7 +218,8 @@ public:
                           std::vector<VkDescriptorImageInfo> &imageInfos, int frameIndex,
                           const RenderTarget &sourceBuffer) {}
 
-    void updateSamplerBindings(const RenderTarget &sourceBuffer, const RenderTarget &gBuffer) {
+    void updateSamplerBindings(const RenderTarget &sourceBuffer, const RenderTarget &gBuffer,
+        std::vector<VkDescriptorSet>& dsets) {
         for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
             VkDescriptorImageInfo imageInfo{};
             imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
@@ -224,7 +228,7 @@ public:
 
             VkWriteDescriptorSet descriptorWriteSampler{};
             descriptorWriteSampler.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            descriptorWriteSampler.dstSet = descriptorSets[i];
+            descriptorWriteSampler.dstSet = dsets[i];
             descriptorWriteSampler.dstBinding = 0;
             descriptorWriteSampler.dstArrayElement = 0;
             descriptorWriteSampler.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
@@ -239,7 +243,7 @@ public:
 
             VkWriteDescriptorSet descriptorWriteBuffer{};
             descriptorWriteBuffer.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            descriptorWriteBuffer.dstSet = descriptorSets[i];
+            descriptorWriteBuffer.dstSet = dsets[i];
             descriptorWriteBuffer.dstBinding = 1;
             descriptorWriteBuffer.dstArrayElement = 0;
             descriptorWriteBuffer.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
@@ -251,8 +255,6 @@ public:
             std::vector<VkWriteDescriptorSet> descriptorWrites{descriptorWriteSampler, descriptorWriteBuffer};
 
             //add gbuffer
-
-
             std::vector<VkDescriptorImageInfo> gBufferImageInfos((int) GBufferTarget::NumAttachments);
 
             for (size_t j = 0; j < gBufferImageInfos.size(); j++) {
@@ -262,7 +264,7 @@ public:
 
                 VkWriteDescriptorSet descriptorWriteGBuffer{};
                 descriptorWriteGBuffer.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-                descriptorWriteGBuffer.dstSet = descriptorSets[i];
+                descriptorWriteGBuffer.dstSet = dsets[i];
                 descriptorWriteGBuffer.dstBinding = j + 2;
                 descriptorWriteGBuffer.dstArrayElement = 0;
                 descriptorWriteGBuffer.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
@@ -280,14 +282,15 @@ public:
         }
     };
 
-    void createDescriptorSets(VkDescriptorPool pool, const RenderTarget &sourceBuffer, const RenderTarget &gBuffer) {
-        descriptorSets = VulkanHelper::createDescriptorSetsFromLayout(*device, pool, descriptorSetLayout,
-                                                                      MAX_FRAMES_IN_FLIGHT);
-
-        updateSamplerBindings(sourceBuffer, gBuffer);
+    virtual void createDescriptorSets(VkDescriptorPool pool, const RenderTarget &sourceBuffer,
+        const RenderTarget &gBuffer)
+    {
+        descriptorSets = VulkanHelper::createDescriptorSetsFromLayout(
+            *device, pool, descriptorSetLayout, MAX_FRAMES_IN_FLIGHT);
+        updateSamplerBindings(sourceBuffer, gBuffer, descriptorSets);
     };
 
-    RequiredDescriptors getNumDescriptors() {
+    virtual RequiredDescriptors getNumDescriptors() {
         return {
                 .requireUniformBuffers = MAX_FRAMES_IN_FLIGHT,
                 .requireSamplers = MAX_FRAMES_IN_FLIGHT *
@@ -310,12 +313,11 @@ protected:
     Swapchain *swapchain;
     VulkanDevice *device;
     UniformBuffer uniformBuffer;
+    VkDescriptorSetLayout descriptorSetLayout;
+    VkRenderPass renderPass;
 
 private:
-    VkRenderPass renderPass;
     std::unique_ptr<GraphicsPipeline> pipeline;
-
-    VkDescriptorSetLayout descriptorSetLayout;
     uint32_t flags;
     uint32_t uboSize;
 
