@@ -16,6 +16,7 @@
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/gtx/quaternion.hpp>
 #include <memory>
+#include <numeric>
 
 // Definitions of standard names in gltf
 #define POSITION "POSITION"
@@ -295,7 +296,7 @@ RequiredDescriptors Scene::getNumDescriptors() {
                                                      [](const unsigned int previous,
                                                         const std::pair<std::string, std::vector<LoD>> &p) {
                                                          return previous + p.second.size();
-                                                     }) + model.materials.size() + MAX_FRAMES_IN_FLIGHT,
+                                                     }) + (unsigned int) model.materials.size() + MAX_FRAMES_IN_FLIGHT,
             .requireSamplers = (unsigned int) model.materials.size() * 3,
     };
 }
