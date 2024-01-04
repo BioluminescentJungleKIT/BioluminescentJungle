@@ -327,7 +327,7 @@ void Scene::generateTransforms(int nodeIndex, glm::mat4 oldTransform, int maxRec
     if (maxRecursion <= 0) return;
 
     auto node = model.nodes[nodeIndex];
-    if (lods[model.meshes[node.mesh].name].size() == 0) return; // is lod mesh. ignore.
+    if (node.mesh >= 0 && lods[model.meshes[node.mesh].name].size() == 0) return; // is lod mesh. ignore.
 
     auto transform = VulkanHelper::transformFromMatrixOrComponents(node.matrix,
                                                                    node.scale, node.rotation, node.translation);
