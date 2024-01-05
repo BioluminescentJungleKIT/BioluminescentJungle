@@ -39,12 +39,15 @@ class DeferredLighting {
     // Will also destroy any old pipeline which exists
     void createPipeline(bool recompileShaders, VkDescriptorSetLayout mvpLayout, Scene *scene);
 
-    VkRenderPass renderPass;
-    std::unique_ptr<GraphicsPipeline> pipeline;
-    std::unique_ptr<GraphicsPipeline> debugPipeline;
+    VkRenderPass debugRenderPass, restirFogRenderPass;
+    std::unique_ptr<GraphicsPipeline> pointLightsPipeline;
+    std::unique_ptr<GraphicsPipeline> visualizationPipeline;
+    std::unique_ptr<GraphicsPipeline> restirFogPipeline;
     std::unique_ptr<ComputePipeline> raytracingPipeline;
     std::unique_ptr<ComputePipeline> restirEvalPipeline;
     std::unique_ptr<BVH> bvh;
+
+    VkRenderPass createRenderPass(bool clearCompositedLight);
 
     void createRenderPass();
     VkDescriptorSetLayout samplersLayout, debugLayout, computeLayout, restirEvalLayout;
@@ -127,7 +130,7 @@ class DeferredLighting {
 
     std::mt19937 rndGen{std::random_device{}()};
 
-    void recordRasterBuffer(VkCommandBuffer commandBuffer, VkDescriptorSet mvpSet, Scene *scene);
+    void recordRasterBuffer(VkCommandBuffer commandBuffer, VkDescriptorSet mvpSet, Scene *scene, bool fogOnly);
     void recordRaytraceBuffer(VkCommandBuffer commandBuffer, VkDescriptorSet mvpSet, Scene* scene);
     void updateReservoirs();
     bool needRestirBufferReset = true;

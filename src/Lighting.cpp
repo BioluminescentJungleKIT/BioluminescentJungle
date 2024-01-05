@@ -47,7 +47,8 @@ DeferredLighting::~DeferredLighting() {
         tmpReservoirs[i].destroy(device);
     }
 
-    vkDestroyRenderPass(*device, renderPass, nullptr);
+    vkDestroyRenderPass(*device, debugRenderPass, nullptr);
+    vkDestroyRenderPass(*device, restirFogRenderPass, nullptr);
     vkDestroyDescriptorSetLayout(*device, debugLayout, nullptr);
     vkDestroyDescriptorSetLayout(*device, samplersLayout, nullptr);
     vkDestroyDescriptorSetLayout(*device, computeLayout, nullptr);
@@ -83,7 +84,8 @@ void DeferredLighting::createPipeline(bool recompileShaders, VkDescriptorSetLayo
     // TODO: depth testing, we ought to enable it
     params.useDepthTest = false;
     params.descriptorSetLayouts = {mvpLayout, samplersLayout, debugLayout};
-    this->pipeline = std::make_unique<GraphicsPipeline>(device, renderPass, 0, params);
+    this->restirFogPipeline = std::make_unique<GraphicsPipeline>(device, restirFogRenderPass, 0, params);
+    this->pointLightsPipeline = std::make_unique<GraphicsPipeline>(device, debugRenderPass, 0, params);
 
     // Second pipeline: used for debug purposes
     params.shadersList = {
@@ -105,7 +107,7 @@ void DeferredLighting::createPipeline(bool recompileShaders, VkDescriptorSetLayo
     // TODO: depth testing, we ought to enable it
     params.useDepthTest = false;
     params.descriptorSetLayouts = {mvpLayout, samplersLayout, debugLayout};
-    this->debugPipeline = std::make_unique<GraphicsPipeline>(device, renderPass, 0, params);
+    this->visualizationPipeline = std::make_unique<GraphicsPipeline>(device, debugRenderPass, 0, params);
 
     // Compute raytracing pipeline
     ComputePipeline::Parameters p;
@@ -120,15 +122,16 @@ void DeferredLighting::createPipeline(bool recompileShaders, VkDescriptorSetLayo
     this->restirEvalPipeline = std::make_unique<ComputePipeline>(device, p);
 }
 
-void DeferredLighting::createRenderPass() {
+VkRenderPass DeferredLighting::createRenderPass(bool clearCompositedLight) {
     VkAttachmentDescription colorAttachment{};
     colorAttachment.format = LIGHT_ACCUMULATION_FORMAT;
     colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
-    colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    colorAttachment.loadOp = clearCompositedLight ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD;
     colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
     colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
     colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    colorAttachment.initialLayout =
+        clearCompositedLight ? VK_IMAGE_LAYOUT_UNDEFINED : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
     colorAttachment.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
     VkAttachmentReference colorAttachmentRef{};
@@ -170,7 +173,14 @@ void DeferredLighting::createRenderPass() {
     renderPassInfo.dependencyCount = dependencies.size();
     renderPassInfo.pDependencies = dependencies.data();
 
-    VK_CHECK_RESULT(vkCreateRenderPass(*device, &renderPassInfo, nullptr, &renderPass))
+    VkRenderPass renderPass;
+    VK_CHECK_RESULT(vkCreateRenderPass(*device, &renderPassInfo, nullptr, &renderPass));
+    return renderPass;
+}
+
+void DeferredLighting::createRenderPass() {
+    debugRenderPass = createRenderPass(true);
+    restirFogRenderPass = createRenderPass(false);
 }
 
 void DeferredLighting::setup(bool recompileShaders, Scene *scene, VkDescriptorSetLayout mvpLayout) {
@@ -278,20 +288,20 @@ void DeferredLighting::recordRaytraceBuffer(
             { samplersSets[swapchain->currentFrame], computeSets[swapchain->currentFrame] });
     }
 
-    // Transition attachments to SHADER_READ_OPTIMAL layout
+    // Transition compositedLight COLOR_ATTACHMENT_OPTIMAL layout for rendering of the fog
     vkCmdPipelineBarrier(commandBuffer,
-        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
         0,
         0, nullptr,
         0, nullptr,
         postComputeBarriers[0].size(), postComputeBarriers[swapchain->currentFrame].data());
 }
 
-void DeferredLighting::recordRasterBuffer(VkCommandBuffer commandBuffer, VkDescriptorSet mvpSet, Scene *scene) {
+void DeferredLighting::recordRasterBuffer(VkCommandBuffer commandBuffer, VkDescriptorSet mvpSet, Scene *scene, bool fogOnly) {
     VkRenderPassBeginInfo renderPassInfo{};
     renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-    renderPassInfo.renderPass = renderPass;
-    renderPassInfo.framebuffer = compositedLight.framebuffers[renderPass][swapchain->currentFrame];
+    renderPassInfo.renderPass = fogOnly ? restirFogRenderPass : debugRenderPass;
+    renderPassInfo.framebuffer = compositedLight.framebuffers[renderPassInfo.renderPass][swapchain->currentFrame];
     renderPassInfo.renderArea.offset = {0, 0};
     renderPassInfo.renderArea.extent = swapchain->renderSize();
 
@@ -299,12 +309,15 @@ void DeferredLighting::recordRasterBuffer(VkCommandBuffer commandBuffer, VkDescr
     clearValues[0].color = {{0.0f, 0.0f, 0.0f, 0.0f}};
     renderPassInfo.clearValueCount = clearValues.size();
     renderPassInfo.pClearValues = clearValues.data();
+    if (fogOnly) {
+        renderPassInfo.clearValueCount = 0;
+    }
+
     vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-    GraphicsPipeline *currentPipeline = useDebugPipeline() ? debugPipeline.get() : pipeline.get();
+    GraphicsPipeline *currentPipeline = useDebugPipeline() ? visualizationPipeline.get() : pointLightsPipeline.get();
 
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, currentPipeline->pipeline);
-
     VulkanHelper::setFullViewportScissor(commandBuffer, swapchain->renderSize());
     std::array<VkDescriptorSet, 3> neededSets = {
         mvpSet, samplersSets[swapchain->currentFrame], debugSets[swapchain->currentFrame],
@@ -327,8 +340,9 @@ void DeferredLighting::recordCommandBuffer(
 {
     if (useRaytracingPipeline()) {
         recordRaytraceBuffer(commandBuffer, mvpSet, scene);
+        recordRasterBuffer(commandBuffer, mvpSet, scene, true);
     } else {
-        recordRasterBuffer(commandBuffer, mvpSet, scene);
+        recordRasterBuffer(commandBuffer, mvpSet, scene, false);
     }
 }
 
@@ -396,7 +410,7 @@ void DeferredLighting::setupBarriers(const RenderTarget& gBuffer) {
         preComputeBarriers[i].back() = vkutil::createImageBarrier(compositedLight.images[i][0], VK_IMAGE_ASPECT_COLOR_BIT,
             VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL, 0, VK_ACCESS_SHADER_WRITE_BIT);
         postComputeBarriers[i].back() = vkutil::createImageBarrier(compositedLight.images[i][0], VK_IMAGE_ASPECT_COLOR_BIT,
-            VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT);
+            VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_COLOR_ATTACHMENT_READ_BIT);
     }
 }
 
@@ -513,7 +527,9 @@ void DeferredLighting::setupRenderTarget() {
     compositedLight.addAttachment(swapchain->renderSize(), LIGHT_ACCUMULATION_FORMAT,
         VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT,
         VK_IMAGE_ASPECT_COLOR_BIT);
-    compositedLight.createFramebuffers(renderPass, swapchain->renderSize());
+
+    compositedLight.createFramebuffers(debugRenderPass, swapchain->renderSize());
+    compositedLight.createFramebuffers(restirFogRenderPass, swapchain->renderSize());
 }
 
 #define NUM_SAMPLES_PER_RESERVOIR 4
