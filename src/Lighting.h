@@ -55,7 +55,7 @@ class DeferredLighting {
 
     std::vector<std::vector<VkImageMemoryBarrier>> preComputeBarriers;
     std::vector<std::vector<VkImageMemoryBarrier>> postComputeBarriers;
-    void setupBarriers();
+    void setupBarriers(const RenderTarget& gBuffer);
 
     VkSampler linearSampler;
 

@@ -184,20 +184,16 @@ size_t roundUpDiv(size_t a, size_t b) {
     return (a + b - 1) / b;
 }
 
-VkBufferMemoryBarrier getComputeBarrierWtoX(const DataBuffer& buffer, bool readOnly) {
+VkBufferMemoryBarrier getComputeBarrier(const DataBuffer& buffer, VkAccessFlags srcFlags, VkAccessFlags dstFlags) {
     VkBufferMemoryBarrier barrier{};
     barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
-    barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    barrier.srcAccessMask = srcFlags;
+    barrier.dstAccessMask = dstFlags;
     barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     barrier.buffer = buffer.buffer;
     barrier.offset = 0;
     barrier.size = buffer.size;
-
-    if (!readOnly) {
-        barrier.dstAccessMask |= VK_ACCESS_SHADER_WRITE_BIT;
-    }
     return barrier;
 }
 
@@ -218,7 +214,8 @@ void DeferredLighting::recordRaytraceBuffer(
 {
     // Transition attachments to GENERAL layout
     vkCmdPipelineBarrier(commandBuffer,
-        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
         0,
         0, nullptr,
         0, nullptr,
@@ -233,15 +230,15 @@ void DeferredLighting::recordRaytraceBuffer(
         // Zero-Fill reservoirs, so that temporal reuse works correctly
         for (auto& res : reservoirs) {
             vkCmdFillBuffer(commandBuffer, res.buffer, 0, res.size, 0);
-            barriers.push_back(getComputeBarrierWtoX(res, false));
+            barriers.push_back(getComputeBarrier(res, VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT));
         }
 
         for (auto& res : tmpReservoirs) {
             vkCmdFillBuffer(commandBuffer, res.buffer, 0, res.size, 0);
-            barriers.push_back(getComputeBarrierWtoX(res, false));
+            barriers.push_back(getComputeBarrier(res, VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT));
         }
 
-        computePipelineBarrier(commandBuffer, barriers);
+        computePipelineBarrier(commandBuffer, barriers, VK_PIPELINE_STAGE_TRANSFER_BIT);
         needRestirBufferReset = false;
     }
 
@@ -259,8 +256,9 @@ void DeferredLighting::recordRaytraceBuffer(
 
     // Wait for previous finalized reservoirs to become available for temporal reuse
     computePipelineBarrier(commandBuffer, {
-        getComputeBarrierWtoX(tmpReservoirs[lastFrame()], true),
-        getComputeBarrierWtoX(tmpReservoirs[curFrame()], false),
+        getComputeBarrier(tmpReservoirs[lastFrame()], VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT),
+        getComputeBarrier(tmpReservoirs[curFrame()], VK_ACCESS_SHADER_WRITE_BIT,
+            VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT),
     });
 
     bindExecComputePipeline(raytracingPipeline,
@@ -269,10 +267,8 @@ void DeferredLighting::recordRaytraceBuffer(
     // Second pass: ReSTIR reservoir evaluation
     if (this->computeLightAlgo == 0) {
         // Wait for tmp reservoirs to be filled by first pass, so that we can use them to fill the final pass
-        // Also wait for write access to the current finalized buffers (idk whether we need this though)
         computePipelineBarrier(commandBuffer, {
-            getComputeBarrierWtoX(tmpReservoirs[curFrame()], true),
-            getComputeBarrierWtoX(reservoirs[curFrame()], false)
+            getComputeBarrier(tmpReservoirs[curFrame()], VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT),
         });
 
         bindExecComputePipeline(restirEvalPipeline,
@@ -370,37 +366,34 @@ void DeferredLighting::createDescriptorSets(VkDescriptorPool pool, const RenderT
         VulkanHelper::createDescriptorSetsFromLayout(*device, pool, computeLayout, MAX_FRAMES_IN_FLIGHT);
 
     updateDescriptors(sourceBuffer, scene);
+    setupBarriers(sourceBuffer);
 }
 
-void DeferredLighting::setupBarriers() {
+void DeferredLighting::setupBarriers(const RenderTarget& gBuffer) {
     preComputeBarriers.resize(MAX_FRAMES_IN_FLIGHT);
     postComputeBarriers.resize(MAX_FRAMES_IN_FLIGHT);
 
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-        preComputeBarriers[i].resize(1);
+        preComputeBarriers[i].resize(GBufferTarget::NumAttachments + 1);
         postComputeBarriers[i].resize(1);
+
+        for (int j = 0; j < GBufferTarget::NumAttachments; j++) {
+            preComputeBarriers[i][j] = vkutil::createImageBarrier(gBuffer.images[i][j],
+                j == GBufferTarget::Depth ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT,
+                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+
+                j == GBufferTarget::Depth ? VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT : VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+                VK_ACCESS_SHADER_READ_BIT);
+        }
 
         // Transition compositedLight[i] to the correct layout: before the compute pass,
         // UNDEFINED -> GENERAL.
         //
         // After the compute, GENERAL -> READ_ONLY_OPTIMAL
-        preComputeBarriers[i].back().sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-        preComputeBarriers[i].back().oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        preComputeBarriers[i].back().newLayout = VK_IMAGE_LAYOUT_GENERAL;
-        preComputeBarriers[i].back().image = compositedLight.images[i][0];
-        preComputeBarriers[i].back().subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
-        preComputeBarriers[i].back().srcAccessMask = 0;
-        preComputeBarriers[i].back().dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-        preComputeBarriers[i].back().srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        preComputeBarriers[i].back().dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-
-        postComputeBarriers[i].back() = preComputeBarriers[i].back();
-        postComputeBarriers[i].back().oldLayout = VK_IMAGE_LAYOUT_GENERAL;
-        postComputeBarriers[i].back().newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        postComputeBarriers[i].back().srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-        postComputeBarriers[i].back().dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-
-        // Make sure reservoir buffers are fully updated before starting evaluation pass
+        preComputeBarriers[i].back() = vkutil::createImageBarrier(compositedLight.images[i][0], VK_IMAGE_ASPECT_COLOR_BIT,
+            VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL, 0, VK_ACCESS_SHADER_WRITE_BIT);
+        postComputeBarriers[i].back() = vkutil::createImageBarrier(compositedLight.images[i][0], VK_IMAGE_ASPECT_COLOR_BIT,
+            VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT);
     }
 }
 
@@ -472,7 +465,6 @@ void DeferredLighting::setupBuffers() {
     lightUBO.allocate(device, sizeof(LightingBuffer), MAX_FRAMES_IN_FLIGHT);
     computeParamsUBO.allocate(device, sizeof(ComputeParamsBuffer), 1);
     updateReservoirs();
-    setupBarriers();
 }
 
 void DeferredLighting::updateBuffers(glm::mat4 vp, glm::vec3 cameraPos, glm::vec3 cameraUp) {
@@ -510,7 +502,7 @@ void DeferredLighting::handleResize(const RenderTarget& gBuffer, VkDescriptorSet
     createPipeline(false, mvpSetLayout, scene);
     updateReservoirs();
     updateDescriptors(gBuffer, scene);
-    setupBarriers();
+    setupBarriers(gBuffer);
 }
 
 void DeferredLighting::setupRenderTarget() {

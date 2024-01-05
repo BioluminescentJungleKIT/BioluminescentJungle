@@ -231,6 +231,23 @@ inline VkWriteDescriptorSet createDescriptorWriteSampler(
     descriptorWrite.pNext = NULL;
     return descriptorWrite;
 }
+
+inline VkImageMemoryBarrier createImageBarrier(VkImage image, VkImageAspectFlags aspect,
+    VkImageLayout oldLayout, VkImageLayout newLayout,
+    VkAccessFlags srcAccess, VkAccessFlags dstAccess)
+{
+    VkImageMemoryBarrier barrier;
+    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    barrier.oldLayout = oldLayout;
+    barrier.newLayout = newLayout;
+    barrier.image = image;
+    barrier.subresourceRange = { aspect, 0, 1, 0, 1 };
+    barrier.srcAccessMask = srcAccess;
+    barrier.dstAccessMask = dstAccess;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    return barrier;
+}
 }
 
 #endif //JUNGLE_VULKANHELPER_H
