@@ -13,7 +13,7 @@ struct DenoiserUBO {
     glm::vec4 weights[25];
     glm::ivec4 offsets[25];
     glm::mat4 inverseP;
-    glm::int32 iterationCount = 3;
+    glm::int32 iterationCount;
 
     glm::float32 albedoSigma = 0.1;
     glm::float32 normalSigma = 0.1;

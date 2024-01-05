@@ -236,7 +236,7 @@ inline VkImageMemoryBarrier createImageBarrier(VkImage image, VkImageAspectFlags
     VkImageLayout oldLayout, VkImageLayout newLayout,
     VkAccessFlags srcAccess, VkAccessFlags dstAccess)
 {
-    VkImageMemoryBarrier barrier;
+    VkImageMemoryBarrier barrier{};
     barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
     barrier.oldLayout = oldLayout;
     barrier.newLayout = newLayout;
