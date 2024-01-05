@@ -73,50 +73,6 @@ void Denoiser::recreateTmpTargets() {
         VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
 }
 
-static void addWRBarrier(VkCommandBuffer commandBuffer, VkImage image) {
-    return;
-    VkImageMemoryBarrier barrier{};
-
-    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    barrier.image = image;
-    barrier.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
-    barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-
-    vkCmdPipelineBarrier(commandBuffer,
-        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-        0,
-        0, nullptr,
-        0, nullptr,
-        1, &barrier);
-}
-
-static void addRWBarrier(VkCommandBuffer commandBuffer, VkImage image) {
-    return;
-    VkImageMemoryBarrier barrier{};
-
-    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    barrier.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    barrier.newLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    barrier.image = image;
-    barrier.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
-    barrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
-    barrier.dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-
-    vkCmdPipelineBarrier(commandBuffer,
-        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-        0,
-        0, nullptr,
-        0, nullptr,
-        1, &barrier);
-}
-
 void Denoiser::recordCommandBuffer(
     VkCommandBuffer commandBuffer, VkFramebuffer target, bool renderImGUI)
 {
@@ -132,16 +88,12 @@ void Denoiser::recordCommandBuffer(
     // from tmpTarget[currentlyIn] to the actual target.
     runRenderPass(commandBuffer, tmpTarget.framebuffers[0],
         descriptorSets[swapchain->currentFrame], false);
-    addWRBarrier(commandBuffer, tmpTarget.images[0].at(0));
-
     int iterRemaining = ubo.iterationCount - 1;
     int currentlyIn = 0;
     while (iterRemaining > 1) {
 
-        addRWBarrier(commandBuffer, tmpTarget.images[currentlyIn^1].at(0));
         runRenderPass(commandBuffer, tmpTarget.framebuffers[currentlyIn ^ 1],
             tmpTargetSets[currentlyIn], false);
-        addWRBarrier(commandBuffer, tmpTarget.images[currentlyIn^1].at(0));
         currentlyIn ^= 1;
         iterRemaining--;
     }
