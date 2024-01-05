@@ -211,7 +211,8 @@ void JungleApp::drawFrame() {
     vkCmdEndRenderPass(commandBuffer);
 
     lighting->recordCommandBuffer(commandBuffer, sceneDescriptorSets[swapchain->currentFrame], &scene);
-    postprocessing->recordCommandBuffer(commandBuffer, swapchain->defaultTarget.framebuffers[*imageIndex]);
+    postprocessing->recordCommandBuffer(commandBuffer,
+        swapchain->defaultTarget.framebuffers.begin()->second[*imageIndex]);
 
     VK_CHECK_RESULT(vkEndCommandBuffer(commandBuffer))
 
@@ -406,7 +407,7 @@ void JungleApp::startRenderPass(VkCommandBuffer commandBuffer, uint32_t currentF
     VkRenderPassBeginInfo renderPassInfo{};
     renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
     renderPassInfo.renderPass = renderPass;
-    renderPassInfo.framebuffer = gBuffer.framebuffers[currentFrame];
+    renderPassInfo.framebuffer = gBuffer.framebuffers[sceneRPass][currentFrame];
     renderPassInfo.renderArea.offset = {0, 0};
     renderPassInfo.renderArea.extent = swapchain->renderSize();
 

@@ -67,8 +67,9 @@ void PostProcessing::createPipeline(bool recompileShaders) {
 
 void PostProcessing::recordCommandBuffer(VkCommandBuffer commandBuffer, VkFramebuffer finalTarget) {
     for (auto& step : steps) {
+        auto rpass = step.algorithm->getRenderPass();
         step.algorithm->recordCommandBuffer(commandBuffer,
-            step.isFinal ? finalTarget : step.target.framebuffers[swapchain->currentFrame], step.isFinal);
+            step.isFinal ? finalTarget : step.target.framebuffers[rpass][swapchain->currentFrame], step.isFinal);
     }
 }
 

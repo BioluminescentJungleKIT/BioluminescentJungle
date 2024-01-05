@@ -117,13 +117,13 @@ void Denoiser::recordCommandBuffer(
     // We pass the data (while blurring it) between tmpTarget[0] and tmpTarget[1].
     // The first iteration is copying to tmpTarget[0], and the last iteration copies
     // from tmpTarget[currentlyIn] to the actual target.
-    runRenderPass(commandBuffer, tmpTarget.framebuffers[0],
+    runRenderPass(commandBuffer, tmpTarget.framebuffers[renderPass][0],
         descriptorSets[swapchain->currentFrame], false);
     int iterRemaining = ubo.iterationCount - 1;
     int currentlyIn = 0;
 
     while (iterRemaining > 1) {
-        runRenderPass(commandBuffer, tmpTarget.framebuffers[currentlyIn ^ 1],
+        runRenderPass(commandBuffer, tmpTarget.framebuffers[renderPass][currentlyIn ^ 1],
             tmpSets[currentlyIn], false);
         currentlyIn ^= 1;
         iterRemaining--;

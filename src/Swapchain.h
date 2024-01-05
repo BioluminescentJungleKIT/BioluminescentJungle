@@ -4,6 +4,7 @@
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 #include "PhysicalDevice.h"
+#include <map>
 
 const int MAX_FRAMES_IN_FLIGHT = 2;
 
@@ -20,7 +21,8 @@ class RenderTarget {
         VkImageUsageFlags usageFlags, VkImageAspectFlags aspectFlags,
         std::optional<VkImageAspectFlags> sampleFrom = {});
     void createFramebuffers(VkRenderPass renderPass, VkExtent2D extent);
-    std::vector<VkFramebuffer> framebuffers;
+
+    std::map<VkRenderPass, std::vector<VkFramebuffer>> framebuffers;
 
     // A list of image views attached to the corresponding framebuffer
     std::vector<std::vector<VkImageView>> imageViews;

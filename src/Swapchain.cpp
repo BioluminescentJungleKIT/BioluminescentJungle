@@ -11,12 +11,13 @@ void RenderTarget::init(VulkanDevice* device, int nrFrames) {
     this->nrFrames = nrFrames;
     images.resize(nrFrames);
     imageViews.resize(nrFrames);
-    framebuffers.resize(nrFrames);
 }
 
 void RenderTarget::destroyAll() {
-    for (size_t i = 0; i < framebuffers.size(); i++) {
-        vkDestroyFramebuffer(*device, framebuffers[i], nullptr);
+    for (auto& [_, fbs] : framebuffers) {
+        for (size_t i = 0; i < fbs.size(); i++) {
+            vkDestroyFramebuffer(*device, fbs[i], nullptr);
+        }
     }
     framebuffers.clear();
 
@@ -64,6 +65,7 @@ void RenderTarget::addAttachment(VkExtent2D extent, VkFormat fmt,
 }
 
 void RenderTarget::createFramebuffers(VkRenderPass renderPass, VkExtent2D extent) {
+    framebuffers[renderPass].resize(nrFrames);
     for (size_t i = 0; i < nrFrames; i++) {
         VkFramebufferCreateInfo framebufferInfo{};
         framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
@@ -73,7 +75,7 @@ void RenderTarget::createFramebuffers(VkRenderPass renderPass, VkExtent2D extent
         framebufferInfo.width = extent.width;
         framebufferInfo.height = extent.height;
         framebufferInfo.layers = 1;
-        VK_CHECK_RESULT(vkCreateFramebuffer(*device, &framebufferInfo, nullptr, &framebuffers[i]))
+        VK_CHECK_RESULT(vkCreateFramebuffer(*device, &framebufferInfo, nullptr, &framebuffers[renderPass][i]))
     }
 }
 
