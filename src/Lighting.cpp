@@ -202,10 +202,11 @@ VkBufferMemoryBarrier getComputeBarrierWtoX(const DataBuffer& buffer, bool readO
 }
 
 static void computePipelineBarrier(VkCommandBuffer commandBuffer,
-    const std::vector<VkBufferMemoryBarrier>& barriers)
+    const std::vector<VkBufferMemoryBarrier>& barriers,
+    VkPipelineStageFlags srcStage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT)
 {
     vkCmdPipelineBarrier(commandBuffer,
-        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+        srcStage, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
         0,
         0, nullptr,
         barriers.size(), barriers.data(),
@@ -223,9 +224,28 @@ void DeferredLighting::recordRaytraceBuffer(
         0, nullptr,
         preComputeBarriers[0].size(), preComputeBarriers[swapchain->currentFrame].data());
 
+    if (needRestirBufferReset) {
+        // At the first frame or after resize, we need to zero-fill the buffers to avoid reuse of stale data.
+        // We do this here instead of the resize handler in order to be able to use the same command buffer
+        // and avoid more complex synchronization with semaphores.
+        std::vector<VkBufferMemoryBarrier> barriers;
+
+        // Zero-Fill reservoirs, so that temporal reuse works correctly
+        for (auto& res : reservoirs) {
+            vkCmdFillBuffer(commandBuffer, res.buffer, 0, res.size, 0);
+            barriers.push_back(getComputeBarrierWtoX(res, false));
+        }
+
+        for (auto& res : tmpReservoirs) {
+            vkCmdFillBuffer(commandBuffer, res.buffer, 0, res.size, 0);
+            barriers.push_back(getComputeBarrierWtoX(res, false));
+        }
+
+        computePipelineBarrier(commandBuffer, barriers);
+        needRestirBufferReset = false;
+    }
 
     // First pass: naive raytracing or ReSTIR reservoir filling
-
     const auto& bindExecComputePipeline = [&] (const std::unique_ptr<ComputePipeline>& pipeline,
         std::vector<VkDescriptorSet> descriptorSets) {
         vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline->pipeline);
@@ -512,6 +532,7 @@ void DeferredLighting::updateReservoirs() {
     };
 
     size_t numReservoirs = swapchain->renderSize().width * swapchain->renderSize().height;
+    needRestirBufferReset = true;
 
     const auto& update = [&] (DataBuffer& reservoir) {
         if (reservoir.size > 0) {
@@ -520,11 +541,6 @@ void DeferredLighting::updateReservoirs() {
 
         reservoir.uploadData(device, NULL, numReservoirs * sizeof(Reservoir),
             VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
-
-        // Zero-Fill reservoir, so that temporal reuse works correctly
-        auto cmdBuffer = device->beginSingleTimeCommands();
-        vkCmdFillBuffer(cmdBuffer, reservoir.buffer, 0, reservoir.size, 0);
-        device->endSingleTimeCommands(cmdBuffer);
     };
 
     std::for_each(reservoirs.begin(), reservoirs.end(), update);

@@ -130,6 +130,7 @@ class DeferredLighting {
     void recordRasterBuffer(VkCommandBuffer commandBuffer, VkDescriptorSet mvpSet, Scene *scene);
     void recordRaytraceBuffer(VkCommandBuffer commandBuffer, VkDescriptorSet mvpSet, Scene* scene);
     void updateReservoirs();
+    bool needRestirBufferReset = true;
 };
 
 #endif /* end of include guard: LIGHTIG_H */
