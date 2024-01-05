@@ -45,9 +45,7 @@ Reservoir spatialReuse(ivec2 pos, int rIdx, SurfacePoint point, float ourD) {
 
         float reuseD = texelFetch(depth, reuse, 0).r;
         vec3 reuseN = texelFetch(normal, reuse, 0).xyz;
-
-        bool shouldReuse = abs(reuseD - ourD) < 0.01 &&
-            (ourD > 0.999 || dot(reuseN, point.N) > 0.7);
+        bool shouldReuse = abs(reuseD - ourD) < 0.01 && dot(reuseN, point.N) > 0.7;
 
         if (shouldReuse) {
             Reservoir otherR = reservoirsTmp[reservoirIdx(reuse, slInfo.viewportWidth)];
@@ -56,7 +54,8 @@ Reservoir spatialReuse(ivec2 pos, int rIdx, SurfacePoint point, float ourD) {
             for (int i = 0; i < NUM_SAMPLES_PER_RESERVOIR; i++) {
                 pHats[i] = 0;
                 if (otherR.selected[i] >= 0) {
-                    pHats[i] = calcPHat(point, computeLightParams(pointLights[otherR.selected[i]]), slInfo, ourD);
+                    pHats[i] = evalPointLightStrength(point,
+                            computeLightParams(pointLights[otherR.selected[i]]));
                 }
             }
 
@@ -75,9 +74,11 @@ void main() {
         return;
     }
 
-    int rIdx = reservoirIdx(pos, slInfo.viewportWidth);
-
     float depth = texelFetch(depth, pos, 0).r;
+    if (depth > 0.999) {
+        imageStore(compositeLight, ivec2(pos), vec4(0, 0, 0, 1.0));
+        return;
+    }
 
     SurfacePoint point;
     point.worldPos = calculatePosition(depth, pos, slInfo);
@@ -85,25 +86,19 @@ void main() {
     point.N = texelFetch(normal, pos, 0).xyz;
     vec3 finalColor = vec3(0, 0, 0);
 
+    int rIdx = reservoirIdx(pos, slInfo.viewportWidth);
     Reservoir r = spatialReuse(pos, rIdx, point, depth);
     for (int i = 0; i < NUM_SAMPLES_PER_RESERVOIR; i++) {
         int sel = r.selected[i];
-
-//        finalColor[sel] += 0.5;
-
         if (sel >= 0) {
             PointLightParams light = computeLightParams(pointLights[sel]);
 
             float f = evalPointLightStrength(point, light);
-            vec4 fog = evalFog(point, light, slInfo);
+            f *= evalFogAbsorption(point, slInfo);
 
             // Equation (6) from the ReSTIR paper
             float W = 1.0 / (r.pHat[i] * r.totalNumSamples) * r.sumW[i];
-
-            finalColor += W * (f * fog.w * light.intensity * point.albedo + fog.rgb);
-
-            // TODO: should the fog be in or out of the W factor? Visually, outside seems better, but is this
-            // actually correct?
+            finalColor += W * f * light.intensity * point.albedo;
         }
     }
 

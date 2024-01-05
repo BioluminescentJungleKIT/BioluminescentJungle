@@ -92,24 +92,3 @@ int reservoirIdx(ivec2 pos, int viewportWidth) {
 float sum3(vec3 x) {
     return x.x + x.y + x.z;
 }
-
-float calcPHat(SurfacePoint point, PointLightParams light, SceneLightInfo slInfo, float d) {
-    vec4 fog = evalFog(point, light, slInfo);
-    if (d > 0.999) {
-        // Background => need to estimate fog only
-        return sum3(fog.rgb);
-    } else {
-        // Estimate diffuse illumination of a surface point
-        return evalPointLightStrength(point, light) + sum3(fog.rgb);
-    }
-}
-
-float calcPHatPartial(vec4 fog, float f, float d) {
-    if (d > 0.999) {
-        // Background => need to estimate fog only
-        return sum3(fog.rgb);
-    } else {
-        // Estimate diffuse illumination of a surface point
-        return f + sum3(fog.rgb);
-    }
-}

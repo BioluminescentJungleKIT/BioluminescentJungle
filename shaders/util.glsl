@@ -49,7 +49,7 @@ PointLightParams computeLightParams(PointLight light) {
     PointLightParams params;
     params.pos = light.position.xyz;
     params.intensity = light.color.rgb * light.intensity.x/55;
-    params.r = exp(100);
+    params.r = exp(0.5);
     return params;
 }
 
@@ -70,18 +70,24 @@ float evalPointLightStrength(in SurfacePoint point, in PointLightParams light) {
     return f * max(0.0, dot(L, point.N));
 }
 
-// rgb scattering, a fog absorption
+float evalFogAbsorption(in SurfacePoint point, in SceneLightInfo info) {
+    vec3 lightray = info.cameraPos - point.worldPos;
+    float d = length(lightray);
+    return exp(-info.fogAbsorption*d);
+}
+
+// scattering + absorption in w component
 vec4 evalFog(in SurfacePoint point, in PointLightParams light, in SceneLightInfo info) {
     // Fog
     vec3 lightray = info.cameraPos - point.worldPos;
-    float lightdist = distance(light.pos, info.cameraPos);
     float d = length(lightray);
-    float b = max3(light.intensity);
 
     vec4 contribution = vec4(0);
     contribution.w = exp(-info.fogAbsorption*d);
 
     //scattering
+    float b = max3(light.intensity);
+    float lightdist = distance(light.pos, info.cameraPos);
     float h = length(cross(lightray, (point.worldPos - light.pos)))/d;
     if (h*h < light.r*light.r) {
         contribution.rgb = smoothstep(lightdist - info.bleed, lightdist + info.bleed, d) * exp(-info.fogAbsorption*lightdist) *

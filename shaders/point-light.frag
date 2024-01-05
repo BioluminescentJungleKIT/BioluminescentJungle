@@ -42,7 +42,7 @@ void main() {
     float depth = texelFetch(depth, ivec2(gl_FragCoord), 0).r;
     vec3 fragmentWorldPos = calculatePosition(depth, gl_FragCoord.xy, info);
 
-    if (debug.compositionMode == 7) {
+    if (debug.compositionMode == 7 || debug.compositionMode == 0) {
         SurfacePoint point;
         point.worldPos = fragmentWorldPos;
         point.albedo = texelFetch(albedo, ivec2(gl_FragCoord), 0).rgb;
@@ -53,7 +53,11 @@ void main() {
         light.intensity = fIntensity;
         light.r = debug.radius;
 
-        outColor = vec4(evalPointLight(point, light, info), 1.0);
+        if (debug.compositionMode == 7) { // legacy rendering, point lights only
+            outColor = vec4(evalPointLight(point, light, info), 1.0);
+        } else { // direct illumination done by compute shader, we only add fog effect
+            outColor = vec4(evalFog(point, light, info).rgb, 1.0);
+        }
     } else if (debug.compositionMode == 1) {
         outColor = vec4(texelFetch(albedo, ivec2(gl_FragCoord), 0).rgb, 1.0);
     } else if (debug.compositionMode == 2) {
