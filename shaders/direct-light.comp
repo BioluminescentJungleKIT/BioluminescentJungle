@@ -118,8 +118,10 @@ vec3 naiveLighting(SurfacePoint point, float depth) {
     vec3 finalColor = vec3(0.0);
     for (int i = 0; i < nPointLights; i++) {
         PointLightParams light = computeLightParams(pointLights[i]);
-        if (depth >= 0.999 || !testShadowBruteforce(point.worldPos, light.pos)) {
-            finalColor += evalPointLight(point, light, slInfo);
+        if (depth < 0.999 && !testShadowBruteforce(point.worldPos, light.pos)) {
+            float f = evalPointLightStrength(point, light);
+            f *= evalFogAbsorption(point, slInfo);
+            finalColor += f * light.intensity * point.albedo;
         }
     }
 
@@ -131,8 +133,10 @@ vec3 naiveLightingBVH(SurfacePoint point, float depth) {
     vec3 finalColor = vec3(0.0);
     for (int i = 0; i < nPointLights; i++) {
         PointLightParams light = computeLightParams(pointLights[i]);
-        if (depth >= 0.999 || !testShadowAABB(point, light.pos)) {
-            finalColor += evalPointLight(point, light, slInfo);
+        if (depth < 0.999 && !testShadowAABB(point, light.pos)) {
+            float f = evalPointLightStrength(point, light);
+            f *= evalFogAbsorption(point, slInfo);
+            finalColor += f * light.intensity * point.albedo;
         }
     }
 
