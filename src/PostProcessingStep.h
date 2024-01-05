@@ -216,7 +216,7 @@ public:
     };
 
     virtual void handleResize(const RenderTarget &sourceBuffer, const RenderTarget &gBuffer) {
-        updateSamplerBindings(sourceBuffer, gBuffer, descriptorSets);
+        updateSamplerBindings(sourceBuffer, gBuffer);
         createPipeline(false);
     };
 
@@ -225,8 +225,7 @@ public:
                           std::vector<VkDescriptorImageInfo> &imageInfos, int frameIndex,
                           const RenderTarget &sourceBuffer) {}
 
-    void updateSamplerBindings(const RenderTarget &sourceBuffer, const RenderTarget &gBuffer,
-        std::vector<VkDescriptorSet>& dsets) {
+    void updateSamplerBindings(const RenderTarget &sourceBuffer, const RenderTarget &gBuffer) {
         for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
             VkDescriptorImageInfo imageInfo{};
             imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
@@ -235,7 +234,7 @@ public:
 
             VkWriteDescriptorSet descriptorWriteSampler{};
             descriptorWriteSampler.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            descriptorWriteSampler.dstSet = dsets[i];
+            descriptorWriteSampler.dstSet = descriptorSets[i];
             descriptorWriteSampler.dstBinding = 0;
             descriptorWriteSampler.dstArrayElement = 0;
             descriptorWriteSampler.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
@@ -250,7 +249,7 @@ public:
 
             VkWriteDescriptorSet descriptorWriteBuffer{};
             descriptorWriteBuffer.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            descriptorWriteBuffer.dstSet = dsets[i];
+            descriptorWriteBuffer.dstSet = descriptorSets[i];
             descriptorWriteBuffer.dstBinding = 1;
             descriptorWriteBuffer.dstArrayElement = 0;
             descriptorWriteBuffer.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
@@ -271,7 +270,7 @@ public:
 
                 VkWriteDescriptorSet descriptorWriteGBuffer{};
                 descriptorWriteGBuffer.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-                descriptorWriteGBuffer.dstSet = dsets[i];
+                descriptorWriteGBuffer.dstSet = descriptorSets[i];
                 descriptorWriteGBuffer.dstBinding = j + 2;
                 descriptorWriteGBuffer.dstArrayElement = 0;
                 descriptorWriteGBuffer.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
@@ -294,7 +293,7 @@ public:
     {
         descriptorSets = VulkanHelper::createDescriptorSetsFromLayout(
             *device, pool, descriptorSetLayout, MAX_FRAMES_IN_FLIGHT);
-        updateSamplerBindings(sourceBuffer, gBuffer, descriptorSets);
+        updateSamplerBindings(sourceBuffer, gBuffer);
     };
 
     virtual RequiredDescriptors getNumDescriptors() {

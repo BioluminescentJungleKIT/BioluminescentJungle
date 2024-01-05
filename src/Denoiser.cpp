@@ -51,9 +51,38 @@ void Denoiser::createDescriptorSets(VkDescriptorPool pool,
     const RenderTarget& sourceBuffer, const RenderTarget& gBuffer)
 {
     PostProcessingStep::createDescriptorSets(pool, sourceBuffer, gBuffer);
-    tmpTargetSets = VulkanHelper::createDescriptorSetsFromLayout(
-        *device, pool, descriptorSetLayout, MAX_FRAMES_IN_FLIGHT);
-    updateSamplerBindings(tmpTarget, gBuffer, tmpTargetSets);
+
+    for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+        for (int j = 0; j < NR_TMP_BUFFERS; j++) {
+            tmpTargetSets[i][j] =
+                VulkanHelper::createDescriptorSetsFromLayout(*device, pool, descriptorSetLayout, 1)[0];
+        }
+    }
+
+    updateTmpSets(gBuffer);
+}
+
+void Denoiser::updateTmpSets(const RenderTarget& gBuffer) {
+    for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+        for (int j = 0; j < NR_TMP_BUFFERS; j++) {
+            std::vector<VkWriteDescriptorSet> writes;
+            std::vector<VkDescriptorImageInfo> images;
+            images.reserve(1 + GBufferTarget::NumAttachments);
+
+            images.push_back(vkutil::createDescriptorImageInfo(tmpTarget.imageViews[j][0], this->samplers[i][0]));
+            writes.push_back(vkutil::createDescriptorWriteSampler(images.back(), tmpTargetSets[i][j], 0));
+
+            auto uboInfo = vkutil::createDescriptorBufferInfo(uniformBuffer.buffers[0], 0, sizeof(DenoiserUBO));
+            writes.push_back(vkutil::createDescriptorWriteUBO(uboInfo, tmpTargetSets[i][j], 1));
+
+            for (int k = 0; k < GBufferTarget::NumAttachments; k++) {
+                images.push_back(vkutil::createDescriptorImageInfo(gBuffer.imageViews[i][k], samplers[i][k]));
+                writes.push_back(vkutil::createDescriptorWriteSampler(images.back(), tmpTargetSets[i][j], k+2));
+            }
+
+            vkUpdateDescriptorSets(*device, writes.size(), writes.data(), 0, NULL);
+        }
+    }
 }
 
 void Denoiser::handleResize(
@@ -63,7 +92,7 @@ void Denoiser::handleResize(
 
     recreateTmpTargets();
     tmpTarget.createFramebuffers(renderPass, swapchain->renderSize());
-    updateSamplerBindings(tmpTarget, gBuffer, tmpTargetSets);
+    updateTmpSets(gBuffer);
 }
 
 void Denoiser::recreateTmpTargets() {
@@ -82,6 +111,8 @@ void Denoiser::recordCommandBuffer(
         return;
     }
 
+    auto& tmpSets = tmpTargetSets[swapchain->currentFrame];
+
     // General strategy for this effect: we need to do N iterations.
     // We pass the data (while blurring it) between tmpTarget[0] and tmpTarget[1].
     // The first iteration is copying to tmpTarget[0], and the last iteration copies
@@ -90,15 +121,15 @@ void Denoiser::recordCommandBuffer(
         descriptorSets[swapchain->currentFrame], false);
     int iterRemaining = ubo.iterationCount - 1;
     int currentlyIn = 0;
-    while (iterRemaining > 1) {
 
+    while (iterRemaining > 1) {
         runRenderPass(commandBuffer, tmpTarget.framebuffers[currentlyIn ^ 1],
-            tmpTargetSets[currentlyIn], false);
+            tmpSets[currentlyIn], false);
         currentlyIn ^= 1;
         iterRemaining--;
     }
 
-    runRenderPass(commandBuffer, target, tmpTargetSets[currentlyIn], renderImGUI);
+    runRenderPass(commandBuffer, target, tmpSets[currentlyIn], renderImGUI);
 }
 
 void Denoiser::updateCamera(glm::mat4 projection) {

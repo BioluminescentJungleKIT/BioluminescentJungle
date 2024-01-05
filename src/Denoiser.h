@@ -39,11 +39,16 @@ public:
         const RenderTarget& sourceBuffer, const RenderTarget& gBuffer) override;
     void recordCommandBuffer( VkCommandBuffer commandBuffer, VkFramebuffer target, bool renderImGUI) override;
 
+    static constexpr int NR_TMP_BUFFERS = 2;
+
     RenderTarget tmpTarget;
-    std::vector<VkDescriptorSet> tmpTargetSets;
+
+    // tmpTargetSets[i][j] has the GBuffer attachments from GBuffer[i] and accColor equal to tmpTarget[j]
+    std::array<std::array<VkDescriptorSet, NR_TMP_BUFFERS>, MAX_FRAMES_IN_FLIGHT> tmpTargetSets;
 
     int32_t iterationCount = 3;
     bool enabled = true;
 
     void recreateTmpTargets();
+    void updateTmpSets(const RenderTarget& gBuffer);
 };
