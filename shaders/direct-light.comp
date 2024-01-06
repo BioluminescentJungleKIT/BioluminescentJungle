@@ -45,16 +45,23 @@ layout(set = 2, binding = 3) uniform sampler2D prevMotion;
 
 #define MAX_STACK_SIZE 32
 
-bool testShadowBruteforce(vec3 worldPos, vec3 lightPos) {
+Ray getLightRay(SurfacePoint point, vec3 lightPos, out float len) {
     Ray lightRay;
-    lightRay.origin = worldPos;
-    lightRay.dir = lightPos - worldPos;
+    lightRay.origin = point.worldPos + point.N * (-point.dispAlongN + 0.002);
+    lightRay.dir = lightPos - lightRay.origin;
 
-    float len = length(lightRay.dir);
+    len = length(lightRay.dir);
     lightRay.dir /= len;
     lightRay.invDir = 1.0 / lightRay.dir;
-    const vec2 tmimaxInit = vec2(0.03, len);
 
+    return lightRay;
+}
+
+bool testShadowBruteforce(SurfacePoint point, vec3 lightPos) {
+    float rayLen;
+    Ray lightRay = getLightRay(point, lightPos, rayLen);
+
+    const vec2 tmimaxInit = vec2(0.01, rayLen);
     for (int i = 0; i < nTriangles; i++) {
         float f = intersectTriangle(tris[i], lightRay);
         if (tmimaxInit.x <= f && f < tmimaxInit.y) {
@@ -66,19 +73,14 @@ bool testShadowBruteforce(vec3 worldPos, vec3 lightPos) {
 }
 
 bool testShadowAABB(SurfacePoint point, vec3 lightPos) {
-    Ray lightRay;
-    lightRay.origin = point.worldPos + point.N * 0.002;
-    lightRay.dir = lightPos - lightRay.origin;
-
-    float len = length(lightRay.dir);
-    lightRay.dir /= len;
-    lightRay.invDir = 1.0 / lightRay.dir;
+    float rayLen;
+    Ray lightRay = getLightRay(point, lightPos, rayLen);
 
     int stack[MAX_STACK_SIZE];
     stack[0] = 0;
     int cur = 0;
 
-    const vec2 tmimaxInit = vec2(0.1, len - 0.03);
+    const vec2 tmimaxInit = vec2(0.1, rayLen - 0.03);
 
     // Recursive test in the BVH
     while (cur >= 0) {
@@ -118,7 +120,7 @@ vec3 naiveLighting(SurfacePoint point, float depth) {
     vec3 finalColor = vec3(0.0);
     for (int i = 0; i < nPointLights; i++) {
         PointLightParams light = computeLightParams(pointLights[i]);
-        if (depth < 0.999 && !testShadowBruteforce(point.worldPos, light.pos)) {
+        if (depth < 0.999 && !testShadowBruteforce(point, light.pos)) {
             float f = evalPointLightStrength(point, light);
             f *= evalFogAbsorption(point, slInfo);
             finalColor += f * light.intensity * point.albedo;
@@ -233,7 +235,10 @@ void main()
     SurfacePoint point;
     point.worldPos = calculatePosition(depth, vec2(pos), slInfo);
     point.albedo = texelFetch(albedo, pos, 0).rgb;
-    point.N = texelFetch(normal, pos, 0).xyz;
+
+    vec4 N = texelFetch(normal, pos, 0);
+    point.N = N.xyz;
+    point.dispAlongN = N.w;
 
     vec3 color = vec3(1, 0, 0);
     if (slInfo.lightAlgo == 0) {

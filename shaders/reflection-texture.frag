@@ -12,10 +12,11 @@ layout(location = 2) out vec2 outMotion;
 layout(set = 2, binding = 0) uniform sampler2D texSampler;
 
 void main() {
-    vec4 color = texture(texSampler, uv);
+    vec3 color = texture(texSampler, uv).rgb;
 
-    outColor = color;
-    // Write 1.0 as normal.w, which means surface is reflective
-    outNormal = vec4(normalize(normal), 1.0);
+    // Alpha channel == reflectance
+    outColor = vec4(color, 1.0);
+    // alpha channel == displacement wrt normal
+    outNormal = vec4(normalize(normal), 0.0);
     outMotion = (lastpos/lastpos.w - currpos/currpos.w).xy;
 }

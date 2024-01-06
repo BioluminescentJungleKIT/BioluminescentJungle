@@ -31,6 +31,7 @@ struct SurfacePoint {
     vec3 worldPos;
     vec3 albedo;
     vec3 N;
+    float dispAlongN;
 };
 
 struct PointLight {

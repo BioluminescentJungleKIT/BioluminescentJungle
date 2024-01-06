@@ -48,13 +48,15 @@ void computeTangentSpace(vec3 N, out vec3 T, out vec3 B) {
     B *= invmax;
 }
 
-void readConvertNormal(vec3 T, vec3 B, vec3 N, vec2 uv) {
+void readConvertNormal(vec3 T, vec3 B, vec3 N, vec2 uv, vec3 displacementView) {
     float gamma = 1.0/2.2;
     vec3 normal = pow(texture(normalMap, uv).rgb, vec3(gamma)) * 2 - 1;
     normal = normalize(transpose(inverse(mat3(T, B, N))) * normal);
+    float displacementAlongNormal = dot(normal, displacementView);
+
     // Convert normal to world space, because our lighting uses it
     normal = (transpose(ubo.view) * vec4(normal, 0.0)).xyz;
-    outNormal = vec4(normal, 0);
+    outNormal = vec4(normal, displacementAlongNormal);
 }
 
 void main() {
@@ -64,9 +66,9 @@ void main() {
     vec3 T, B;
     computeTangentSpace(N, T, B);
     if (isNormal.isNormalMapOnly > 0 || mapping.enableInverseDisplacement == 0) {
-        outColor = texture(albedo, uv);
+        outColor = vec4(texture(albedo, uv).rgb, 0);
         // Convert normal to world space, because our lighting uses it
-        readConvertNormal(T, B, N, uv);
+        readConvertNormal(T, B, N, uv, vec3(0));
         gl_FragDepth = fsPosClipSpace.z / fsPosClipSpace.w;
         return;
     }
@@ -110,13 +112,14 @@ void main() {
             }
 
             // Adjust depth based on how far along the view ray we have travelled
-            const float factor = length(vec3(currentPos.xy, currentPos.z) - vec3(uv, mapping.heightScale)) / length(viewRay);
-            vec3 finalPos = fsPos * (1.0 + factor);
-            vec4 finalNdcPos = ubo.proj * vec4(finalPos, 1.0);
+            const float factor = length(currentPos.xyz - vec3(uv, mapping.heightScale)) / length(viewRay);
+
+            vec3 finalViewPos = fsPos * (1.0 + factor);
+            vec4 finalNdcPos = ubo.proj * vec4(finalViewPos, 1.0);
             gl_FragDepth = finalNdcPos.z / finalNdcPos.w;
 
-            outColor = texture(albedo, currentPos.st);
-            readConvertNormal(T, B, N, currentPos.st);
+            outColor = vec4(texture(albedo, currentPos.st).rgb, 0.0);
+            readConvertNormal(T, B, N, currentPos.st, finalViewPos - fsPos);
             return;
         } else {
             currentPos += step;

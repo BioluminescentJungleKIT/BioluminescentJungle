@@ -19,7 +19,7 @@ void main() {
     vec4 color = texture(texSampler, uv);
     // alpha hashing
     if ( color.a <= rand(uv * 10000 + gl_FragCoord.xy) ) discard;
-    outColor = color;
+    outColor = vec4(color.rgb, 0.0);
     outNormal = vec4(normalize(normal), 0.0);
     outMotion = (lastpos/lastpos.w - currpos/currpos.w).xy;
 }
