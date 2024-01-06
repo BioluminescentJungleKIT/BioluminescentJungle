@@ -2,6 +2,7 @@
 #include "Lighting.h"
 #include "Pipeline.h"
 #include "Swapchain.h"
+#include <thread>
 #include <vulkan/vulkan_core.h>
 
 #define GLM_FORCE_RADIANS
@@ -52,28 +53,34 @@ void JungleApp::setupGBuffer() {
 
     for (int i = 0; i < GBufferTarget::NumAttachments; i++) {
         if (i == GBufferTarget::Depth) {
-            gBuffer.addAttachment(swapchain->swapChainExtent, swapchain->chooseDepthFormat(),
+            gBuffer.addAttachment(swapchain->renderSize(), swapchain->chooseDepthFormat(),
                                   VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
                                   VK_IMAGE_ASPECT_DEPTH_BIT);
         } else {
             auto fmt = getGBufferAttachmentFormat(swapchain.get(), (GBufferTarget) i);
-            gBuffer.addAttachment(swapchain->swapChainExtent, fmt,
+            gBuffer.addAttachment(swapchain->renderSize(), fmt,
                                   VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
                                   VK_IMAGE_ASPECT_COLOR_BIT);
         }
     }
 
-    gBuffer.createFramebuffers(sceneRPass, swapchain->swapChainExtent);
+    gBuffer.createFramebuffers(sceneRPass, swapchain->renderSize());
 }
 
 void JungleApp::mainLoop() {
+    using namespace std::chrono;
+
     while (!glfwWindowShouldClose(window)) {
+        auto startFrame = system_clock::now();
         glfwPollEvents();
         cameraMotion();
         drawFrame();
 
-        if constexpr (RATELIMIT > 0) {
-            usleep(1e6 / RATELIMIT);
+        if (Swapchain::rateLimit > 0) {
+            int elapsed = duration_cast<milliseconds>(system_clock::now() - startFrame).count();
+            int maxNs = 1e6 / Swapchain::rateLimit;
+            maxNs = std::max(0, 1'000 / Swapchain::rateLimit - elapsed);
+            std::this_thread::sleep_for(milliseconds(maxNs));
         }
     }
 
@@ -96,7 +103,13 @@ void JungleApp::drawImGUI() {
         }
         if (ImGui::CollapsingHeader("Debug Settings")) {
             ImGui::Combo("G-Buffer Visualization", &lighting->debug.compositionMode,
-                         "None\0Albedo\0Depth\0Position\0Normal\0Motion\0SSR Region\0\0");
+                         "None\0Albedo\0Depth\0Position\0Normal\0Motion\0SSR Region\0Point Lights\0\0");
+            ImGui::Combo("Lighting mode", &lighting->computeLightAlgo,
+                         "ReSTIR\0Bruteforce\0BVH only\0\0");
+            ImGui::SliderFloat("ReSTIR Temporal Factor", &lighting->restirTemporalFactor, 0.0f, 50.0f);
+            ImGui::SliderInt("ReSTIR Spatial Radius", &lighting->restirSpatialRadius, 0, 50);
+            ImGui::SliderInt("ReSTIR Spatial Neighbors", &lighting->restirSpatialNeighbors, 0, 20);
+
             ImGui::Checkbox("Show Light BBoxes", (bool *) &lighting->debug.showLightBoxes);
             ImGui::SliderFloat("Light bbox log size", &lighting->lightRadiusLog, -5.f, 5.f);
         }
@@ -106,6 +119,15 @@ void JungleApp::drawImGUI() {
             ImGui::SliderFloat("TAA alpha", &postprocessing->getTAAPointer()->alpha, 0.f, 1.f);
             ImGui::Combo("TAA Neighborhood Clamping", &postprocessing->getTAAPointer()->mode,
                          "Off\0Min-Max\0Moment-Based\0\0");
+
+            ImGui::SliderInt("Denoiser iterations",
+                &postprocessing->getDenoiser()->iterationCount, 0, 20);
+            ImGui::SliderFloat("Denoiser Albedo Sigma",
+                &postprocessing->getDenoiser()->ubo.albedoSigma, 0.001, 5.0);
+            ImGui::SliderFloat("Denoiser Normal Sigma",
+                &postprocessing->getDenoiser()->ubo.normalSigma, 0.001, 5.0);
+            ImGui::SliderFloat("Denoiser Position Sigma",
+                &postprocessing->getDenoiser()->ubo.positionSigma, 0.001, 5.0);
         }
         if (ImGui::CollapsingHeader("Camera Settings")) {
             ImGui::DragFloatRange2("Clipping Planes", &nearPlane, &farPlane, 0.07f, .01f, 100000.f);
@@ -189,7 +211,8 @@ void JungleApp::drawFrame() {
     vkCmdEndRenderPass(commandBuffer);
 
     lighting->recordCommandBuffer(commandBuffer, sceneDescriptorSets[swapchain->currentFrame], &scene);
-    postprocessing->recordCommandBuffer(commandBuffer, swapchain->defaultTarget.framebuffers[*imageIndex]);
+    postprocessing->recordCommandBuffer(commandBuffer,
+        swapchain->defaultTarget.framebuffers.begin()->second[*imageIndex]);
 
     VK_CHECK_RESULT(vkEndCommandBuffer(commandBuffer))
 
@@ -342,9 +365,9 @@ void JungleApp::createScenePass() {
     dependencies[0].srcSubpass = VK_SUBPASS_EXTERNAL;
     dependencies[0].dstSubpass = 0;
     dependencies[0].srcStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
-    dependencies[0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    dependencies[0].srcAccessMask = VK_ACCESS_MEMORY_READ_BIT;
-    dependencies[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    dependencies[0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+    dependencies[0].srcAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT;
+    dependencies[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
     dependencies[0].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
 
     dependencies[1].srcSubpass = 0;
@@ -353,7 +376,8 @@ void JungleApp::createScenePass() {
             VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT |
             VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
     dependencies[1].dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-    dependencies[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+    dependencies[1].srcAccessMask =
+        VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
     dependencies[1].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
     dependencies[1].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
 
@@ -383,9 +407,9 @@ void JungleApp::startRenderPass(VkCommandBuffer commandBuffer, uint32_t currentF
     VkRenderPassBeginInfo renderPassInfo{};
     renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
     renderPassInfo.renderPass = renderPass;
-    renderPassInfo.framebuffer = gBuffer.framebuffers[currentFrame];
+    renderPassInfo.framebuffer = gBuffer.framebuffers[sceneRPass][currentFrame];
     renderPassInfo.renderArea.offset = {0, 0};
-    renderPassInfo.renderArea.extent = swapchain->swapChainExtent;
+    renderPassInfo.renderArea.extent = swapchain->renderSize();
 
     std::array<VkClearValue, GBufferTarget::NumAttachments> clearValues{};
     for (int i = 0; i < GBufferTarget::NumAttachments; i++) {
@@ -440,12 +464,12 @@ void JungleApp::updateUniformBuffers(uint32_t currentImage) {
     ubo.modl = glm::rotate(glm::mat4(1.0f), rotation, glm::vec3(0.0f, 0.0f, 1.0f));
     ubo.view = glm::lookAt(cameraPosition, cameraLookAt, cameraUpVector);
     ubo.proj = glm::perspective(glm::radians(cameraFOVY),
-                                (float) swapchain->swapChainExtent.width / (float) swapchain->swapChainExtent.height,
+                                (float) swapchain->renderSize().width / (float) swapchain->renderSize().height,
                                 nearPlane, farPlane);
     ubo.proj[1][1] *= -1;  // because GLM generates OpenGL projections
     if (doJitter) {
         ubo.jitt = halton23norm(jitterSequence);
-        ubo.jitt *= glm::vec2(1.f / swapchain->swapChainExtent.width, 1.f / swapchain->swapChainExtent.height);
+        ubo.jitt *= glm::vec2(1.f / swapchain->finalBufferSize.width, 1.f / swapchain->finalBufferSize.height);
         jitterSequence++;
     } else {
         ubo.jitt = glm::vec2(0, 0);
@@ -459,21 +483,23 @@ void JungleApp::updateUniformBuffers(uint32_t currentImage) {
     lighting->updateBuffers(ubo.proj * ubo.view, cameraPosition, cameraUpVector);
 
     // TODO: is there a better way to integrate this somehow? Too lazy to skip the tonemapping render pass completely.
-    if (lighting->debug.compositionMode != 0) {
+    if (lighting->useDebugPipeline()) {
         postprocessing->disable();
     } else {
         postprocessing->enable();
     }
 
     postprocessing->getFogPointer()->updateCamera(ubo.view, ubo.proj, nearPlane, farPlane);
+    postprocessing->getDenoiser()->updateCamera(ubo.proj);
     postprocessing->updateBuffers();
 }
 
 void JungleApp::createDescriptorPool() {
 
-    std::array<VkDescriptorPoolSize, 2> poolSizes{};
+    std::array<VkDescriptorPoolSize, 3> poolSizes{};
     poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    poolSizes[2].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
 
     std::vector<RequiredDescriptors> requirements = {
             scene.getNumDescriptors(), lighting->getNumDescriptors(), postprocessing->getNumDescriptors()
@@ -488,13 +514,14 @@ void JungleApp::createDescriptorPool() {
     for (auto &req: requirements) {
         poolSizes[0].descriptorCount += req.requireUniformBuffers;
         poolSizes[1].descriptorCount += req.requireSamplers;
+        poolSizes[2].descriptorCount += req.requireSSBOs;
     }
 
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
     poolInfo.poolSizeCount = poolSizes.size();
     poolInfo.pPoolSizes = poolSizes.data();
-    poolInfo.maxSets = poolSizes[0].descriptorCount + poolSizes[1].descriptorCount;
+    poolInfo.maxSets = poolSizes[0].descriptorCount + poolSizes[1].descriptorCount + poolSizes[2].descriptorCount;
     VK_CHECK_RESULT(vkCreateDescriptorPool(device, &poolInfo, nullptr, &descriptorPool))
 }
 
@@ -526,7 +553,7 @@ void JungleApp::createDescriptorSets() {
     }
 
     scene.setupDescriptorSets(descriptorPool);
-    lighting->createDescriptorSets(descriptorPool, gBuffer);
+    lighting->createDescriptorSets(descriptorPool, gBuffer, &scene);
     postprocessing->createDescriptorSets(descriptorPool, lighting->compositedLight, gBuffer);
 }
 
@@ -620,8 +647,8 @@ void JungleApp::handleGLFWMouse(GLFWwindow *window, double x, double y) {
 
     if (app->lastMouseX.has_value() && app->lastMouseY.has_value()) {
         // We are dragging the mouse with button pressed
-        float dx = -(app->lastMouseX.value() - x) * 180 / app->swapchain->swapChainExtent.width;
-        float dy = (y - app->lastMouseY.value()) * 180 / app->swapchain->swapChainExtent.height;
+        float dx = -(app->lastMouseX.value() - x) * 180 / app->swapchain->finalBufferSize.width;
+        float dy = (y - app->lastMouseY.value()) * 180 / app->swapchain->finalBufferSize.height;
         if (app->invertMouse) {
             dx *= -1;
             dy *= -1;

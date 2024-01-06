@@ -3,17 +3,21 @@
 #include <algorithm>
 #include <vulkan/vulkan_core.h>
 
+float Swapchain::renderScale = 1.0;
+int Swapchain::rateLimit = 0;
+
 void RenderTarget::init(VulkanDevice* device, int nrFrames) {
     this->device = device;
     this->nrFrames = nrFrames;
     images.resize(nrFrames);
     imageViews.resize(nrFrames);
-    framebuffers.resize(nrFrames);
 }
 
 void RenderTarget::destroyAll() {
-    for (size_t i = 0; i < framebuffers.size(); i++) {
-        vkDestroyFramebuffer(*device, framebuffers[i], nullptr);
+    for (auto& [_, fbs] : framebuffers) {
+        for (size_t i = 0; i < fbs.size(); i++) {
+            vkDestroyFramebuffer(*device, fbs[i], nullptr);
+        }
     }
     framebuffers.clear();
 
@@ -61,6 +65,7 @@ void RenderTarget::addAttachment(VkExtent2D extent, VkFormat fmt,
 }
 
 void RenderTarget::createFramebuffers(VkRenderPass renderPass, VkExtent2D extent) {
+    framebuffers[renderPass].resize(nrFrames);
     for (size_t i = 0; i < nrFrames; i++) {
         VkFramebufferCreateInfo framebufferInfo{};
         framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
@@ -70,7 +75,7 @@ void RenderTarget::createFramebuffers(VkRenderPass renderPass, VkExtent2D extent
         framebufferInfo.width = extent.width;
         framebufferInfo.height = extent.height;
         framebufferInfo.layers = 1;
-        VK_CHECK_RESULT(vkCreateFramebuffer(*device, &framebufferInfo, nullptr, &framebuffers[i]))
+        VK_CHECK_RESULT(vkCreateFramebuffer(*device, &framebufferInfo, nullptr, &framebuffers[renderPass][i]))
     }
 }
 
@@ -193,7 +198,7 @@ void Swapchain::createSwapChain() {
     swapChainImages.resize(imageCount);
     vkGetSwapchainImagesKHR(*device, swapChain, &imageCount, swapChainImages.data());
     swapChainImageFormat = surfaceFormat.format;
-    swapChainExtent = extent;
+    finalBufferSize = extent;
 }
 
 void Swapchain::createImageViews() {
@@ -202,7 +207,7 @@ void Swapchain::createImageViews() {
 }
 
 void Swapchain::createFramebuffersForRender(VkRenderPass renderPass) {
-    defaultTarget.createFramebuffers(renderPass, swapChainExtent);
+    defaultTarget.createFramebuffers(renderPass, finalBufferSize);
 }
 
 static VkFormat findSupportedFormat(VkPhysicalDevice device, const std::vector<VkFormat>& candidates) {

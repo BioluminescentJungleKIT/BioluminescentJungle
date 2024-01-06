@@ -18,11 +18,15 @@ void TAA::enable() {
 void TAA::updateUBOContent() {
     ubo.alpha = enabled ? alpha : 1;
     ubo.mode = enabled ? mode : 0;
-    ubo.width = swapchain->swapChainExtent.width;
-    ubo.height = swapchain->swapChainExtent.height;
+    ubo.width = getViewport().width;
+    ubo.height = getViewport().height;
 }
 
-TAA::TAA(VulkanDevice *pDevice, Swapchain *pSwapchain, RenderTarget *pTaaTarget) : PostProcessingStep(pDevice, pSwapchain) {
+TAA::TAA(VulkanDevice *pDevice, Swapchain *pSwapchain)
+    : PostProcessingStep(pDevice, pSwapchain, PPSTEP_RENDER_FULL_RES) {
+}
+
+void TAA::setPTarget(RenderTarget* pTaaTarget) {
     taaTarget = pTaaTarget;
 }
 

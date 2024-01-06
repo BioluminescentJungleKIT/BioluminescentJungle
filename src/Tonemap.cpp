@@ -1,9 +1,5 @@
 #include "Tonemap.h"
-#include "Pipeline.h"
 #include "Swapchain.h"
-#include "VulkanHelper.h"
-#include "imgui.h"
-#include "imgui_impl_vulkan.h"
 #include <vulkan/vulkan_core.h>
 
 std::string Tonemap::getShaderName() {
@@ -24,6 +20,6 @@ void Tonemap::updateUBOContent() {
     ubo.gamma = enabled ? gamma : 1;
 }
 
-Tonemap::Tonemap(VulkanDevice *pDevice, Swapchain *pSwapchain) : PostProcessingStep(pDevice, pSwapchain) {
-
+Tonemap::Tonemap(VulkanDevice *pDevice, Swapchain *pSwapchain) :
+    PostProcessingStep(pDevice, pSwapchain, PPSTEP_RENDER_LAST | PPSTEP_RENDER_FULL_RES) {
 }

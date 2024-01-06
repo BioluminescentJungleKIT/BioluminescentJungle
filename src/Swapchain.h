@@ -3,8 +3,8 @@
 
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
-#include <array>
 #include "PhysicalDevice.h"
+#include <map>
 
 const int MAX_FRAMES_IN_FLIGHT = 2;
 
@@ -21,7 +21,8 @@ class RenderTarget {
         VkImageUsageFlags usageFlags, VkImageAspectFlags aspectFlags,
         std::optional<VkImageAspectFlags> sampleFrom = {});
     void createFramebuffers(VkRenderPass renderPass, VkExtent2D extent);
-    std::vector<VkFramebuffer> framebuffers;
+
+    std::map<VkRenderPass, std::vector<VkFramebuffer>> framebuffers;
 
     // A list of image views attached to the corresponding framebuffer
     std::vector<std::vector<VkImageView>> imageViews;
@@ -51,7 +52,18 @@ class Swapchain
     void recreateSwapChain(VkRenderPass renderPass);
 
     VkFormat swapChainImageFormat;
-    VkExtent2D swapChainExtent;
+
+    VkExtent2D finalBufferSize;
+    static float renderScale;
+    static int rateLimit;
+
+    VkExtent2D renderSize() {
+        return {
+            (uint32_t)(finalBufferSize.width * renderScale),
+            (uint32_t)(finalBufferSize.height * renderScale),
+        };
+    }
+
     bool enableVSync = false;
     VkSwapchainKHR swapChain;
 

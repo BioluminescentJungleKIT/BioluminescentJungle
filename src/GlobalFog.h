@@ -42,13 +42,9 @@ public:
     void updateCamera(glm::mat4 view, glm::mat4 projection, float near, float far);
 
     void updateUBOContent() override;
+    void disable() override;
 
-    void imguiFog();
-    void imguiSSR();
-
-    void disable();
-
-    void enable();
+    void enable() override;
 
     glm::vec3 color{0.2, 0.03, 0.1};
     glm::float32 ambientFactor{1};

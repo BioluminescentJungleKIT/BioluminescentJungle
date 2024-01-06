@@ -1,8 +1,8 @@
 #ifndef POSTPROCESSING_H
 #define POSTPROCESSING_H
 
+#include "Denoiser.h"
 #include "Swapchain.h"
-#include "UniformBuffer.h"
 
 #define GLFW_INCLUDE_VULKAN
 
@@ -12,7 +12,6 @@
 #include "Tonemap.h"
 #include "TAA.h"
 #include "GlobalFog.h"
-#include <memory>
 
 /**
  * A helper class which manages PostProcessingping-related resources
@@ -48,6 +47,10 @@ public:
         return &tonemap;
     }
 
+    Denoiser *getDenoiser() {
+        return &denoiser;
+    }
+
     TAA *getTAAPointer() {
         return &taa;
     }
@@ -68,12 +71,23 @@ private:
     VulkanDevice *device;
     Swapchain *swapchain;
 
+    Denoiser denoiser;
     GlobalFog fog;
     Tonemap tonemap;
     TAA taa;
 
-    RenderTarget fogTarget;
-    RenderTarget taaTarget;
+    struct StepInfo {
+        PostProcessingStepBase *algorithm;
+        RenderTarget target = {};
+        bool useRenderSize = true;
+        bool isFinal = false;
+
+        VkExtent2D getTargetSize(Swapchain *swapchain) {
+            return useRenderSize ? swapchain->renderSize() : swapchain->finalBufferSize;
+        }
+    };
+
+    std::vector<StepInfo> steps;
 };
 
 #endif /* end of include guard: POSTPROCESSING_H */

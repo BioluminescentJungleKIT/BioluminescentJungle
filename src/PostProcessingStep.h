@@ -18,18 +18,24 @@
 
 #define POST_PROCESSING_FORMAT VK_FORMAT_R32G32B32A32_SFLOAT
 
+enum StepFlags {
+    PPSTEP_RENDER_FULL_RES = (1 << 0),
+    PPSTEP_RENDER_LAST     = (1 << 1),
+};
+
 /**
  * A helper class which manages resources for a post processing step
  */
-template<class UBOType>
-class PostProcessingStep {
+class PostProcessingStepBase {
 public:
-    PostProcessingStep(VulkanDevice *device, Swapchain *swapChain) {
+    PostProcessingStepBase(VulkanDevice *device, Swapchain *swapChain, uint32_t flags, uint32_t uboSize) {
         this->device = device;
         this->swapchain = swapChain;
+        this->flags = flags;
+        this->uboSize = uboSize;
     };
 
-    ~PostProcessingStep() {
+    ~PostProcessingStepBase() {
         uniformBuffer.destroy(device);
         vkDestroyRenderPass(*device, renderPass, nullptr);
         vkDestroyDescriptorSetLayout(*device, descriptorSetLayout, nullptr);
@@ -40,6 +46,10 @@ public:
             }
         }
     };
+
+    VkExtent2D getViewport() {
+        return (flags & PPSTEP_RENDER_FULL_RES) ? swapchain->finalBufferSize : swapchain->renderSize();
+    }
 
     // Will also destroy any old pipeline which exists
     void createPipeline(bool recompileShaders) {
@@ -56,7 +66,7 @@ public:
         params.vertexAttributeDescription = {};
         params.vertexInputDescription = {};
         params.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-        params.extent = swapchain->swapChainExtent;
+        params.extent = getViewport();
 
         // One color attachment, no blending enabled for it
         params.blending = {{}};
@@ -66,16 +76,16 @@ public:
         this->pipeline = std::make_unique<GraphicsPipeline>(device, renderPass, 0, params);
     };
 
-    void createRenderPass(bool isFinalPass) {
+    virtual void createRenderPass() {
         VkAttachmentDescription colorAttachment{};
-        colorAttachment.format = isFinalPass ? swapchain->swapChainImageFormat : POST_PROCESSING_FORMAT;
+        colorAttachment.format = (flags & PPSTEP_RENDER_LAST) ? swapchain->swapChainImageFormat : POST_PROCESSING_FORMAT;
         colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
         colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
         colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
         colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
         colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
         colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        colorAttachment.finalLayout = isFinalPass ? VK_IMAGE_LAYOUT_PRESENT_SRC_KHR
+        colorAttachment.finalLayout = (flags & PPSTEP_RENDER_LAST) ? VK_IMAGE_LAYOUT_PRESENT_SRC_KHR
                                                   : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
         VkAttachmentReference colorAttachmentRef{};
@@ -87,13 +97,22 @@ public:
         subpass.colorAttachmentCount = 1;
         subpass.pColorAttachments = &colorAttachmentRef;
 
-        VkSubpassDependency dependency{};
-        dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
-        dependency.dstSubpass = 0;
-        dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-        dependency.srcAccessMask = 0;
-        dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-        dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        std::array<VkSubpassDependency, 2> dependencies;
+        dependencies[0].srcSubpass = VK_SUBPASS_EXTERNAL;
+        dependencies[0].dstSubpass = 0;
+        dependencies[0].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        dependencies[0].srcAccessMask = 0;
+        dependencies[0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        dependencies[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        dependencies[0].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
+
+        dependencies[1].srcSubpass = 0;
+        dependencies[1].dstSubpass = VK_SUBPASS_EXTERNAL;
+        dependencies[1].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        dependencies[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        dependencies[1].dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+        dependencies[1].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        dependencies[1].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
 
         VkRenderPassCreateInfo renderPassInfo{};
         renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
@@ -101,8 +120,8 @@ public:
         renderPassInfo.pAttachments = &colorAttachment;
         renderPassInfo.subpassCount = 1;
         renderPassInfo.pSubpasses = &subpass;
-        renderPassInfo.dependencyCount = 1;
-        renderPassInfo.pDependencies = &dependency;
+        renderPassInfo.dependencyCount = dependencies.size();
+        renderPassInfo.pDependencies = dependencies.data();
 
         VK_CHECK_RESULT(vkCreateRenderPass(*device, &renderPassInfo, nullptr, &renderPass))
     };
@@ -111,9 +130,9 @@ public:
         return 0;
     }
 
-    void setupRenderStage(bool recompileShaders, bool isFinalPass) {
-        createRenderPass(isFinalPass);
-        if (isFinalPass) {
+    void setupRenderStage(bool recompileShaders) {
+        createRenderPass();
+        if (flags & PPSTEP_RENDER_LAST) {
             swapchain->createFramebuffersForRender(renderPass);
         }
 
@@ -133,23 +152,22 @@ public:
         return renderPass;
     }
 
-    void recordCommandBuffer(VkCommandBuffer commandBuffer, VkFramebuffer target, bool renderImGUI) {
+    void runRenderPass(VkCommandBuffer commandBuffer, VkFramebuffer target, VkDescriptorSet dSet, bool renderImGUI) {
         VkRenderPassBeginInfo renderPassInfo{};
         renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
         renderPassInfo.renderPass = renderPass;
         renderPassInfo.framebuffer = target;
         renderPassInfo.renderArea.offset = {0, 0};
-        renderPassInfo.renderArea.extent = swapchain->swapChainExtent;
+        renderPassInfo.renderArea.extent = getViewport();
 
         renderPassInfo.clearValueCount = 0;
         renderPassInfo.pClearValues = nullptr;
         vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
-        VulkanHelper::setFullViewportScissor(commandBuffer, swapchain->swapChainExtent);
+        VulkanHelper::setFullViewportScissor(commandBuffer, getViewport());
 
         vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->pipeline);
-
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                pipeline->layout, 0, 1, &descriptorSets[swapchain->currentFrame], 0, nullptr);
+                                pipeline->layout, 0, 1, &dSet, 0, nullptr);
         vkCmdDraw(commandBuffer, 6, 1, 0, 0);
 
         if (renderImGUI) {
@@ -158,7 +176,11 @@ public:
         }
 
         vkCmdEndRenderPass(commandBuffer);
-    };
+    }
+
+    virtual void recordCommandBuffer(VkCommandBuffer commandBuffer, VkFramebuffer target, bool renderImGUI) {
+        runRenderPass(commandBuffer, target, descriptorSets[swapchain->currentFrame], renderImGUI);
+    }
 
     void createDescriptorSetLayout() {
         VkDescriptorSetLayoutBinding samplerLayoutBinding{};
@@ -195,7 +217,7 @@ public:
 
     };
 
-    void handleResize(const RenderTarget &sourceBuffer, const RenderTarget &gBuffer) {
+    virtual void handleResize(const RenderTarget &sourceBuffer, const RenderTarget &gBuffer) {
         updateSamplerBindings(sourceBuffer, gBuffer);
         createPipeline(false);
     };
@@ -225,7 +247,7 @@ public:
             VkDescriptorBufferInfo DescriptorBufferInfo{};
             DescriptorBufferInfo.buffer = uniformBuffer.buffers[0];
             DescriptorBufferInfo.offset = 0;
-            DescriptorBufferInfo.range = sizeof(UBOType);
+            DescriptorBufferInfo.range = uboSize;
 
             VkWriteDescriptorSet descriptorWriteBuffer{};
             descriptorWriteBuffer.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -241,8 +263,6 @@ public:
             std::vector<VkWriteDescriptorSet> descriptorWrites{descriptorWriteSampler, descriptorWriteBuffer};
 
             //add gbuffer
-
-
             std::vector<VkDescriptorImageInfo> gBufferImageInfos((int) GBufferTarget::NumAttachments);
 
             for (size_t j = 0; j < gBufferImageInfos.size(); j++) {
@@ -270,24 +290,15 @@ public:
         }
     };
 
-    void setupBuffers() {
-
-        uniformBuffer.allocate(device, sizeof(UBOType), 1);
-    };
-
-    void updateBuffers() {
-        updateUBOContent();
-        uniformBuffer.update(&ubo, sizeof(UBOType), 0);
-    };
-
-    void createDescriptorSets(VkDescriptorPool pool, const RenderTarget &sourceBuffer, const RenderTarget &gBuffer) {
-        descriptorSets = VulkanHelper::createDescriptorSetsFromLayout(*device, pool, descriptorSetLayout,
-                                                                      MAX_FRAMES_IN_FLIGHT);
-
+    virtual void createDescriptorSets(VkDescriptorPool pool, const RenderTarget &sourceBuffer,
+        const RenderTarget &gBuffer)
+    {
+        descriptorSets = VulkanHelper::createDescriptorSetsFromLayout(
+            *device, pool, descriptorSetLayout, MAX_FRAMES_IN_FLIGHT);
         updateSamplerBindings(sourceBuffer, gBuffer);
     };
 
-    RequiredDescriptors getNumDescriptors() {
+    virtual RequiredDescriptors getNumDescriptors() {
         return {
                 .requireUniformBuffers = MAX_FRAMES_IN_FLIGHT,
                 .requireSamplers = MAX_FRAMES_IN_FLIGHT *
@@ -295,25 +306,47 @@ public:
         };
     };
 
+    virtual void enable() {}
+    virtual void disable() {}
+
+    virtual void setupBuffers() = 0;
+    virtual void updateBuffers() = 0;
 protected:
     virtual void updateUBOContent() = 0;
 
     virtual std::string getShaderName() = 0;
 
-    UBOType ubo{};
-
     std::vector<std::vector<VkSampler>> samplers;
     std::vector<VkDescriptorSet> descriptorSets;
     Swapchain *swapchain;
     VulkanDevice *device;
-private:
     UniformBuffer uniformBuffer;
-
-    VkRenderPass renderPass;
-    std::unique_ptr<GraphicsPipeline> pipeline;
-
     VkDescriptorSetLayout descriptorSetLayout;
+    VkRenderPass renderPass;
 
+private:
+    std::unique_ptr<GraphicsPipeline> pipeline;
+    uint32_t flags;
+    uint32_t uboSize;
+
+};
+
+template<class UBOType>
+class PostProcessingStep : public PostProcessingStepBase {
+  public:
+    PostProcessingStep(VulkanDevice *device, Swapchain *swapChain, uint32_t flags) :
+        PostProcessingStepBase(device, swapChain, flags, sizeof(UBOType))
+    { }
+
+    UBOType ubo{};
+    void setupBuffers() override final {
+        uniformBuffer.allocate(device, sizeof(UBOType), 1);
+    };
+
+    void updateBuffers() override final {
+        updateUBOContent();
+        uniformBuffer.update(&ubo, sizeof(UBOType), 0);
+    };
 };
 
 #endif /* end of include guard: POSTPROCESSINGSTEP_H */

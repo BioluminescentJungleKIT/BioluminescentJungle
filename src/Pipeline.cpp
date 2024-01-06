@@ -11,12 +11,13 @@ static shaderc_shader_kind getShadercType(VkShaderStageFlagBits stageType) {
           return shaderc_geometry_shader;
         case VK_SHADER_STAGE_FRAGMENT_BIT:
           return shaderc_fragment_shader;
+        case VK_SHADER_STAGE_COMPUTE_BIT:
+          return shaderc_compute_shader;
 
         default:
           // TODO: we currently do not need all stages
           throw std::runtime_error("Unsupported shader type!");
           /*
-             case VK_SHADER_STAGE_COMPUTE_BIT:
              case VK_SHADER_STAGE_ALL_GRAPHICS:
              case VK_SHADER_STAGE_ALL:
              case VK_SHADER_STAGE_RAYGEN_BIT_KHR:
@@ -201,6 +202,48 @@ GraphicsPipeline::GraphicsPipeline(VulkanDevice* device, VkRenderPass renderPass
 std::vector<std::pair<std::string, std::string>> GraphicsPipeline::errorsFromShaderCompilation;
 
 GraphicsPipeline::~GraphicsPipeline() {
+    vkDestroyPipeline(*device, pipeline, nullptr);
+    vkDestroyPipelineLayout(*device, layout, nullptr);
+}
+
+ComputePipeline::ComputePipeline(VulkanDevice* device, const Parameters& params)
+{
+    this->device = device;
+
+    auto [code, message] = getShaderCode(params.source.second, getShadercType(params.source.first), params.recompileShaders);
+    if (!message.empty()) {
+        GraphicsPipeline::errorsFromShaderCompilation.emplace_back(params.source.second, message);
+        std::cout << "Error while compiling shader " << params.source.second << ":" << std::endl;
+        std::cout << message << std::endl;
+    }
+
+    VkShaderModule module = createShaderModule(device, code);
+
+    VkComputePipelineCreateInfo pipelineInfo{};
+    pipelineInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+    pipelineInfo.stage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    pipelineInfo.stage.stage = params.source.first;
+    pipelineInfo.stage.module = module;
+    pipelineInfo.stage.pName = "main";
+
+    VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
+    pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    pipelineLayoutInfo.setLayoutCount = params.descriptorSetLayouts.size();
+    pipelineLayoutInfo.pSetLayouts = params.descriptorSetLayouts.data();
+    if (vkCreatePipelineLayout(*device, &pipelineLayoutInfo, nullptr, &layout) != VK_SUCCESS) {
+        throw std::runtime_error("failed to create compute pipeline layout!");
+    }
+
+    pipelineInfo.layout = layout;
+    if (vkCreateComputePipelines(*device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline) != VK_SUCCESS) {
+        throw std::runtime_error("failed to create compute pipeline!");
+    }
+
+    vkDestroyShaderModule(*device, module, nullptr);
+}
+
+ComputePipeline::~ComputePipeline()
+{
     vkDestroyPipeline(*device, pipeline, nullptr);
     vkDestroyPipelineLayout(*device, layout, nullptr);
 }

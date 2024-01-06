@@ -1,0 +1,61 @@
+#version 450
+
+#include "util.glsl"
+
+layout(location = 0) out vec4 outColor;
+
+layout(set = 0, binding = 0) uniform sampler2D accColor;
+
+layout(set = 0, binding = 1) uniform DenoiserUBO {
+    vec4 weights[25];
+    ivec4 offsets[25];
+    mat4 inverseV;
+    int iterCnt;
+    float albedoSigma;
+    float normalSigma;
+    float positionSigma;
+} denoiser;
+
+layout(set = 0, binding = 2) uniform sampler2D albedo;
+layout(set = 0, binding = 3) uniform sampler2D depth;
+layout(set = 0, binding = 4) uniform sampler2D normal;
+layout(set = 0, binding = 5) uniform sampler2D motion;
+
+void main() {
+    ivec2 pos = ivec2(gl_FragCoord);
+    if (denoiser.iterCnt == 0) {
+        outColor = texelFetch(accColor, pos, 0);
+        return;
+    }
+
+    float mD = texelFetch(depth, pos, 0).x;
+    vec3 mPos = calculatePositionFromUV(mD, pos / vec2(textureSize(albedo, 0)), denoiser.inverseV);
+    vec3 mAlbedo = texelFetch(albedo, pos, 0).rgb;
+    vec3 mNormal = texelFetch(normal, pos, 0).xyz;
+
+    vec4 color = vec4(0);
+    float sumW = 0;
+
+    for (int i = 0; i < 25; i++) {
+        ivec2 other = pos + denoiser.offsets[i].xy;
+
+        float oD = texelFetch(depth, other, 0).x;
+        vec3 oPos = calculatePositionFromUV(oD, pos / vec2(textureSize(albedo, 0)), denoiser.inverseV);
+        vec3 oAlbedo = texelFetch(albedo, other, 0).rgb;
+        vec3 oNormal = texelFetch(normal, other, 0).xyz;
+
+        vec3 deltaPos = oPos - mPos;
+        vec3 deltaAlbedo = oAlbedo.rgb - mAlbedo.rgb;
+        vec3 deltaNormal = oNormal - mNormal;
+
+        float w1 = min(exp(-dot(deltaAlbedo, deltaAlbedo) / denoiser.albedoSigma), 1.0);
+        float w2 = min(exp(-dot(deltaNormal, deltaNormal) / denoiser.normalSigma), 1.0);
+        float w3 = min(exp(-dot(deltaPos, deltaPos) / denoiser.positionSigma), 1.0);
+
+        float W = w1 * w2 * w3 * denoiser.weights[i].x;
+        color += texelFetch(accColor, other, 0) * W;
+        sumW += W;
+    }
+
+    outColor = color / sumW;
+}

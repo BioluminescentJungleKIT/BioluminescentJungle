@@ -18,15 +18,20 @@ layout(set = 0, binding = 5) uniform sampler2D motion;
 
 layout(set = 0, binding = 6) uniform sampler2D lastFrame;
 
+vec4 fetchFrom(sampler2D smpl, ivec2 coords) {
+    return texture(smpl, coords / vec2(taa.width, taa.height));
+}
+
 // from incg assignment
 vec2
 sample_motion(int radius)
 {
+    return vec2(0, 0);
     float longest_square = 0;
     vec2 longest_vector = vec2(0, 0);
     for (int y = -radius; y <= radius; y++) {
         for (int x = -radius; x <= radius; x++) {
-            vec2 vector = texelFetch(motion, ivec2(gl_FragCoord.xy) + ivec2(x, y), 0).xy;
+            vec2 vector = fetchFrom(motion, ivec2(gl_FragCoord.xy) + ivec2(x, y)).xy;
             float length_square = dot(vector, vector);
             if (length_square > longest_square) {
                 longest_square = length_square;
@@ -53,7 +58,7 @@ uint clamp_method)
         vec3 maxRGB = vec3(0, 0, 0);
         for (int y = -clamp_radius_minmax; y <= clamp_radius_minmax; y++) {
             for (int x = -clamp_radius_minmax; x <= clamp_radius_minmax; x++) {
-                vec3 rgb = texelFetch(currentFrame, ivec2(gl_FragCoord.xy) + ivec2(x, y), 0).rgb;
+                vec3 rgb = fetchFrom(currentFrame, ivec2(gl_FragCoord.xy) + ivec2(x, y)).rgb;
                 minRGB = min(minRGB, rgb);
                 maxRGB = max(maxRGB, rgb);
             }
@@ -66,7 +71,7 @@ uint clamp_method)
         vec3 EXX = vec3(0, 0, 0);
         for (int y = -clamp_radius_moments; y <= clamp_radius_moments; y++) {
             for (int x = -clamp_radius_moments; x <= clamp_radius_moments; x++) {
-                vec3 rgb = texelFetch(currentFrame, ivec2(gl_FragCoord.xy) + ivec2(x, y), 0).rgb;
+                vec3 rgb = fetchFrom(currentFrame, ivec2(gl_FragCoord.xy) + ivec2(x, y)).rgb;
                 EX += rgb;
                 EXX += rgb * rgb;
             }

@@ -15,14 +15,15 @@
 #include "UniformBuffer.h"
 #include "tiny_gltf.h"
 #include "PhysicalDevice.h"
+#include "DataBuffer.h"
 
 struct ModelTransform {
     glm::mat4 model;
 };
 struct LightData {
-    glm::vec3 position;
-    glm::vec3 color;
-    glm::float32 intensity;
+    glm::vec3 position alignas(16);
+    glm::vec3 color alignas(16);
+    glm::float32 intensity alignas(16);
 };
 struct CameraData{
     std::string name;
@@ -98,6 +99,8 @@ public:
     std::tuple<std::vector<VkVertexInputAttributeDescription>, std::vector<VkVertexInputBindingDescription>>
     getLightsAttributeAndBindingDescriptions();
 
+    std::pair<VkBuffer, size_t> getPointLights();
+
     RequiredDescriptors getNumDescriptors();
 
     void destroyDescriptorSetLayout();
@@ -115,14 +118,15 @@ public:
     void cameraButtons(glm::vec3 &lookAt, glm::vec3 &position, glm::vec3 &up, float &fovy, float &near, float &far);
     void drawImGUIMaterialSettings();
 
-private:
-    tinygltf::TinyGLTF loader;
     tinygltf::Model model;
+    std::map<int, std::vector<ModelTransform>> meshTransforms;
+
+  private:
+    tinygltf::TinyGLTF loader;
     VulkanDevice *device;
     Swapchain *swapchain;
 
-    std::vector<VkBuffer> buffers;
-    std::vector<VkDeviceMemory> bufferMemories;
+    std::vector<DataBuffer> buffers;
 
     std::map<PipelineDescription, std::unique_ptr<GraphicsPipeline>> pipelines;
 
@@ -153,7 +157,6 @@ private:
 
     std::map<int, int> buffersMap;
     std::map<int, int> descriptorSetsMap;
-    std::map<int, std::vector<ModelTransform>> meshTransforms;
     std::map<std::string, int> meshNameMap;
     std::map<std::string, std::vector<LoD>> lods; // map base names to LoDs. if none exist, just use the same
     std::vector<VkDescriptorSet> bindingDescriptorSets;

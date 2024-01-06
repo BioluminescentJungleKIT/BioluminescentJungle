@@ -25,7 +25,9 @@ struct TAAUBO {
  */
 class TAA : public PostProcessingStep<TAAUBO> {
 public:
-    TAA(VulkanDevice *pDevice, Swapchain *pSwapchain, RenderTarget* taaTarget);
+    TAA(VulkanDevice *pDevice, Swapchain *pSwapchain);
+
+    void setPTarget(RenderTarget* taaTarget);
 
     std::string getShaderName() override;
 
@@ -37,9 +39,9 @@ public:
                                std::vector<VkDescriptorImageInfo> &imageInfos, int frameIndex,
                                const RenderTarget &sourceBuffer) override;
 
-    void disable();
+    void disable() override;
 
-    void enable();
+    void enable() override;
 
     float alpha{0.1};
     int mode{1};
