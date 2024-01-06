@@ -34,11 +34,10 @@ void main() {
     fsPos = pos.xyz;
 
     gl_Position = ubo.proj * pos;
-    gl_Position += gl_Position.w * vec4(ubo.jitt, 0, 0);
     fsPosClipSpace = gl_Position;
+    gl_Position += gl_Position.w * vec4(ubo.jitt, 0, 0);
 
     fsOldPosClipSpace = lastubo.proj * lastubo.view * lastubo.modl * model.model[gl_InstanceIndex] * vec4(inPosition, 1.0);
-    fsOldPosClipSpace += fsOldPosClipSpace.w * vec4(lastubo.jitt, 0, 0);
 
     uv = inUV;
     normal = (transpose(inverse(M)) * vec4(inNormal, 0.0)).xyz;
