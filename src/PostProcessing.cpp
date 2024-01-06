@@ -5,7 +5,6 @@
 #include <vulkan/vulkan_core.h>
 
 PostProcessing::PostProcessing(VulkanDevice *device, Swapchain *swapChain) :
-        denoiser(Denoiser(device, swapChain)),
         tonemap(Tonemap(device, swapChain)),
         taa(TAA(device, swapChain)),
         fog(GlobalFog(device, swapChain)),
@@ -13,10 +12,6 @@ PostProcessing::PostProcessing(VulkanDevice *device, Swapchain *swapChain) :
         swapchain(swapChain) {
 
     // Generate a list of steps
-    this->steps.push_back({
-        .algorithm = &denoiser,
-    });
-
     this->steps.push_back({
         .algorithm = &fog,
     });

@@ -245,7 +245,7 @@ public:
             descriptorWriteSampler.pNext = NULL;
 
             VkDescriptorBufferInfo DescriptorBufferInfo{};
-            DescriptorBufferInfo.buffer = uniformBuffer.buffers[0];
+            DescriptorBufferInfo.buffer = uniformBuffer.buffers[i];
             DescriptorBufferInfo.offset = 0;
             DescriptorBufferInfo.range = uboSize;
 
@@ -312,7 +312,7 @@ public:
     virtual void setupBuffers() = 0;
     virtual void updateBuffers() = 0;
 protected:
-    virtual void updateUBOContent() = 0;
+    virtual void updateUBOContent() {};
 
     virtual std::string getShaderName() = 0;
 
@@ -339,13 +339,13 @@ class PostProcessingStep : public PostProcessingStepBase {
     { }
 
     UBOType ubo{};
-    void setupBuffers() override final {
-        uniformBuffer.allocate(device, sizeof(UBOType), 1);
+    void setupBuffers() override {
+        uniformBuffer.allocate(device, sizeof(UBOType), MAX_FRAMES_IN_FLIGHT);
     };
 
-    void updateBuffers() override final {
+    void updateBuffers() override {
         updateUBOContent();
-        uniformBuffer.update(&ubo, sizeof(UBOType), 0);
+        uniformBuffer.update(&ubo, sizeof(UBOType), swapchain->currentFrame);
     };
 };
 

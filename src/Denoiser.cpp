@@ -12,8 +12,16 @@ void Denoiser::enable() {
     enabled = true;
 }
 
-void Denoiser::updateUBOContent() {
+void Denoiser::setupBuffers() {
+    uniformBuffer.allocate(device, sizeof(ubo), MAX_FRAMES_IN_FLIGHT);
+    tmpBuffer.allocate(device, sizeof(ubo), MAX_FRAMES_IN_FLIGHT);
+}
+
+void Denoiser::updateBuffers() {
     this->ubo.iterationCount = enabled ? iterationCount : 0;
+
+    // When we render with the non-tmp sets, we render our final iteration. In this case, lastIteration=1
+    uniformBuffer.update(&ubo, sizeof(ubo), swapchain->currentFrame);
 }
 
 Denoiser::Denoiser(VulkanDevice *pDevice, Swapchain *pSwapchain) : PostProcessingStep(pDevice, pSwapchain, 0) {
@@ -32,6 +40,7 @@ Denoiser::Denoiser(VulkanDevice *pDevice, Swapchain *pSwapchain) : PostProcessin
 }
 
 Denoiser::~Denoiser() {
+    tmpBuffer.destroy(device);
     tmpTarget.destroyAll();
 }
 
@@ -72,7 +81,7 @@ void Denoiser::updateTmpSets(const RenderTarget& gBuffer) {
             images.push_back(vkutil::createDescriptorImageInfo(tmpTarget.imageViews[j][0], this->samplers[i][0]));
             writes.push_back(vkutil::createDescriptorWriteSampler(images.back(), tmpTargetSets[i][j], 0));
 
-            auto uboInfo = vkutil::createDescriptorBufferInfo(uniformBuffer.buffers[0], 0, sizeof(DenoiserUBO));
+            auto uboInfo = vkutil::createDescriptorBufferInfo(uniformBuffer.buffers[i], 0, sizeof(DenoiserUBO));
             writes.push_back(vkutil::createDescriptorWriteUBO(uboInfo, tmpTargetSets[i][j], 1));
 
             for (int k = 0; k < GBufferTarget::NumAttachments; k++) {

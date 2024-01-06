@@ -25,7 +25,9 @@ public:
     Denoiser(VulkanDevice *pDevice, Swapchain *pSwapchain);
     ~Denoiser();
     std::string getShaderName() override;
-    void updateUBOContent() override;
+
+    void setupBuffers() override;
+    void updateBuffers() override;
 
     void updateCamera(glm::mat4 projection);
 
@@ -42,6 +44,7 @@ public:
     static constexpr int NR_TMP_BUFFERS = 2;
 
     RenderTarget tmpTarget;
+    UniformBuffer tmpBuffer;
 
     // tmpTargetSets[i][j] has the GBuffer attachments from GBuffer[i] and accColor equal to tmpTarget[j]
     std::array<std::array<VkDescriptorSet, NR_TMP_BUFFERS>, MAX_FRAMES_IN_FLIGHT> tmpTargetSets;
