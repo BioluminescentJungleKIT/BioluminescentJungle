@@ -41,6 +41,13 @@ struct PointLight {
     vec4 wind; // just x
 };
 
+struct EmissiveTriangle {
+    vec4 x; // just xyz
+    vec4 y; // just xyz
+    vec4 z; // just xyz
+    vec4 emission;
+};
+
 struct PointLightParams {
     vec3 pos;
     vec3 intensity;
@@ -51,25 +58,35 @@ PointLightParams computeLightParams(PointLight light) {
     PointLightParams params;
     params.pos = light.position.xyz;
     params.intensity = light.color.rgb * light.intensity.x/55;
-    params.r = exp(0.5);
+    params.r = exp(100);
     return params;
 }
-
 
 float max3 (vec3 v) {
     return max (max (v.x, v.y), v.z);
 }
 
-float evalPointLightStrength(in SurfacePoint point, in PointLightParams light) {
-    vec3 L = light.pos - point.worldPos;
+float evalPseudoGeometryTerm(vec3 Pa, vec3 Na, vec3 Pb, vec3 intensity, float r, out vec3 L) {
+    L = Pb - Pa;
     float dist = length(L);
     L /= dist;
 
-    float b = max3(light.intensity);
-    float f = max(min(1.0 - pow(dist / (light.r * sqrt(b)), 4), 1), 0) / (dist * dist);
+    float b = max3(intensity);
+    float f = max(min(1.0 - pow(dist / (r * sqrt(b)), 4), 1), 0) / (dist * dist);
     f = max(f, 0);
 
-    return f * max(0.0, dot(L, point.N));
+    return f * max(0.0, dot(L, Na));
+}
+
+float evalEmittingPoint(in SurfacePoint point, vec3 emitterPoint, vec3 emitterIntensity, vec3 emitterN) {
+    vec3 L;
+    float g = evalPseudoGeometryTerm(point.worldPos, point.N, emitterPoint, emitterIntensity, 100, L);
+    return g * max(0.0, dot(emitterN, -L));
+}
+
+float evalPointLightStrength(in SurfacePoint point, in PointLightParams light) {
+    vec3 L;
+    return evalPseudoGeometryTerm(point.worldPos, point.N, light.pos, light.intensity, light.r, L);
 }
 
 float evalFogAbsorption(in SurfacePoint point, in SceneLightInfo info) {

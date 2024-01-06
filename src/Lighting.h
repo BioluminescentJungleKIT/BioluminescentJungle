@@ -129,6 +129,7 @@ class DeferredLighting {
     UniformBuffer debugUBO;
     UniformBuffer lightUBO;
     UniformBuffer computeParamsUBO;
+    DataBuffer emissiveTriangles;
     Denoiser denoiser;
 
     // *2 for temporary reservoirs while using temporal and spatial reuse

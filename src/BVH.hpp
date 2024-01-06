@@ -22,10 +22,18 @@ inline std::ostream &operator<<(std::ostream &out, const glm::vec3 &value) {
  * We extract all triangles from all primitives and build our own buffer with them.
  */
 class BVH {
+  public:
     struct Triangle {
         glm::vec3 x alignas(16);
         glm::vec3 y alignas(16);
         glm::vec3 z alignas(16);
+    };
+
+    struct EmissiveTriangle {
+        glm::vec3 x alignas(16);
+        glm::vec3 y alignas(16);
+        glm::vec3 z alignas(16);
+        glm::vec4 emission alignas(16);
     };
 
     struct BVHNode {
@@ -43,8 +51,13 @@ class BVH {
         return glm::vec3(v);
     }
 
-    static Triangle transformTriangle(const Triangle& tri, const glm::mat4& mat) {
-        return Triangle { transformVec(tri.x, mat), transformVec(tri.y, mat), transformVec(tri.z, mat) };
+    template<class TriangleType>
+    static TriangleType transformTriangle(const TriangleType& tri, const glm::mat4& mat) {
+        TriangleType result = tri;
+        result.x = transformVec(tri.x, mat);
+        result.y = transformVec(tri.y, mat);
+        result.z = transformVec(tri.z, mat);
+        return result;
     }
 
   public:
@@ -54,7 +67,7 @@ class BVH {
         std::cout << "Starting building BVH" << std::endl;
         auto startTS = std::chrono::system_clock::now();
 
-        this->triangles = extractTriangles(scene);
+        this->triangles = extractTriangles<Triangle>(scene);
         constructBVH();
         //std::cout << "Got triangles from the model: " << triangles.size() << std::endl;
         //for (size_t i = 0; i < triangles.size(); i++) {
@@ -157,11 +170,13 @@ class BVH {
         bvh[curNodeIdx].high = glm::max(bvh[leftIdx].high, bvh[rightIdx].high);
     }
 
+  public:
     // Compute a list of all triangles in the model.
-    static std::vector<Triangle> extractTriangles(Scene *scene) {
+    template<class TriangleType>
+    static std::vector<TriangleType> extractTriangles(Scene *scene) {
         auto& model = scene->model;
 
-        std::vector<Triangle> result;
+        std::vector<TriangleType> result;
         for (size_t meshId = 0; meshId < model.meshes.size(); meshId++) {
             if (!scene->meshTransforms.count(meshId)) {
                 continue;
@@ -176,6 +191,20 @@ class BVH {
                     continue;
                 }
 
+                if constexpr (std::is_same_v<TriangleType, EmissiveTriangle>) {
+                    // Emissive only
+                    int matId = primitive.material;
+                    float highestEmission = 0;
+                    if (matId >= 0) {
+                        for (float f : model.materials[matId].emissiveFactor) {
+                            highestEmission = std::max(highestEmission, f);
+                        }
+                    }
+
+                    if (highestEmission <= 0) {
+                        continue;
+                    }
+                }
 
                 auto& indexAccessor = model.accessors[primitive.indices];
                 auto& indexBView = model.bufferViews[indexAccessor.bufferView];
@@ -207,11 +236,24 @@ class BVH {
                     int idx1 = indexArray[_idx + 1];
                     int idx2 = indexArray[_idx + 2];
 
-                    Triangle tri{
-                        glm::vec3(vertexArray[3 * idx0], vertexArray[3 * idx0 + 1], vertexArray[3 * idx0 + 2]),
-                        glm::vec3(vertexArray[3 * idx1], vertexArray[3 * idx1 + 1], vertexArray[3 * idx1 + 2]),
-                        glm::vec3(vertexArray[3 * idx2], vertexArray[3 * idx2 + 1], vertexArray[3 * idx2 + 2]),
-                    };
+                    TriangleType tri;
+                    tri.x = glm::vec3(vertexArray[3 * idx0], vertexArray[3 * idx0 + 1], vertexArray[3 * idx0 + 2]);
+                    tri.y = glm::vec3(vertexArray[3 * idx1], vertexArray[3 * idx1 + 1], vertexArray[3 * idx1 + 2]);
+                    tri.z = glm::vec3(vertexArray[3 * idx2], vertexArray[3 * idx2 + 1], vertexArray[3 * idx2 + 2]);
+
+                    if constexpr (std::is_same_v<TriangleType, EmissiveTriangle>) {
+                        auto& material = model.materials[primitive.material];
+                        auto& emission = material.emissiveFactor;
+
+#define KHR_emissive_strength "KHR_materials_emissive_strength"
+                        float strength = 1.0;
+                        if (material.extensions.contains(KHR_emissive_strength)) {
+                            strength = material.extensions[KHR_emissive_strength]
+                                .Get("emissiveStrength").Get<double>();
+                        }
+
+                        tri.emission = {emission[0], emission[1], emission[2], strength};
+                    }
 
                     for (auto& instance : scene->meshTransforms[meshId]) {
                         result.push_back(transformTriangle(tri, instance.model));

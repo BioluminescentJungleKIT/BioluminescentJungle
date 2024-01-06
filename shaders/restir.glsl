@@ -3,7 +3,7 @@
 // NUM_SAMPLES_PER_RESERVOIR must also be adjusted in Lighting.cpp.
 // The value there must be >= than the value used by the shader, otherwise we don't have enough storage space.
 #define NUM_SAMPLES_PER_RESERVOIR 2
-#define NUM_SAMPLES_PER_PIXEL 16
+#define NUM_SAMPLES_PER_PIXEL 128
 
 // Very simple pseudo-random number generators.
 // We might want something better, I just used this as a easy start
@@ -27,13 +27,16 @@ float nextRand(inout uint randState) {
 }
 
 struct Reservoir {
-    // Sample == light index
+    // 0 => invalid, > 0: point light number+1, < 0: negated (emissive triangle id+1)
     int selected[NUM_SAMPLES_PER_RESERVOIR];
+
+    // Position of (or on) the selected light source
+    vec3 position[NUM_SAMPLES_PER_RESERVOIR];
 
     // Sum of sampling weights
     float sumW[NUM_SAMPLES_PER_RESERVOIR];
 
-    // The corrected W as in Equation (6) from the paper
+    // The estimated light contribution
     float pHat[NUM_SAMPLES_PER_RESERVOIR];
 
     int totalNumSamples;
@@ -42,27 +45,29 @@ struct Reservoir {
 Reservoir createEmptyReservoir() {
     Reservoir r;
     for (int i = 0; i < NUM_SAMPLES_PER_RESERVOIR; i++) {
-        r.selected[i] = -1;
+        r.selected[i] = 0;
         r.sumW[i] = 0;
         r.pHat[i] = 0;
+        r.position[i] = vec3(0);
     }
 
     r.totalNumSamples = 0;
     return r;
 }
 
-void updateReservoirIdx(inout Reservoir r, inout uint randState, int id, float w, float pHat, int i) {
+void updateReservoirIdx(inout Reservoir r, inout uint randState, int id, float w, float pHat, vec3 pos, int i) {
     r.sumW[i] += w;
     if (nextRand(randState) < w / r.sumW[i]) {
         r.selected[i] = id;
         r.pHat[i] = pHat;
+        r.position[i] = pos;
     }
 }
 
-void addSample(inout Reservoir r, inout uint randState, int id, float w, float pHat) {
+void addSample(inout Reservoir r, inout uint randState, int id, float w, float pHat, vec3 pos) {
     r.totalNumSamples += 1;
     for (int i = 0; i < NUM_SAMPLES_PER_RESERVOIR; i++) {
-        updateReservoirIdx(r, randState, id, w, pHat, i);
+        updateReservoirIdx(r, randState, id, w, pHat, pos, i);
     }
 }
 
@@ -76,9 +81,9 @@ void mergeReservoir(inout uint randState, inout Reservoir dest, Reservoir src, f
     // Correction factor to make sure that the old samples don't outweigh the new ones too much.
     const float f = min(maxSamplesTake, src.totalNumSamples) / src.totalNumSamples;
     for (int i = 0; i < NUM_SAMPLES_PER_RESERVOIR; i++) {
-        if (src.selected[i] >= 0) {
+        if (src.selected[i] != 0) {
             float w = correctedPHats[i] / src.pHat[i] * src.sumW[i] * f;
-            updateReservoirIdx(dest, randState, src.selected[i], w, correctedPHats[i], i);
+            updateReservoirIdx(dest, randState, src.selected[i], w, correctedPHats[i], src.position[i], i);
         }
     }
 
@@ -91,4 +96,46 @@ int reservoirIdx(ivec2 pos, int viewportWidth) {
 
 float sum3(vec3 x) {
     return x.x + x.y + x.z;
+}
+
+void getEmissiveTriangleParams(EmissiveTriangle tri, out vec3 emission, out vec3 N, out float area) {
+    emission = tri.emission.rgb * tri.emission.w;
+    vec3 p1 = tri.x.xyz;
+    vec3 p2 = tri.y.xyz;
+    vec3 p3 = tri.z.xyz;
+    N = cross(p2 - p1, p3 - p1);
+    area = length(N);
+    N /= area;
+}
+
+// The following few functions are declared / duplicated in the respective shaders because it seems I can't declare the SSBOs in the included file,
+// and I cannot pass a variable length array as a parameter. https://github.com/KhronosGroup/GLSL/issues/142
+PointLightParams getPointLight(int idx);
+void getEmissiveTriangle(int idx, out vec3 emission, out vec3 N, out float area);
+
+void calculatePHats(Reservoir r, SurfacePoint point, out float pHats[NUM_SAMPLES_PER_RESERVOIR]) {
+    for (int i = 0; i < NUM_SAMPLES_PER_RESERVOIR; i++) {
+        int sel = r.selected[i];
+        if (sel < 0) {
+            vec3 N, emission;
+            float area;
+            getEmissiveTriangle(-sel-1, emission, N, area);
+            pHats[i] = evalEmittingPoint(point, r.position[i], emission, N);
+        } else if (sel > 0) {
+            pHats[i] = evalPointLightStrength(point, getPointLight(sel-1));
+        } else {
+            pHats[i] = 0;
+        }
+    }
+}
+
+void tryMergeReservoir(inout uint randState, inout Reservoir dest, Reservoir src, float maxSamplesTake, SurfacePoint point)
+{
+    if (src.totalNumSamples <= 0) {
+        return;
+    }
+
+    float pHats[NUM_SAMPLES_PER_RESERVOIR];
+    calculatePHats(src, point, pHats);
+    mergeReservoir(randState, dest, src, pHats, maxSamplesTake);
 }
