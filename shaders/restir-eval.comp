@@ -98,7 +98,7 @@ void main() {
 
             // Equation (6) from the ReSTIR paper
             float W = 1.0 / (r.pHat[i] * r.totalNumSamples) * r.sumW[i];
-            finalColor += W * f * light.intensity * point.albedo;
+            finalColor += W * f * light.intensity;
         }
     }
 

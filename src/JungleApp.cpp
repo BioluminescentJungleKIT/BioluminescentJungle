@@ -128,6 +128,7 @@ void JungleApp::drawImGUI() {
                 &lighting->getDenoiser()->ubo.normalSigma, 0.001, 5.0);
             ImGui::SliderFloat("Denoiser Position Sigma",
                 &lighting->getDenoiser()->ubo.positionSigma, 0.001, 5.0);
+            ImGui::Checkbox("Remove albedo", &lighting->getDenoiser()->ignoreAlbedo);
         }
         if (ImGui::CollapsingHeader("Camera Settings")) {
             ImGui::DragFloatRange2("Clipping Planes", &nearPlane, &farPlane, 0.07f, .01f, 100000.f);

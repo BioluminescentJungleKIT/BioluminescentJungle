@@ -34,6 +34,8 @@ public:
     void disable() override;
     void enable() override;
 
+    std::vector<VkPushConstantRange> getPushConstantRanges() override;
+
     void createRenderPass() override;
     void handleResize(const RenderTarget& sourceBuffer, const RenderTarget& gBuffer) override;
     RequiredDescriptors getNumDescriptors() override;
@@ -51,6 +53,7 @@ public:
 
     int32_t iterationCount = 3;
     bool enabled = true;
+    bool ignoreAlbedo = false;
 
     void recreateTmpTargets();
     void updateTmpSets(const RenderTarget& gBuffer);

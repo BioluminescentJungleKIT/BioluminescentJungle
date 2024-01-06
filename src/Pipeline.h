@@ -38,6 +38,7 @@ struct PipelineParameters {
     // The number of blending options also determines the number of color attachments.
     std::vector<std::optional<BasicBlending>> blending;
     bool useDepthTest = true;
+    std::vector<VkPushConstantRange> pushConstants;
 };
 
 class GraphicsPipeline {

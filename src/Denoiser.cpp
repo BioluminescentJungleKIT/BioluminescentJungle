@@ -114,9 +114,19 @@ void Denoiser::recreateTmpTargets() {
 void Denoiser::recordCommandBuffer(
     VkCommandBuffer commandBuffer, VkFramebuffer target, bool renderImGUI)
 {
+    glm::int32 multAlbedo = 0;
+    PushConstantValues pushValue {
+        .stages = VK_SHADER_STAGE_FRAGMENT_BIT,
+        .offset = 0,
+        .size = sizeof(multAlbedo),
+        .data = &multAlbedo,
+    };
+
     if (ubo.iterationCount <= 1) {
         // Directly pass forward
-        runRenderPass(commandBuffer, target, descriptorSets[swapchain->currentFrame], renderImGUI);
+        multAlbedo = !ignoreAlbedo;
+        runRenderPass(commandBuffer, target, descriptorSets[swapchain->currentFrame], renderImGUI,
+            {pushValue});
         return;
     }
 
@@ -127,20 +137,30 @@ void Denoiser::recordCommandBuffer(
     // The first iteration is copying to tmpTarget[0], and the last iteration copies
     // from tmpTarget[currentlyIn] to the actual target.
     runRenderPass(commandBuffer, tmpTarget.framebuffers[renderPass][0],
-        descriptorSets[swapchain->currentFrame], false);
+        descriptorSets[swapchain->currentFrame], false, {pushValue});
     int iterRemaining = ubo.iterationCount - 1;
     int currentlyIn = 0;
 
     while (iterRemaining > 1) {
         runRenderPass(commandBuffer, tmpTarget.framebuffers[renderPass][currentlyIn ^ 1],
-            tmpSets[currentlyIn], false);
+            tmpSets[currentlyIn], false, {pushValue});
         currentlyIn ^= 1;
         iterRemaining--;
     }
 
-    runRenderPass(commandBuffer, target, tmpSets[currentlyIn], renderImGUI);
+    multAlbedo = !ignoreAlbedo;
+    runRenderPass(commandBuffer, target, tmpSets[currentlyIn], renderImGUI, {pushValue});
 }
 
 void Denoiser::updateCamera(glm::mat4 projection) {
     ubo.inverseP = glm::inverse(projection);
+}
+
+std::vector<VkPushConstantRange> Denoiser::getPushConstantRanges() {
+    return { VkPushConstantRange {
+        .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+        .offset = 0,
+        .size = sizeof(glm::int32),
+    }
+    };
 }

@@ -21,16 +21,26 @@ layout(set = 0, binding = 3) uniform sampler2D depth;
 layout(set = 0, binding = 4) uniform sampler2D normal;
 layout(set = 0, binding = 5) uniform sampler2D motion;
 
+layout(push_constant) uniform constants
+{
+    int multAlbedo;
+};
+
 void main() {
     ivec2 pos = ivec2(gl_FragCoord);
+    vec3 mAlbedo = texelFetch(albedo, pos, 0).rgb;
+    vec4 multiplier = vec4(1.0);
+    if (multAlbedo > 0) {
+        multiplier = vec4(mAlbedo, 1.0);
+    }
+
     if (denoiser.iterCnt == 0) {
-        outColor = texelFetch(accColor, pos, 0);
+        outColor = texelFetch(accColor, pos, 0) * multiplier;
         return;
     }
 
     float mD = texelFetch(depth, pos, 0).x;
     vec3 mPos = calculatePositionFromUV(mD, pos / vec2(textureSize(albedo, 0)), denoiser.inverseV);
-    vec3 mAlbedo = texelFetch(albedo, pos, 0).rgb;
     vec3 mNormal = texelFetch(normal, pos, 0).xyz;
 
     vec4 color = vec4(0);
@@ -57,5 +67,5 @@ void main() {
         sumW += W;
     }
 
-    outColor = color / sumW;
+    outColor = color / sumW * multiplier;
 }
