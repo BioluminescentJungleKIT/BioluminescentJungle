@@ -119,6 +119,38 @@ Scene::Scene(VulkanDevice *device, Swapchain *swapchain, std::string filename) {
 }
 
 void Scene::recordCommandBuffer(VkCommandBuffer commandBuffer, VkDescriptorSet mvpSet) {
+    // update lods
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, lodUpdatePipeline);
+    for (auto &[meshName, meshLods]: lods) {
+        if (meshLods.size() > 1) {
+            uint32_t n = meshTransforms[meshNameMap[meshName]].size();
+            for (auto &lod: meshLods) {
+                bool hasHigher = 0 == isinff(lod.dist_max);  // todo make a proper safeguard
+                bool hasLower = 0.001 >= lod.dist_min;
+                float lodDistMax = lod.dist_max;
+                float lodDistMin = lod.dist_min;
+                glm::vec4 constants = {hasHigher, hasLower, lodDistMax, lodDistMin};
+                vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, lodUpdatePipelineLayout,
+                                        0, 1, &descriptorSet, 0, nullptr);
+                vkCmdPushConstants(commandBuffer, lodUpdatePipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT,
+                                   0, sizeof(constants), &constants);
+                vkCmdDispatch(commandBuffer, n, 1, 1);
+            }
+        }
+    }
+    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, ...)  // TODO
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, lodCompressPipeline);
+    for (auto &[meshName, meshLods]: lods) {
+        if (meshLods.size() > 1) {
+            uint32_t n = meshTransforms[meshNameMap[meshName]].size();
+            for (auto &lod: meshLods) {
+                vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, lodCompressPipelineLayout,
+                                        0, 1, &descriptorSet, 0, nullptr);
+                vkCmdDispatch(commandBuffer, n, 1, 1);
+            }
+        }
+    }
+    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_VERTEX_SHADER_BIT, ...)  // TODO
     // Draw all primitives with all available pipelines.
     for (auto &[programDescr, meshMap]: meshPrimitivesWithPipeline) {
         auto &pipeline = pipelines[programDescr];
@@ -799,7 +831,8 @@ void Scene::drawImGUIMaterialSettings() {
     }
 }
 
-void Scene::addLoD(tinygltf::Mesh &mesh) {
+void Scene::addLoD(int meshIndex) {
+    tinygltf::Mesh mesh = model.meshes[meshIndex];
     auto name = mesh.name;
     LoD lod{mesh, 0, INFINITY};
     size_t index;
@@ -827,6 +860,9 @@ void Scene::addLoD(tinygltf::Mesh &mesh) {
             }
         }
         name = basename;
+    } else {
+        // is base mesh
+        meshNameMap[name] = meshIndex;
     }
     lods[name].push_back(lod);
 }

@@ -154,6 +154,7 @@ private:
     std::map<int, int> buffersMap;
     std::map<int, int> descriptorSetsMap;
     std::map<int, std::vector<ModelTransform>> meshTransforms;
+    std::map<std::string, int> meshNameMap;
     std::map<std::string, std::vector<LoD>> lods; // map base names to LoDs. if none exist, just use the same
     std::vector<VkDescriptorSet> bindingDescriptorSets;
 
@@ -168,7 +169,7 @@ private:
     UniformBuffer materialBuffer;
     UniformBuffer constantsBuffers;
 
-    void addLoD(tinygltf::Mesh &mesh);
+    void addLoD(int meshIndex);
 };
 
 

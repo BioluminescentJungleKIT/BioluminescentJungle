@@ -1,0 +1,34 @@
+#version 450
+
+// todo
+// count
+// transforms
+// size
+
+bool isValid(uint idx) {
+    return bool((bitmap[idx/32] << (idx % 32)) & 1);
+}
+
+void copy(uint fromIndex, uint toIndex) {
+    // copy transform
+    transforms[toIndex] = transforms[fromIndex];
+    // set valid
+    atomicOr(bitmap[idx/32], 1 >> (idx % 32));
+}
+
+void main() {
+    uint index = gl_InvocationID;
+    // if this index has invalid value and is less then $count
+    if (!isValid(index) && index < count) {
+        bool foundValid = false;
+        while (!foundValid) {
+            // get $size and atomic subtract 1
+            uint getFromIndex = atomicAdd(size, -1);
+            foundValid = isValid(getFromIndex);
+            // if index at size is valid, copy to here, else repeat
+            if (foundValid) {
+                copy(getFromIndex, index);
+            }
+        }
+    }
+}
