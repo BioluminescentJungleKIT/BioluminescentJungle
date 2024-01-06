@@ -16,7 +16,7 @@ struct DenoiserUBO {
     glm::int32 iterationCount;
 
     glm::float32 albedoSigma = 0.1;
-    glm::float32 normalSigma = 0.1;
+    glm::float32 normalSigma = 0.5;
     glm::float32 positionSigma = 0.1;
 };
 

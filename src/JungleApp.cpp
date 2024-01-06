@@ -123,11 +123,11 @@ void JungleApp::drawImGUI() {
             ImGui::SliderInt("Denoiser iterations",
                 &postprocessing->getDenoiser()->iterationCount, 0, 20);
             ImGui::SliderFloat("Denoiser Albedo Sigma",
-                &postprocessing->getDenoiser()->ubo.albedoSigma, 0, 1);
+                &postprocessing->getDenoiser()->ubo.albedoSigma, 0.001, 5.0);
             ImGui::SliderFloat("Denoiser Normal Sigma",
-                &postprocessing->getDenoiser()->ubo.normalSigma, 0, 1);
+                &postprocessing->getDenoiser()->ubo.normalSigma, 0.001, 5.0);
             ImGui::SliderFloat("Denoiser Position Sigma",
-                &postprocessing->getDenoiser()->ubo.positionSigma, 0, 1);
+                &postprocessing->getDenoiser()->ubo.positionSigma, 0.001, 5.0);
         }
         if (ImGui::CollapsingHeader("Camera Settings")) {
             ImGui::DragFloatRange2("Clipping Planes", &nearPlane, &farPlane, 0.07f, .01f, 100000.f);
