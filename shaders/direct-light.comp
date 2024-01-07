@@ -123,7 +123,7 @@ vec3 naiveLighting(SurfacePoint point, float depth) {
         if (depth < 0.999 && !testShadowBruteforce(point, light.pos)) {
             float f = evalPointLightStrength(point, light);
             f *= evalFogAbsorption(point, slInfo);
-            finalColor += f * light.intensity * point.albedo;
+            finalColor += f * light.intensity;
         }
     }
 
@@ -138,7 +138,7 @@ vec3 naiveLightingBVH(SurfacePoint point, float depth) {
         if (depth < 0.999 && !testShadowAABB(point, light.pos)) {
             float f = evalPointLightStrength(point, light);
             f *= evalFogAbsorption(point, slInfo);
-            finalColor += f * light.intensity * point.albedo;
+            finalColor += f * light.intensity;
         }
     }
 
