@@ -23,6 +23,7 @@ layout(set = 0, binding = 5) uniform sampler2D motion;
 
 layout(push_constant) uniform constants
 {
+    int iterNumber;
     int multAlbedo;
 };
 
@@ -47,7 +48,12 @@ void main() {
     float sumW = 0;
 
     for (int i = 0; i < 25; i++) {
-        ivec2 other = pos + denoiser.offsets[i].xy;
+        ivec2 other = pos + denoiser.offsets[i].xy * (1 << iterNumber);
+
+        if (any(lessThan(other, ivec2(0, 0))) ||
+            any(greaterThanEqual(other, textureSize(albedo, 0)))) {
+            continue;
+        }
 
         float oD = texelFetch(depth, other, 0).x;
         vec3 oPos = calculatePositionFromUV(oD, pos / vec2(textureSize(albedo, 0)), denoiser.inverseV);

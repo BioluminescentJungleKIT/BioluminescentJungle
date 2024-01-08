@@ -114,17 +114,22 @@ void Denoiser::recreateTmpTargets() {
 void Denoiser::recordCommandBuffer(
     VkCommandBuffer commandBuffer, VkFramebuffer target, bool renderImGUI)
 {
-    glm::int32 multAlbedo = 0;
+    static constexpr int ITER_NUMBER = 0;
+    static constexpr int MULT_ALBEDO = 1;
+
+    std::array<glm::int32, 2> pushValues;
+    pushValues[ITER_NUMBER] = 0;
+    pushValues[MULT_ALBEDO] = 0;
     PushConstantValues pushValue {
         .stages = VK_SHADER_STAGE_FRAGMENT_BIT,
         .offset = 0,
-        .size = sizeof(multAlbedo),
-        .data = &multAlbedo,
+        .size = pushValues.size() * sizeof(pushValues[0]),
+        .data = pushValues.data(),
     };
 
     if (ubo.iterationCount <= 1) {
         // Directly pass forward
-        multAlbedo = !ignoreAlbedo;
+        pushValues[MULT_ALBEDO] = !ignoreAlbedo;
         runRenderPass(commandBuffer, target, descriptorSets[swapchain->currentFrame], renderImGUI,
             {pushValue});
         return;
@@ -142,13 +147,15 @@ void Denoiser::recordCommandBuffer(
     int currentlyIn = 0;
 
     while (iterRemaining > 1) {
+        pushValues[ITER_NUMBER]++;
         runRenderPass(commandBuffer, tmpTarget.framebuffers[renderPass][currentlyIn ^ 1],
             tmpSets[currentlyIn], false, {pushValue});
         currentlyIn ^= 1;
         iterRemaining--;
     }
 
-    multAlbedo = !ignoreAlbedo;
+    pushValues[ITER_NUMBER]++;
+    pushValues[MULT_ALBEDO] = !ignoreAlbedo;
     runRenderPass(commandBuffer, target, tmpSets[currentlyIn], renderImGUI, {pushValue});
 }
 
@@ -160,7 +167,7 @@ std::vector<VkPushConstantRange> Denoiser::getPushConstantRanges() {
     return { VkPushConstantRange {
         .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
         .offset = 0,
-        .size = sizeof(glm::int32),
+        .size = sizeof(glm::int32) * 2,
     }
     };
 }
