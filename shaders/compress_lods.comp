@@ -1,9 +1,20 @@
 #version 450
 
-// todo
-// count
-// transforms
-// size
+layout(std430, binding = 0) buffer bufferMetadata
+{
+    uint count;
+};
+
+layout(std430, binding = 1) buffer bufferMetadata
+{
+    uint size;  // index of last valid item
+    uint bitmap[];
+};
+
+layout(std430, binding = 2) buffer transformBuffer
+{
+    mat4 transforms[];
+};
 
 bool isValid(uint idx) {
     return bool((bitmap[idx/32] << (idx % 32)) & 1);

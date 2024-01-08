@@ -1,14 +1,51 @@
 //if distance does not fit current lod, move one level up or down through appending (atomic counter & bitmap)
+layout(std430, binding = 0) buffer upInstanceCount
+{
+    uint upCount;
+};
 
-//todo
-// upSize
-// upCount
-// upTransforms
-// count
-// transforms
-// downSize
-// downCount
-// downTransforms
+layout(std430, binding = 1) buffer upBufferMetadata
+{
+    uint upSize;
+    uint upBitmap[];
+};
+
+layout(std430, binding = 2) buffer upTransformBuffer
+{
+    mat4 upTransforms[];
+};
+
+layout(std430, binding = 3) buffer instanceCount
+{
+    uint count;
+};
+
+layout(std430, binding = 4) buffer bufferMetadata
+{
+    uint size;
+    uint bitmap[];
+};
+
+layout(std430, binding = 5) buffer transformBuffer
+{
+    mat4 transforms[];
+};
+
+layout(std430, binding = 6) buffer downInstanceCount
+{
+    uint downCount;
+};
+
+layout(std430, binding = 7) buffer downBufferMetadata
+{
+    uint downSize;
+    uint downBitmap[];
+};
+
+layout(std430, binding = 8) buffer downTransformBuffer
+{
+    mat4 downTransforms[];
+};
 
 layout( push_constant ) uniform vec4 constants;
 // x hasHigher
@@ -37,21 +74,12 @@ void move(uint oldIdx, int upOrDown) {
     }
 }
 
-int validateLodRange(float distance) {
-    return int(distance > constants.z) - int(distance < constants.w);
-}
-
-vec3 computePosition(uint idx) {
-    mat4 transform = transforms[idx];
-    return transform[3].xyz;
-}
-
 void main() {
     uint index = gl_InvocationID;
     if (index < count) {
-        vec3 position = computePosition(index);
+        vec3 position = transforms[index][3].xyz;
         float distance = distance(position, camera_position);
-        int moveTo = validateLodRange(distance);
+        int moveTo = int(distance > constants.z) - int(distance < constants.w);
         move(index, moveTo);
     }
 }

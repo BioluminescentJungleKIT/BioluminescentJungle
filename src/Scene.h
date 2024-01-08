@@ -34,9 +34,20 @@ struct CameraData{
 };
 
 struct LoD {
-    tinygltf::Mesh mesh;
+    int mesh;
     float dist_min;
     float dist_max;
+
+
+    friend bool operator<(const LoD& l, const LoD& r)
+    {
+        return l.dist_min < r.dist_min;
+    }
+
+    friend bool operator==(const LoD& l, const LoD& r)
+    {
+        return l.dist_min == l.dist_min && l.dist_max == r.dist_max && l.mesh == r.mesh;
+    }
 };
 
 // We may need multiple pipelines for the various parts of the different meshes in the scene.
@@ -103,7 +114,7 @@ public:
 
     RequiredDescriptors getNumDescriptors();
 
-    void destroyDescriptorSetLayout();
+    void destroyDescriptorSetLayouts();
     void computeDefaultCameraPos(glm::vec3 &lookAt, glm::vec3 &position, glm::vec3 &up, float &fovy, float &near, float &far);
 
     struct LoadedTexture
@@ -144,7 +155,7 @@ public:
     void ensureDescriptorSetLayouts();
 
     VkVertexInputBindingDescription getVertexBindingDescription(int accessor, int bindingId);
-    void setupUniformBuffers();
+    void setupStorageBuffers();
 
     VkDescriptorSetLayout uboDescriptorSetLayout{VK_NULL_HANDLE};
     VkDescriptorSetLayout materialsSettingsLayout{VK_NULL_HANDLE};
@@ -152,14 +163,23 @@ public:
     VkDescriptorSetLayout albedoDSLayout{VK_NULL_HANDLE};
     VkDescriptorSetLayout albedoDisplacementDSLayout{VK_NULL_HANDLE};
 
-    std::vector<VkDescriptorSet> uboDescriptorSets;
+    VkDescriptorSetLayout lodUpdateDescriptorSetLayout{VK_NULL_HANDLE};
+    VkDescriptorSetLayout lodCompressDescriptorSetLayout{VK_NULL_HANDLE};
+
+    std::vector<VkDescriptorSet> meshTransformsDescriptorSets;
     std::vector<VkDescriptorSet> materialSettingSets;
 
     std::map<int, int> buffersMap;
+    std::map<std::pair<int, int>, int> lodBuffersMap;
+    std::map<std::pair<int, int>, int> primitiveDrawBufferMap;
+    std::map<std::pair<int, int>, int> lodCountBuffersMap;
+    std::map<std::pair<int, int>, int> lodMetaBuffersMap;
     std::map<int, int> descriptorSetsMap;
     std::map<std::string, int> meshNameMap;
     std::map<std::string, std::vector<LoD>> lods; // map base names to LoDs. if none exist, just use the same
     std::vector<VkDescriptorSet> bindingDescriptorSets;
+    std::map<LoD, VkDescriptorSet> lodUpdateDescriptorSetsMap;
+    std::map<LoD, VkDescriptorSet> lodCompressDescriptorSetsMap;
 
     std::map<int, LoadedTexture> textures;
     std::map<int, VkDescriptorSet> materialDSet;
@@ -173,6 +193,13 @@ public:
     UniformBuffer constantsBuffers;
 
     void addLoD(int meshIndex);
+
+    std::unique_ptr<ComputePipeline> updateLoDsPipeline;
+    std::unique_ptr<ComputePipeline> compressLoDsPipeline;
+    std::vector<VkDescriptorSet> updateLoDsDescriptors;
+    std::vector<VkDescriptorSet> compressLoDsDescriptors;
+
+    void setupPrimitiveDrawBuffers();
 };
 
 

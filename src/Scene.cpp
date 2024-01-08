@@ -101,9 +101,12 @@ Scene::Scene(VulkanDevice *device, Swapchain *swapchain, std::string filename) {
         addLoD(i);
     }
 
+    for (auto &[meshName, lodList]: lods) {
+        std::sort(lodList.begin(), lodList.end());
+    }
+
     // We precompute a list of mesh primitives to be rendered with each of the generated programs.
-    for (size_t i = 0; i < model.meshes.size(); i++) {
-        // TODO for all lods
+    for (size_t i = 0; i < model.meshes.size(); i++) {  // todo iterare over lods rather then meshes
         for (size_t j = 0; j < model.meshes[i].primitives.size(); j++) {
             if (model.meshes[i].primitives[j].material < 0) {
                 std::cout << "Unsupported primitive meshId=" << i << " primitiveId=" << j
@@ -126,54 +129,57 @@ Scene::Scene(VulkanDevice *device, Swapchain *swapchain, std::string filename) {
 
 void Scene::recordCommandBuffer(VkCommandBuffer commandBuffer, VkDescriptorSet mvpSet) {
     // update lods
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, lodUpdatePipeline);
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, updateLoDsPipeline->pipeline);
     for (auto &[meshName, meshLods]: lods) {
         if (meshLods.size() > 1) {
             uint32_t n = meshTransforms[meshNameMap[meshName]].size();
             for (auto &lod: meshLods) {
-                bool hasHigher = 0 == isinff(lod.dist_max);  // todo make a proper safeguard
+                bool hasHigher = 0 == isinff(lod.dist_max);  // todo make a proper safeguard, easy since lods are sorted
                 bool hasLower = 0.001 >= lod.dist_min;
                 float lodDistMax = lod.dist_max;
                 float lodDistMin = lod.dist_min;
                 glm::vec4 constants = {hasHigher, hasLower, lodDistMax, lodDistMin};
-                vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, lodUpdatePipelineLayout,
-                                        0, 1, &descriptorSet, 0, nullptr);
-                vkCmdPushConstants(commandBuffer, lodUpdatePipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT,
+                vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, updateLoDsPipeline->layout,
+                                        0, 1, &lodUpdateDescriptorSetsMap[lod], 0, nullptr);
+                vkCmdPushConstants(commandBuffer, updateLoDsPipeline->layout, VK_SHADER_STAGE_COMPUTE_BIT,
                                    0, sizeof(constants), &constants);
                 vkCmdDispatch(commandBuffer, n, 1, 1);
             }
         }
     }
-    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, ...)  // TODO
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, lodCompressPipeline);
+    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, ...);  // TODO
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compressLoDsPipeline->pipeline);
     for (auto &[meshName, meshLods]: lods) {
         if (meshLods.size() > 1) {
             uint32_t n = meshTransforms[meshNameMap[meshName]].size();
             for (auto &lod: meshLods) {
-                vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, lodCompressPipelineLayout,
-                                        0, 1, &descriptorSet, 0, nullptr);
+                vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compressLoDsPipeline->layout,
+                                        0, 1, &lodCompressDescriptorSetsMap[lod], 0, nullptr);
                 vkCmdDispatch(commandBuffer, n, 1, 1);
             }
         }
     }
-    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_VERTEX_SHADER_BIT, ...)  // TODO
+    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_VERTEX_SHADER_BIT, ...);  // TODO
     // Draw all primitives with all available pipelines.
-    for (auto &[programDescr, meshMap]: meshPrimitivesWithPipeline) {
+    for (auto &[programDescr, lodMeshMap]: meshPrimitivesWithPipeline) {
         auto &pipeline = pipelines[programDescr];
         vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->pipeline);
         VulkanHelper::setFullViewportScissor(commandBuffer, swapchain->renderSize());
 
-        for (auto &[meshId, primitivesList]: meshMap) {
-            // bind transformations for each mesh
-            bindingDescriptorSets.clear();
-            bindingDescriptorSets.push_back(mvpSet);
-            bindingDescriptorSets.push_back(uboDescriptorSets[descriptorSetsMap[meshId]]);
-            vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->layout, 0,
-                                    bindingDescriptorSets.size(), bindingDescriptorSets.data(), 0, nullptr);
+        for (auto &[lod, primitivesList]: lodMeshMap) {
+            for (int i = 0; i < numlodsformesh) {
+                // bind transformations for each mesh
+                bindingDescriptorSets.clear();
+                bindingDescriptorSets.push_back(mvpSet);
+                bindingDescriptorSets.push_back(
+                        meshTransformsDescriptorSets[lodDescriptorSetsMap[lod]]); // todo select lod
+                vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->layout, 0,
+                                        bindingDescriptorSets.size(), bindingDescriptorSets.data(), 0, nullptr);
 
-            for (auto &primitiveId: primitivesList) {// TODO for all lods
-                // Bind the specific texture for each primitive
-                renderPrimitiveInstances(meshId, primitiveId, commandBuffer, programDescr, pipeline->layout);
+                for (auto &primitiveId: primitivesList) {// TODO for all lods
+                    // Bind the specific texture for each primitive
+                    renderPrimitiveInstances(lod.lodMeshId, primitiveId, commandBuffer, programDescr, pipeline->layout);
+                }
             }
         }
     }
@@ -181,7 +187,7 @@ void Scene::recordCommandBuffer(VkCommandBuffer commandBuffer, VkDescriptorSet m
 
 void Scene::renderPrimitiveInstances(int meshId, int primitiveId, VkCommandBuffer commandBuffer,
                                      const PipelineDescription &descr, VkPipelineLayout pipelineLayout) {
-    if (meshTransforms.find(meshId) == meshTransforms.end()) return; // 0 instances. skip.
+    if (meshTransforms.find(meshId) == meshTransforms.end()) return; // 0 instances. skip. todo is this needed for lods?
 
     auto &primitive = model.meshes[meshId].primitives[primitiveId];
     if (materialDSet.contains(primitive.material)) {
@@ -222,11 +228,11 @@ void Scene::renderPrimitiveInstances(int meshId, int primitiveId, VkCommandBuffe
         auto indexBufferIndex = model.bufferViews[indexBufferViewIndex].buffer;
         auto indexBuffer = buffers[indexBufferIndex];
         auto indexBufferOffset = model.bufferViews[indexBufferViewIndex].byteOffset;
-        uint32_t numIndices = model.accessors[indexAccessorIndex].count;
         auto indexBufferType = VulkanHelper::gltfTypeToVkIndexType(
                 model.accessors[indexAccessorIndex].componentType);
         vkCmdBindIndexBuffer(commandBuffer, indexBuffer.buffer, indexBufferOffset, indexBufferType);
-        vkCmdDrawIndexed(commandBuffer, numIndices, meshTransforms[meshId].size(), 0, 0, 0);
+        vkCmdDrawIndexedIndirect(commandBuffer, buffers[primitiveDrawBufferMap[std::pair(meshId, primitiveId)]].buffer,
+                                 0, 1, 0);
     } else {
         throw std::runtime_error("Non-indexed geometry is currently not supported.");
     }
@@ -241,12 +247,12 @@ void Scene::drawPointLights(VkCommandBuffer commandBuffer) {
 }
 
 void Scene::setupDescriptorSets(VkDescriptorPool descriptorPool) {
-    uboDescriptorSets = VulkanHelper::createDescriptorSetsFromLayout(
+    meshTransformsDescriptorSets = VulkanHelper::createDescriptorSetsFromLayout(
             *device, descriptorPool, uboDescriptorSetLayout, meshTransforms.size());
 
     int i = 0;
     for (int mesh = 0; mesh < model.meshes.size(); mesh++) {
-        if (meshTransforms.find(mesh) == meshTransforms.end()) continue; // 0 instances. skip.
+        if (meshTransforms.find(mesh) == meshTransforms.end()) continue; // 0 instances. skip. todo skip lod meshes
         auto meshTransformsBufferIndex = buffersMap[mesh];
         VkDescriptorBufferInfo bufferInfo{};
         bufferInfo.buffer = buffers[meshTransformsBufferIndex].buffer;
@@ -256,7 +262,7 @@ void Scene::setupDescriptorSets(VkDescriptorPool descriptorPool) {
         VkWriteDescriptorSet descriptorWrite{};
         descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         descriptorSetsMap[mesh] = i++;
-        descriptorWrite.dstSet = uboDescriptorSets[descriptorSetsMap[mesh]];
+        descriptorWrite.dstSet = meshTransformsDescriptorSets[descriptorSetsMap[mesh]];
         descriptorWrite.dstBinding = 0;
         descriptorWrite.dstArrayElement = 0;
         descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
@@ -350,7 +356,8 @@ void Scene::setupBuffers() {
         generateTransforms(node, glm::mat4(1.f), MAX_RECURSION);
     }
 
-    setupUniformBuffers();
+    setupStorageBuffers();
+    setupPrimitiveDrawBuffers();
 }
 
 void Scene::generateTransforms(int nodeIndex, glm::mat4 oldTransform, int maxRecursion) {
@@ -402,19 +409,46 @@ void Scene::generateTransforms(int nodeIndex, glm::mat4 oldTransform, int maxRec
     }
 }
 
-void Scene::setupUniformBuffers() {
+void Scene::setupPrimitiveDrawBuffers() {
     for (auto [mesh, transforms]: meshTransforms) {
         for (int i = 0; i < lods[model.meshes[mesh].name].size(); i++) {
-            DataBuffer buffer{};
-            VkDeviceSize bufferSize = sizeof(ModelTransform) * transforms.size();
-            // TODO map to lods
-            if (i == 0) {
-                buffer.uploadData(device, transforms, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
-            } else {
-                buffer.createEmpty(device, bufferSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+            auto lod = lods[model.meshes[mesh].name][i];
+            for (int j = 0; j < model.meshes[lod.mesh].primitives.size(); j++) {
+                auto primitive = model.meshes[lod.mesh].primitives[j];
+                if (primitive.indices >= 0) {
+                    auto indexAccessorIndex = primitive.indices;
+                    uint32_t numIndices = model.accessors[indexAccessorIndex].count;
+                    VkDrawIndexedIndirectCommand drawCommand{};
+                    drawCommand.indexCount = numIndices;
+                    lods[model.meshes[mesh].name].size();
+                    drawCommand.instanceCount = (i == 0) ? transforms.size() : 0;
+                    primitiveDrawBufferMap[std::pair(lod.mesh, j)] = buffers.size();
+                    buffers.push_back({});
+                    buffers.back().uploadData(device, &drawCommand, sizeof(drawCommand),
+                                              VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+                }
             }
-            buffersMap[mesh] = buffers.size(); //TODO include lods
-            buffers.push_back(buffer);
+        }
+    }
+}
+
+void Scene::setupStorageBuffers() {
+    for (auto [mesh, transforms]: meshTransforms) {
+        for (int i = 0; i < lods[model.meshes[mesh].name].size(); i++) {
+            lodBuffersMap[std::pair(mesh, i)] = buffers.size();
+            buffers.push_back({});
+            if (i == 0) {
+                buffers.back().uploadData(device, transforms, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+            } else {
+                buffers.back().createEmpty(device, sizeof(ModelTransform) * transforms.size(),
+                                           VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+            }
+            if (lods[model.meshes[mesh].name].size() > 1) {  // if model is LoDed, we need metadata.
+                lodMetaBuffersMap[std::pair(mesh, i)] = buffers.size();
+                buffers.push_back({});
+                buffers.back().createEmpty(device, sizeof(glm::uint32) * ((transforms.size() / 32 + 1) + 2),
+                                           VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+            }
         }
     }
     if (lights.size() > 0) {
@@ -491,6 +525,32 @@ VkVertexInputBindingDescription Scene::getVertexBindingDescription(int accessor,
 }
 
 void Scene::ensureDescriptorSetLayouts() {
+    if (lodUpdateDescriptorSetLayout == VK_NULL_HANDLE) {
+        lodUpdateDescriptorSetLayout = device->createDescriptorSetLayout(
+            {
+                vkutil::createSetLayoutBinding(0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT),
+                vkutil::createSetLayoutBinding(1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT),
+                vkutil::createSetLayoutBinding(2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT),
+                vkutil::createSetLayoutBinding(3, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT),
+                vkutil::createSetLayoutBinding(4, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT),
+                vkutil::createSetLayoutBinding(5, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT),
+                vkutil::createSetLayoutBinding(6, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT),
+                vkutil::createSetLayoutBinding(7, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT),
+                vkutil::createSetLayoutBinding(8, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT),
+            }
+        );
+    }
+
+    if (lodCompressDescriptorSetLayout == VK_NULL_HANDLE) {
+        lodCompressDescriptorSetLayout = device->createDescriptorSetLayout(
+            {
+                vkutil::createSetLayoutBinding(0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT),
+                vkutil::createSetLayoutBinding(1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT),
+                vkutil::createSetLayoutBinding(2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT),
+            }
+        );
+    }
+
     if (uboDescriptorSetLayout == VK_NULL_HANDLE) {
         uboDescriptorSetLayout = device->createDescriptorSetLayout({
             vkutil::createSetLayoutBinding(0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_VERTEX_BIT),
@@ -519,11 +579,13 @@ void Scene::ensureDescriptorSetLayouts() {
     }
 }
 
-void Scene::destroyDescriptorSetLayout() {
+void Scene::destroyDescriptorSetLayouts() {
     vkDestroyDescriptorSetLayout(*device, uboDescriptorSetLayout, nullptr);
     vkDestroyDescriptorSetLayout(*device, albedoDSLayout, nullptr);
     vkDestroyDescriptorSetLayout(*device, albedoDisplacementDSLayout, nullptr);
     vkDestroyDescriptorSetLayout(*device, materialsSettingsLayout, nullptr);
+    vkDestroyDescriptorSetLayout(*device, lodUpdateDescriptorSetLayout, nullptr);
+    vkDestroyDescriptorSetLayout(*device, lodCompressDescriptorSetLayout, nullptr);
 }
 
 void calculateBoundingBox(const tinygltf::Model &model, glm::vec3 &minBounds, glm::vec3 &maxBounds) {
@@ -680,7 +742,7 @@ void Scene::destroyTextures() {
 }
 
 void Scene::destroyAll() {
-    destroyDescriptorSetLayout();
+    destroyDescriptorSetLayouts();
     destroyTextures();
     destroyBuffers();
     pipelines.clear();
@@ -691,6 +753,22 @@ void Scene::createPipelines(VkRenderPass renderPass, VkDescriptorSetLayout mvpLa
     for (auto &[descr, _]: meshPrimitivesWithPipeline) {
         createPipelinesWithDescription(descr, renderPass, mvpLayout, forceRecompile);
     }
+
+    ComputePipeline::Parameters updateParams{};
+    updateParams.source = {VK_SHADER_STAGE_COMPUTE_BIT, "shaders/update_lods.comp"};
+    updateParams.recompileShaders = forceRecompile;
+    updateParams.descriptorSetLayouts = {lodUpdateDescriptorSetLayout};
+    VkPushConstantRange lodInfoRange{};
+    lodInfoRange.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+    lodInfoRange.size = sizeof(glm::vec4);
+    updateParams.pushConstantRanges.push_back(lodInfoRange);
+    this->updateLoDsPipeline = std::make_unique<ComputePipeline>(device, updateParams);
+
+    ComputePipeline::Parameters compressParams{};
+    compressParams.source = {VK_SHADER_STAGE_COMPUTE_BIT, "shaders/compress_lods.comp"};
+    compressParams.recompileShaders = forceRecompile;
+    compressParams.descriptorSetLayouts = {lodCompressDescriptorSetLayout};
+    this->compressLoDsPipeline = std::make_unique<ComputePipeline>(device, compressParams);
 }
 
 static ShaderList selectShaders(const PipelineDescription &descr) {
@@ -822,7 +900,7 @@ void Scene::drawImGUIMaterialSettings() {
 void Scene::addLoD(int meshIndex) {
     tinygltf::Mesh mesh = model.meshes[meshIndex];
     auto name = mesh.name;
-    LoD lod{mesh, 0, INFINITY};
+    LoD lod{meshIndex, 0, INFINITY};
     size_t index;
     if ((index = name.find("_LOD_")) != std::string::npos) {
         auto basename = name.substr(0, index);

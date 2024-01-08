@@ -59,6 +59,7 @@ class ComputePipeline {
     struct Parameters {
         ShaderSource source;
         std::vector<VkDescriptorSetLayout> descriptorSetLayouts;
+        std::vector<VkPushConstantRange> pushConstantRanges;
         bool recompileShaders = false;
     };
 
