@@ -172,9 +172,9 @@ void Scene::recordCommandBufferCompute(VkCommandBuffer commandBuffer, glm::vec3 
     VkMemoryBarrier lodUpdateBarrier{};
     lodUpdateBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
     lodUpdateBarrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-    lodUpdateBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_INDIRECT_COMMAND_READ_BIT;
+    lodUpdateBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_TRANSFER_READ_BIT;
     vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT, {},
+                         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT, {},
                          1, &lodUpdateBarrier, 0, nullptr, 0, nullptr);
     // remove invalid transforms
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compressLoDsPipeline->pipeline);
@@ -195,6 +195,29 @@ void Scene::recordCommandBufferCompute(VkCommandBuffer commandBuffer, glm::vec3 
     vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                          VK_PIPELINE_STAGE_VERTEX_SHADER_BIT, {},
                          1, &lodCompressionBarrier, 0, nullptr, 0, nullptr);
+    VkBufferCopy instanceCountRegion{};
+    instanceCountRegion.size = sizeof(VkDrawIndexedIndirectCommand::instanceCount);
+    instanceCountRegion.srcOffset = sizeof(uint32_t);
+    instanceCountRegion.dstOffset = offsetof(VkDrawIndexedIndirectCommand, instanceCount);
+    for (auto [meshName, lodList]: lods) {
+        if (lodList.size() <= 1) continue; // only update loded meshes
+        for (int i = 0; i < lodList.size(); i++) {
+            auto metaBuffer = buffers[lodMetaBuffersMap[std::pair(meshNameMap[meshName], i)]];
+            auto meshIndex = lodList[i].mesh;
+            auto mesh = model.meshes[meshIndex];
+            for (int j = 0; j < mesh.primitives.size(); j++) {
+                auto drawCommandBuffer = buffers[lodIndirectDrawBufferMap[std::pair(meshIndex, j)]];
+                vkCmdCopyBuffer(commandBuffer, metaBuffer.buffer, drawCommandBuffer.buffer, 1, &instanceCountRegion);
+            }
+        }
+    }
+    VkMemoryBarrier drawCountCopyBarrier{};
+    drawCountCopyBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+    drawCountCopyBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    drawCountCopyBarrier.dstAccessMask = VK_ACCESS_INDIRECT_COMMAND_READ_BIT;
+    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                         VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT, {},
+                         1, &drawCountCopyBarrier, 0, nullptr, 0, nullptr);
 }
 
 void Scene::recordCommandBufferDraw(VkCommandBuffer commandBuffer, VkDescriptorSet mvpSet) {
@@ -324,17 +347,14 @@ void Scene::setupDescriptorSets(VkDescriptorPool descriptorPool) {
 
                 auto lodTransformsBufferIndex = lodTransformsBuffersMap[lodIdentifier];
                 auto lodMetaBufferIndex = lodMetaBuffersMap[lodIdentifier];
-                auto lodDrawBufferIndex = lodIndirectDrawBufferMap[lodIdentifier];
                 auto lodUpIdentifier = std::pair(meshNameMap[meshName],
                                                  lodIndex + 1 < lodList.size() ? lodIndex + 1 : lodIndex);
                 auto lodDownIdentifier = std::pair(meshNameMap[meshName],
                                                    lodIndex - 1 >= 0 ? lodIndex - 1 : lodIndex);
                 auto upLodTransformsBufferIndex = lodTransformsBuffersMap[lodUpIdentifier];
                 auto upLodMetaBufferIndex = lodMetaBuffersMap[lodUpIdentifier];
-                auto upLodDrawBufferIndex = lodIndirectDrawBufferMap[lodUpIdentifier];
                 auto downLodTransformsBufferIndex = lodTransformsBuffersMap[lodDownIdentifier];
                 auto downLodMetaBufferIndex = lodMetaBuffersMap[lodDownIdentifier];
-                auto downLodDrawBufferIndex = lodIndirectDrawBufferMap[lodDownIdentifier];
 
                 VkDescriptorBufferInfo transformsBufferInfo{};
                 transformsBufferInfo.buffer = buffers[lodTransformsBufferIndex].buffer;
@@ -346,11 +366,6 @@ void Scene::setupDescriptorSets(VkDescriptorPool descriptorPool) {
                 metaBufferInfo.offset = 0;
                 metaBufferInfo.range = meshTransforms[meshNameMap[meshName]].size() / 8 + sizeof(glm::uint);
 
-                VkDescriptorBufferInfo countBufferInfo{};
-                countBufferInfo.buffer = buffers[lodDrawBufferIndex].buffer;
-                countBufferInfo.offset = offsetof(VkDrawIndexedIndirectCommand, instanceCount);
-                countBufferInfo.range = sizeof(VkDrawIndexedIndirectCommand::instanceCount);
-
                 VkDescriptorBufferInfo upTransformsBufferInfo{};
                 upTransformsBufferInfo.buffer = buffers[upLodTransformsBufferIndex].buffer;
                 upTransformsBufferInfo.offset = 0;
@@ -360,11 +375,6 @@ void Scene::setupDescriptorSets(VkDescriptorPool descriptorPool) {
                 upMetaBufferInfo.buffer = buffers[upLodMetaBufferIndex].buffer;
                 upMetaBufferInfo.offset = 0;
                 upMetaBufferInfo.range = meshTransforms[meshNameMap[meshName]].size() / 8 + sizeof(glm::uint);
-
-                VkDescriptorBufferInfo upCountBufferInfo{};
-                upCountBufferInfo.buffer = buffers[upLodDrawBufferIndex].buffer;
-                upCountBufferInfo.offset = offsetof(VkDrawIndexedIndirectCommand, instanceCount);
-                upCountBufferInfo.range = sizeof(VkDrawIndexedIndirectCommand::instanceCount);
 
                 VkDescriptorBufferInfo downTransformsBufferInfo{};
                 downTransformsBufferInfo.buffer = buffers[downLodTransformsBufferIndex].buffer;
@@ -376,15 +386,10 @@ void Scene::setupDescriptorSets(VkDescriptorPool descriptorPool) {
                 downMetaBufferInfo.offset = 0;
                 downMetaBufferInfo.range = meshTransforms[meshNameMap[meshName]].size() / 8 + sizeof(glm::uint);
 
-                VkDescriptorBufferInfo downCountBufferInfo{};
-                downCountBufferInfo.buffer = buffers[downLodDrawBufferIndex].buffer;
-                downCountBufferInfo.offset = offsetof(VkDrawIndexedIndirectCommand, instanceCount);
-                downCountBufferInfo.range = sizeof(VkDrawIndexedIndirectCommand::instanceCount);
-
                 std::vector<VkDescriptorBufferInfo> updateBufferInfos {
-                    transformsBufferInfo, metaBufferInfo, countBufferInfo,
-                    upTransformsBufferInfo, upMetaBufferInfo, upCountBufferInfo,
-                    downTransformsBufferInfo, downMetaBufferInfo, downCountBufferInfo
+                    upMetaBufferInfo,upTransformsBufferInfo,
+                    metaBufferInfo,transformsBufferInfo,
+                    downMetaBufferInfo, downTransformsBufferInfo
                 };
 
                 VkWriteDescriptorSet descriptorWriteUpdate{};
@@ -401,19 +406,19 @@ void Scene::setupDescriptorSets(VkDescriptorPool descriptorPool) {
                 vkUpdateDescriptorSets(*device, 1, &descriptorWriteUpdate, 0, nullptr);
 
                 std::vector<VkDescriptorBufferInfo> compressBufferInfos {
-                    transformsBufferInfo, metaBufferInfo, countBufferInfo
+                    metaBufferInfo, transformsBufferInfo
                 };
 
                 VkWriteDescriptorSet descriptorWriteCompress{};
-                descriptorWriteUpdate.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-                descriptorWriteUpdate.dstSet = compressLoDsDescriptorSets[lodComputeDescriptorSetsMap[lodIdentifier]];
-                descriptorWriteUpdate.dstBinding = 0;
-                descriptorWriteUpdate.dstArrayElement = 0;
-                descriptorWriteUpdate.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-                descriptorWriteUpdate.descriptorCount = compressBufferInfos.size();
-                descriptorWriteUpdate.pBufferInfo = compressBufferInfos.data();
-                descriptorWriteUpdate.pImageInfo = nullptr; // Optional
-                descriptorWriteUpdate.pTexelBufferView = nullptr; // Optional
+                descriptorWriteCompress.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+                descriptorWriteCompress.dstSet = compressLoDsDescriptorSets[lodComputeDescriptorSetsMap[lodIdentifier]];
+                descriptorWriteCompress.dstBinding = 0;
+                descriptorWriteCompress.dstArrayElement = 0;
+                descriptorWriteCompress.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+                descriptorWriteCompress.descriptorCount = compressBufferInfos.size();
+                descriptorWriteCompress.pBufferInfo = compressBufferInfos.data();
+                descriptorWriteCompress.pImageInfo = nullptr; // Optional
+                descriptorWriteCompress.pTexelBufferView = nullptr; // Optional
 
                 vkUpdateDescriptorSets(*device, 1, &descriptorWriteCompress, 0, nullptr);
             }
@@ -482,7 +487,7 @@ void Scene::setupDescriptorSets(VkDescriptorPool descriptorPool) {
 
 RequiredDescriptors Scene::getNumDescriptors() {
     return RequiredDescriptors{
-            .requireUniformBuffers = getNumLods() * 3 /*transforms, bitmap, count*/ +
+            .requireUniformBuffers = getNumLods() * 2 /*transforms, meta*/ +
                     (unsigned int) model.materials.size() + MAX_FRAMES_IN_FLIGHT,
             .requireSamplers = (unsigned int) model.materials.size() * 3,
     };
@@ -575,7 +580,8 @@ void Scene::setupPrimitiveDrawBuffers() {
                     lodIndirectDrawBufferMap[std::pair(lod.mesh, j)] = buffers.size();
                     buffers.push_back({});
                     buffers.back().uploadData(device, &drawCommand, sizeof(drawCommand),
-                                              VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT);
+                                              VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                                              VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
                 }
             }
         }
@@ -588,24 +594,29 @@ void Scene::setupStorageBuffers() {
             lodTransformsBuffersMap[std::pair(mesh, i)] = buffers.size();
             buffers.push_back({});
             if (i == 0) {
-                buffers.back().uploadData(device, transforms, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+                buffers.back().uploadData(device, transforms, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                          VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
             } else {
                 buffers.back().createEmpty(device, sizeof(ModelTransform) * transforms.size(),
-                                           VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+                                           VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                           VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
             }
             if (lods[model.meshes[mesh].name].size() > 1) {  // if model is LoDed, we need metadata.
                 lodMetaBuffersMap[std::pair(mesh, i)] = buffers.size();
                 buffers.push_back({});
-                size_t bufferSizeUints = (transforms.size() / 32 + 1) + 1;
+                size_t bufferSizeUints = (transforms.size() / 32 + 1) + 2;
                 if (i == 0) {
                     std::vector<uint32_t> bufferData;
                     bufferData.resize(bufferSizeUints, static_cast<unsigned int>(~0));
                     bufferData[0] = transforms.size();
+                    bufferData[1] = transforms.size();
                     buffers.back().uploadData(device, bufferData,
-                                              VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+                                              VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                                              VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
                 } else {
                     buffers.back().createEmpty(device, sizeof(glm::uint32) * bufferSizeUints,
-                                               VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+                                               VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                                               VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
                 }
             }
         }
@@ -693,9 +704,6 @@ void Scene::ensureDescriptorSetLayouts() {
                 vkutil::createSetLayoutBinding(3, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT),
                 vkutil::createSetLayoutBinding(4, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT),
                 vkutil::createSetLayoutBinding(5, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT),
-                vkutil::createSetLayoutBinding(6, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT),
-                vkutil::createSetLayoutBinding(7, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT),
-                vkutil::createSetLayoutBinding(8, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT),
             }
         );
     }
@@ -705,7 +713,6 @@ void Scene::ensureDescriptorSetLayouts() {
             {
                 vkutil::createSetLayoutBinding(0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT),
                 vkutil::createSetLayoutBinding(1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT),
-                vkutil::createSetLayoutBinding(2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT),
             }
         );
     }

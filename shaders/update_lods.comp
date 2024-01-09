@@ -1,49 +1,37 @@
 #version 450
 
-layout(std430, binding = 0) buffer UpInstanceCount
-{
-    uint upCount;
-} upInstanceCount;
-
-layout(std430, binding = 1) buffer UpBufferMetadata
+layout(std430, binding = 0) buffer UpBufferMetadata
 {
     uint upSize;
+    uint upCount;
     uint upBitmap[];
 } upBufferMetadata;
 
-layout(std430, binding = 2) buffer UpTransformBuffer
+layout(std430, binding = 1) buffer UpTransformBuffer
 {
     mat4 upTransforms[];
 } upTransformBuffer;
 
-layout(std430, binding = 3) buffer InstanceCount
-{
-    uint count;
-} instanceCount;
-
-layout(std430, binding = 4) buffer BufferMetadata
+layout(std430, binding = 2) buffer BufferMetadata
 {
     uint size;
+    uint count;
     uint bitmap[];
 } bufferMetadata;
 
-layout(std430, binding = 5) buffer TransformBuffer
+layout(std430, binding = 3) buffer TransformBuffer
 {
     mat4 transforms[];
 } transformBuffer;
 
-layout(std430, binding = 6) buffer DownInstanceCount
-{
-    uint downCount;
-} downInstanceCount;
-
-layout(std430, binding = 7) buffer DownBufferMetadata
+layout(std430, binding = 4) buffer DownBufferMetadata
 {
     uint downSize;
+    uint downCount;
     uint downBitmap[];
 } downBufferMetadata;
 
-layout(std430, binding = 8) buffer DownTransformBuffer
+layout(std430, binding = 5) buffer DownTransformBuffer
 {
     mat4 downTransforms[];
 } downTransformBuffer;
@@ -64,16 +52,16 @@ void move(uint oldIdx, int upOrDown) {
         if (!bool(pushConstant.lodMeta.x)) return;
         uint newIdx = atomicAdd(upBufferMetadata.upSize, 1);
         upTransformBuffer.upTransforms[newIdx] = transformBuffer.transforms[oldIdx];
-        atomicAdd(upInstanceCount.upCount, 1);
-        atomicAdd(instanceCount.count, -1);
+        atomicAdd(upBufferMetadata.upCount, 1);
+        atomicAdd(bufferMetadata.count, -1);
         atomicAnd(bufferMetadata.bitmap[oldIdx/32], ~(1 >> (oldIdx % 32)));
         atomicOr(upBufferMetadata.upBitmap[newIdx/32], 1 >> (newIdx % 32));
     } else if (upOrDown == -1) {
         if (!bool(pushConstant.lodMeta.y)) return;
         uint newIdx = atomicAdd(downBufferMetadata.downSize, 1);
         downTransformBuffer.downTransforms[newIdx] = transformBuffer.transforms[oldIdx];
-        atomicAdd(downInstanceCount.downCount, 1);
-        atomicAdd(instanceCount.count, -1);
+        atomicAdd(downBufferMetadata.downCount, 1);
+        atomicAdd(bufferMetadata.count, -1);
         atomicAnd(bufferMetadata.bitmap[oldIdx/32], ~(1 >> (oldIdx % 32)));
         atomicOr(downBufferMetadata.downBitmap[newIdx/32], 1 >> (newIdx % 32));
     }
@@ -81,7 +69,7 @@ void move(uint oldIdx, int upOrDown) {
 
 void main() {
     uint index = gl_GlobalInvocationID.x;
-    if (index < instanceCount.count) {
+    if (index < bufferMetadata.count) {
         float distance = distance(transformBuffer.transforms[index][3].xyz, pushConstant.cameraPosition);
         int moveTo = int(distance > pushConstant.lodMeta.z) - int(distance < pushConstant.lodMeta.w);
         move(index, moveTo);

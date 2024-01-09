@@ -179,7 +179,6 @@ public:
     std::map<int, int> buffersMap;
     std::map<std::pair<int, int>, int> lodTransformsBuffersMap;
     std::map<std::pair<int, int>, int> lodIndirectDrawBufferMap;
-    std::map<std::pair<int, int>, int> lodCountBuffersMap;
     std::map<std::pair<int, int>, int> lodMetaBuffersMap;
     std::map<LoD, int> descriptorSetsMap;
     std::map<std::pair<int, int>, int> lodComputeDescriptorSetsMap;
