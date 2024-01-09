@@ -46,7 +46,7 @@ struct LoD {
 
     friend bool operator<(const LoD& l, const LoD& r)
     {
-        return l.dist_min < r.dist_min || (l.dist_min == r.dist_min && l.dist_max < r.dist_max);
+        return l.dist_min < r.dist_min || (l.dist_min == r.dist_min && l.dist_max < r.dist_max) || (l.dist_min == r.dist_min && l.dist_max == r.dist_max && l.mesh < r.mesh);
     }
 
     friend bool operator==(const LoD& l, const LoD& r)

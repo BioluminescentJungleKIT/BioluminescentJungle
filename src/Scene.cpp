@@ -596,8 +596,17 @@ void Scene::setupStorageBuffers() {
             if (lods[model.meshes[mesh].name].size() > 1) {  // if model is LoDed, we need metadata.
                 lodMetaBuffersMap[std::pair(mesh, i)] = buffers.size();
                 buffers.push_back({});
-                buffers.back().createEmpty(device, sizeof(glm::uint32) * ((transforms.size() / 32 + 1) + 2),
-                                           VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+                size_t bufferSizeUints = (transforms.size() / 32 + 1) + 1;
+                if (i == 0) {
+                    std::vector<uint32_t> bufferData;
+                    bufferData.resize(bufferSizeUints, static_cast<unsigned int>(~0));
+                    bufferData[0] = transforms.size();
+                    buffers.back().uploadData(device, bufferData,
+                                              VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+                } else {
+                    buffers.back().createEmpty(device, sizeof(glm::uint32) * bufferSizeUints,
+                                               VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+                }
             }
         }
     }
