@@ -1,85 +1,89 @@
-//if distance does not fit current lod, move one level up or down through appending (atomic counter & bitmap)
-layout(std430, binding = 0) buffer upInstanceCount
+#version 450
+
+layout(std430, binding = 0) buffer UpInstanceCount
 {
     uint upCount;
-};
+} upInstanceCount;
 
-layout(std430, binding = 1) buffer upBufferMetadata
+layout(std430, binding = 1) buffer UpBufferMetadata
 {
     uint upSize;
     uint upBitmap[];
-};
+} upBufferMetadata;
 
-layout(std430, binding = 2) buffer upTransformBuffer
+layout(std430, binding = 2) buffer UpTransformBuffer
 {
     mat4 upTransforms[];
-};
+} upTransformBuffer;
 
-layout(std430, binding = 3) buffer instanceCount
+layout(std430, binding = 3) buffer InstanceCount
 {
     uint count;
-};
+} instanceCount;
 
-layout(std430, binding = 4) buffer bufferMetadata
+layout(std430, binding = 4) buffer BufferMetadata
 {
     uint size;
     uint bitmap[];
-};
+} bufferMetadata;
 
-layout(std430, binding = 5) buffer transformBuffer
+layout(std430, binding = 5) buffer TransformBuffer
 {
     mat4 transforms[];
-};
+} transformBuffer;
 
-layout(std430, binding = 6) buffer downInstanceCount
+layout(std430, binding = 6) buffer DownInstanceCount
 {
     uint downCount;
-};
+} downInstanceCount;
 
-layout(std430, binding = 7) buffer downBufferMetadata
+layout(std430, binding = 7) buffer DownBufferMetadata
 {
     uint downSize;
     uint downBitmap[];
-};
+} downBufferMetadata;
 
-layout(std430, binding = 8) buffer downTransformBuffer
+layout(std430, binding = 8) buffer DownTransformBuffer
 {
     mat4 downTransforms[];
-};
+} downTransformBuffer;
 
-layout( push_constant ) uniform vec4 constants;
-// x hasHigher
-// y hasLower
-// z lodDistMax
-// w lodDistMin
+layout( push_constant ) uniform PushConstant {
+    // x hasHigher
+    // y hasLower
+    // z lodDistMax
+    // w lodDistMin
+    vec4 lodMeta;
+    vec3 cameraPosition;
+} pushConstant;
 
+//if distance does not fit current lod, move one level up or down through appending (atomic counter & bitmap)
 void move(uint oldIdx, int upOrDown) {
     if (upOrDown == 0) return;
     else if (upOrDown == 1) {
-        if (!bool(constants.x)) return;
-        uint newIdx = atomicAdd(upSize, 1);
-        upTransforms[newIdx] = transforms[oldIdx];
-        atomicAdd(upCount, 1);
-        atomicAdd(count, -1);
-        atomicAnd(bitmap[oldIdx/32], ~(1 >> (oldIdx % 32)));
-        atomicOr(upBitmap[newIdx/32], 1 >> (newIdx % 32));
+        if (!bool(pushConstant.lodMeta.x)) return;
+        uint newIdx = atomicAdd(upBufferMetadata.upSize, 1);
+        upTransformBuffer.upTransforms[newIdx] = transformBuffer.transforms[oldIdx];
+        atomicAdd(upInstanceCount.upCount, 1);
+        atomicAdd(instanceCount.count, -1);
+        atomicAnd(bufferMetadata.bitmap[oldIdx/32], ~(1 >> (oldIdx % 32)));
+        atomicOr(upBufferMetadata.upBitmap[newIdx/32], 1 >> (newIdx % 32));
     } else if (upOrDown == -1) {
-        if (!bool(constants.y)) return;
-        uint newIdx = atomicAdd(downSize, 1);
-        downTransforms[newIdx] = transforms[oldIdx];
-        atomicAdd(downCount, 1);
-        atomicAdd(count, -1);
-        atomicAnd(bitmap[oldIdx/32], ~(1 >> (oldIdx % 32)));
-        atomicOr(downBitmap[newIdx/32], 1 >> (newIdx % 32));
+        if (!bool(pushConstant.lodMeta.y)) return;
+        uint newIdx = atomicAdd(downBufferMetadata.downSize, 1);
+        downTransformBuffer.downTransforms[newIdx] = transformBuffer.transforms[oldIdx];
+        atomicAdd(downInstanceCount.downCount, 1);
+        atomicAdd(instanceCount.count, -1);
+        atomicAnd(bufferMetadata.bitmap[oldIdx/32], ~(1 >> (oldIdx % 32)));
+        atomicOr(downBufferMetadata.downBitmap[newIdx/32], 1 >> (newIdx % 32));
     }
 }
 
 void main() {
-    uint index = gl_InvocationID;
-    if (index < count) {
-        vec3 position = transforms[index][3].xyz;
-        float distance = distance(position, camera_position);
-        int moveTo = int(distance > constants.z) - int(distance < constants.w);
+    uint index = gl_GlobalInvocationID.x;
+    if (index < instanceCount.count) {
+        float distance = distance(transformBuffer.transforms[index][3].xyz, pushConstant.cameraPosition);
+        int moveTo = int(distance > pushConstant.lodMeta.z) - int(distance < pushConstant.lodMeta.w);
         move(index, moveTo);
     }
 }

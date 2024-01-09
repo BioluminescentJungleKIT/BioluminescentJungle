@@ -1,40 +1,41 @@
 #version 450
 
-layout(std430, binding = 0) buffer bufferMetadata
+layout(std430, binding = 0) buffer CountBuffer
 {
     uint count;
-};
+} countBuffer;
 
-layout(std430, binding = 1) buffer bufferMetadata
+layout(std430, binding = 1) buffer BufferMetadata
 {
     uint size;  // index of last valid item
     uint bitmap[];
-};
+} bufferMetadata;
 
-layout(std430, binding = 2) buffer transformBuffer
+layout(std430, binding = 2) buffer TransformBuffer
 {
     mat4 transforms[];
-};
+} transformBuffer;
 
 bool isValid(uint idx) {
-    return bool((bitmap[idx/32] << (idx % 32)) & 1);
+    return bool((bufferMetadata.bitmap[idx/32] << (idx % 32)) & 1);
 }
 
 void copy(uint fromIndex, uint toIndex) {
     // copy transform
-    transforms[toIndex] = transforms[fromIndex];
-    // set valid
-    atomicOr(bitmap[idx/32], 1 >> (idx % 32));
+    transformBuffer.transforms[toIndex] = transformBuffer.transforms[fromIndex];
+    // set validity
+    atomicOr(bufferMetadata.bitmap[toIndex/32], 1 >> (toIndex % 32));
+    atomicAnd(bufferMetadata.bitmap[fromIndex/32], ~(1 >> (fromIndex % 32)));
 }
 
 void main() {
-    uint index = gl_InvocationID;
+    uint index = gl_GlobalInvocationID.x;
     // if this index has invalid value and is less then $count
-    if (!isValid(index) && index < count) {
+    if (index < countBuffer.count && !isValid(index)) {
         bool foundValid = false;
         while (!foundValid) {
             // get $size and atomic subtract 1
-            uint getFromIndex = atomicAdd(size, -1);
+            uint getFromIndex = atomicAdd(bufferMetadata.size, -1);
             foundValid = isValid(getFromIndex);
             // if index at size is valid, copy to here, else repeat
             if (foundValid) {

@@ -6,7 +6,7 @@
 #include <vulkan/vulkan_core.h>
 
 /**
- * A class which makes it easier to manage pipelines.
+ * A class which makes it easier to manage graphicsPipelines.
  */
 
 struct BasicBlending {

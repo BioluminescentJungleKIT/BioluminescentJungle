@@ -33,6 +33,11 @@ struct CameraData{
     float zfar;
 };
 
+struct LodUpdatePushConstants {
+    glm::vec4 lodMeta;
+    glm::vec3 cameraPosition;
+};
+
 struct LoD {
     int mesh;
     float dist_min;
@@ -41,7 +46,7 @@ struct LoD {
 
     friend bool operator<(const LoD& l, const LoD& r)
     {
-        return l.dist_min < r.dist_min;
+        return l.dist_min < r.dist_min || (l.dist_min == r.dist_min && l.dist_max < r.dist_max);
     }
 
     friend bool operator==(const LoD& l, const LoD& r)
@@ -50,8 +55,8 @@ struct LoD {
     }
 };
 
-// We may need multiple pipelines for the various parts of the different meshes in the scene.
-// The pipieline description object is used to keep track of all created pipelines.
+// We may need multiple graphicsPipelines for the various parts of the different meshes in the scene.
+// The pipieline description object is used to keep track of all created graphicsPipelines.
 struct PipelineDescription {
     std::optional<int> vertexPosAccessor;
     std::optional<int> vertexTexcoordsAccessor;
@@ -103,8 +108,8 @@ public:
     void destroyTextures();
 
     void setupDescriptorSets(VkDescriptorPool descriptorPool);
-    void recordCommandBuffer(
-        VkCommandBuffer commandBuffer, VkDescriptorSet mvpSet);
+    void recordCommandBufferCompute(VkCommandBuffer commandBuffer, glm::vec3 cameraPosition);
+    void recordCommandBufferDraw(VkCommandBuffer commandBuffer, VkDescriptorSet mvpSet);
 
     void destroyBuffers();
     std::tuple<std::vector<VkVertexInputAttributeDescription>, std::vector<VkVertexInputBindingDescription>>
@@ -139,10 +144,10 @@ public:
 
     std::vector<DataBuffer> buffers;
 
-    std::map<PipelineDescription, std::unique_ptr<GraphicsPipeline>> pipelines;
+    std::map<PipelineDescription, std::unique_ptr<GraphicsPipeline>> graphicsPipelines;
 
     // meshPrimitivesWithPipeline[description][meshId] -> list of primitives of the mesh with given pipeline
-    std::map<PipelineDescription, std::map<int, std::vector<int>>> meshPrimitivesWithPipeline;
+    std::map<PipelineDescription, std::map<LoD, std::vector<int>>> meshPrimitivesWithPipeline;
     PipelineDescription getPipelineDescriptionForPrimitive(const tinygltf::Primitive& primitive);
 
     void createPipelinesWithDescription(PipelineDescription descr,
@@ -157,7 +162,7 @@ public:
     VkVertexInputBindingDescription getVertexBindingDescription(int accessor, int bindingId);
     void setupStorageBuffers();
 
-    VkDescriptorSetLayout uboDescriptorSetLayout{VK_NULL_HANDLE};
+    VkDescriptorSetLayout meshTransformsDescriptorSetLayout{VK_NULL_HANDLE};
     VkDescriptorSetLayout materialsSettingsLayout{VK_NULL_HANDLE};
 
     VkDescriptorSetLayout albedoDSLayout{VK_NULL_HANDLE};
@@ -167,20 +172,21 @@ public:
     VkDescriptorSetLayout lodCompressDescriptorSetLayout{VK_NULL_HANDLE};
 
     std::vector<VkDescriptorSet> meshTransformsDescriptorSets;
+    std::vector<VkDescriptorSet> updateLoDsDescriptorSets;
+    std::vector<VkDescriptorSet> compressLoDsDescriptorSets;
     std::vector<VkDescriptorSet> materialSettingSets;
 
     std::map<int, int> buffersMap;
-    std::map<std::pair<int, int>, int> lodBuffersMap;
-    std::map<std::pair<int, int>, int> primitiveDrawBufferMap;
+    std::map<std::pair<int, int>, int> lodTransformsBuffersMap;
+    std::map<std::pair<int, int>, int> lodIndirectDrawBufferMap;
     std::map<std::pair<int, int>, int> lodCountBuffersMap;
     std::map<std::pair<int, int>, int> lodMetaBuffersMap;
-    std::map<int, int> descriptorSetsMap;
+    std::map<LoD, int> descriptorSetsMap;
+    std::map<std::pair<int, int>, int> lodComputeDescriptorSetsMap;
+
     std::map<std::string, int> meshNameMap;
     std::map<std::string, std::vector<LoD>> lods; // map base names to LoDs. if none exist, just use the same
     std::vector<VkDescriptorSet> bindingDescriptorSets;
-    std::map<LoD, VkDescriptorSet> lodUpdateDescriptorSetsMap;
-    std::map<LoD, VkDescriptorSet> lodCompressDescriptorSetsMap;
-
     std::map<int, LoadedTexture> textures;
     std::map<int, VkDescriptorSet> materialDSet;
 
@@ -196,10 +202,12 @@ public:
 
     std::unique_ptr<ComputePipeline> updateLoDsPipeline;
     std::unique_ptr<ComputePipeline> compressLoDsPipeline;
-    std::vector<VkDescriptorSet> updateLoDsDescriptors;
-    std::vector<VkDescriptorSet> compressLoDsDescriptors;
 
     void setupPrimitiveDrawBuffers();
+
+    unsigned int getNumLods();
+
+    void destroyPipelines();
 };
 
 
