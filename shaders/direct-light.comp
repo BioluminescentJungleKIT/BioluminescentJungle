@@ -186,7 +186,7 @@ void temporalReuse(ivec2 pos, SurfacePoint point, float depth) {
         ivec2 resolution = ivec2(slInfo.viewportWidth, slInfo.viewportHeight);
 
         vec2 motion = texelFetch(motion, pos, 0).xy * 0.5 * vec2(resolution);
-        ivec2 uv = ivec2(pos + motion);
+        ivec2 uv = ivec2(round(pos + motion));
         if (all(greaterThanEqual(uv, ivec2(0,0))) && all(lessThan(uv, resolution))) {
             // TODO: reconstruct positions, that should give even more precise results
             float prevDepth = texelFetch(prevDepth, uv, 0).r;

@@ -29,8 +29,11 @@ layout(location = 3) out vec4 lastpos;
 
 void main() {
     currpos = ubo.proj * ubo.view * ubo.modl * model.model[gl_InstanceIndex] * vec4(inPosition, 1.0);
+    currpos += currpos.w * vec4(ubo.jitt, 0, 0);
+    gl_Position = currpos;
+
     lastpos = lastubo.proj * lastubo.view * lastubo.modl * model.model[gl_InstanceIndex] * vec4(inPosition, 1.0);
-    gl_Position = currpos + currpos.w * vec4(ubo.jitt.x, ubo.jitt.y, 0, 0);
+    lastpos += lastpos.w * vec4(ubo.jitt, 0, 0);
 
     fragColor = inColor.rgb;
     normal = (transpose(inverse(ubo.modl * model.model[gl_InstanceIndex])) * vec4(inNormal, 0.0)).xyz;

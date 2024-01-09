@@ -30,10 +30,11 @@ layout(location = 3) out vec4 lastpos;
 void main() {
     // TODO [optimization] outsource uniform multiplications to the CPU
     gl_Position = ubo.proj * ubo.view * ubo.modl * model.model[gl_InstanceIndex] * vec4(inPosition, 1.0);
+    gl_Position += gl_Position.w * vec4(ubo.jitt.x, ubo.jitt.y, 0, 0);
     currpos = gl_Position;
 
-    gl_Position += gl_Position.w * vec4(ubo.jitt.x, ubo.jitt.y, 0, 0);
     lastpos = lastubo.proj * lastubo.view * lastubo.modl * model.model[gl_InstanceIndex] * vec4(inPosition, 1.0);
+    lastpos += lastpos.w * vec4(lastubo.jitt, 0, 0);
 
     uv = inUV;
     normal = (transpose(inverse(ubo.modl * model.model[gl_InstanceIndex])) * vec4(inNormal, 0.0)).xyz;
