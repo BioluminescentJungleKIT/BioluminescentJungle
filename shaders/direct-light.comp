@@ -201,14 +201,14 @@ Reservoir fillReservoir(ivec2 pos, SurfacePoint point, float depth, inout uint r
     }
 
     for (int i = 0; i < NUM_SAMPLES_PER_PIXEL; i++) {
-        int totalNum = nEmissiveTriangles + nPointLights;
+        int totalNum = nPointLights + nEmissiveTriangles;
         int lightIdx = int(floor(nextRand(rndState) * totalNum));
 
 
         if (lightIdx < nPointLights) {
             PointLightParams params = computeLightParams(pointLights[lightIdx]);
             float pHat = evalPointLightStrength(point, params);
-            float w = pHat * (nPointLights + nEmissiveTriangles); // (pHat / p)
+            float w = pHat * totalNum; // (pHat / p)
             addSample(r, rndState, lightIdx+1, w, pHat, params.pos);
         } else {
             int triIdx = lightIdx - nPointLights;
@@ -247,19 +247,19 @@ void temporalReuse(ivec2 pos, SurfacePoint point, float depth) {
 
     bool allowReuse = false;
     if (slInfo.restirTemporalFactor > 0 && depth < 0.999) {
-        ivec2 resolution = ivec2(slInfo.viewportWidth, slInfo.viewportHeight);
+        ivec2 resolution = textureSize(motion, 0);
 
         vec2 motion = texelFetch(motion, pos, 0).xy * 0.5 * vec2(resolution);
         ivec2 uv = ivec2(round(pos + motion));
         if (all(greaterThanEqual(uv, ivec2(0,0))) && all(lessThan(uv, resolution))) {
             // TODO: reconstruct positions, that should give even more precise results
             float prevDepth = texelFetch(prevDepth, uv, 0).r;
-            if (abs(prevDepth - depth) < 0.01) {
+            if (true || abs(prevDepth - depth) < 0.01) {
                 vec3 prevNormal = texelFetch(prevNormal, uv, 0).xyz;
-                if (dot(prevNormal, point.N) > 0.5) {
+                if (true || dot(prevNormal, point.N) > 0.5) {
                     vec3 prevAlbedo = texelFetch(prevAlbedo, uv, 0).rgb;
                     prevAlbedo -= point.albedo;
-                    if (dot(prevAlbedo, prevAlbedo) < 0.01) {
+                    if (true || dot(prevAlbedo, prevAlbedo) < 0.01) {
                         allowReuse = true;
                     }
                 }
@@ -299,6 +299,8 @@ void main()
         temporalReuse(pos, point, depth);
         return;
     } else if (slInfo.lightAlgo == 1) {
+        temporalReuse(pos, point, depth);
+        return;
         color = naiveLighting(point, depth);
     } else if (slInfo.lightAlgo == 2) {
         color = naiveLightingBVH(pos, point, depth);

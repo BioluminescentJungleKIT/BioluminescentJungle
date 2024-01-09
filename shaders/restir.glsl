@@ -3,7 +3,7 @@
 // NUM_SAMPLES_PER_RESERVOIR must also be adjusted in Lighting.cpp.
 // The value there must be >= than the value used by the shader, otherwise we don't have enough storage space.
 #define NUM_SAMPLES_PER_RESERVOIR 2
-#define NUM_SAMPLES_PER_PIXEL 128
+#define NUM_SAMPLES_PER_PIXEL 256
 
 // Very simple pseudo-random number generators.
 // We might want something better, I just used this as a easy start
