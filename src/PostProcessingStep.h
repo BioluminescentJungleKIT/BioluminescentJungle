@@ -71,10 +71,15 @@ public:
         // One color attachment, no blending enabled for it
         params.blending = {{}};
         params.useDepthTest = false;
+        params.pushConstants = getPushConstantRanges();
 
         params.descriptorSetLayouts = {descriptorSetLayout};
         this->pipeline = std::make_unique<GraphicsPipeline>(device, renderPass, 0, params);
     };
+
+    virtual std::vector<VkPushConstantRange> getPushConstantRanges() {
+        return {};
+    }
 
     virtual void createRenderPass() {
         VkAttachmentDescription colorAttachment{};
@@ -152,7 +157,15 @@ public:
         return renderPass;
     }
 
-    void runRenderPass(VkCommandBuffer commandBuffer, VkFramebuffer target, VkDescriptorSet dSet, bool renderImGUI) {
+    struct PushConstantValues {
+        VkShaderStageFlags stages;
+        size_t offset;
+        size_t size;
+        void *data;
+    };
+
+    void runRenderPass(VkCommandBuffer commandBuffer, VkFramebuffer target, VkDescriptorSet dSet, bool renderImGUI,
+        std::vector<PushConstantValues> pushValues = {}) {
         VkRenderPassBeginInfo renderPassInfo{};
         renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
         renderPassInfo.renderPass = renderPass;
@@ -168,6 +181,12 @@ public:
         vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->pipeline);
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                 pipeline->layout, 0, 1, &dSet, 0, nullptr);
+
+        for (auto& value : pushValues) {
+            vkCmdPushConstants(commandBuffer, pipeline->layout, value.stages,
+                value.offset, value.size, value.data);
+        }
+
         vkCmdDraw(commandBuffer, 6, 1, 0, 0);
 
         if (renderImGUI) {
@@ -245,7 +264,7 @@ public:
             descriptorWriteSampler.pNext = NULL;
 
             VkDescriptorBufferInfo DescriptorBufferInfo{};
-            DescriptorBufferInfo.buffer = uniformBuffer.buffers[0];
+            DescriptorBufferInfo.buffer = uniformBuffer.buffers[i];
             DescriptorBufferInfo.offset = 0;
             DescriptorBufferInfo.range = uboSize;
 
@@ -312,7 +331,7 @@ public:
     virtual void setupBuffers() = 0;
     virtual void updateBuffers() = 0;
 protected:
-    virtual void updateUBOContent() = 0;
+    virtual void updateUBOContent() {};
 
     virtual std::string getShaderName() = 0;
 
@@ -339,13 +358,13 @@ class PostProcessingStep : public PostProcessingStepBase {
     { }
 
     UBOType ubo{};
-    void setupBuffers() override final {
-        uniformBuffer.allocate(device, sizeof(UBOType), 1);
+    void setupBuffers() override {
+        uniformBuffer.allocate(device, sizeof(UBOType), MAX_FRAMES_IN_FLIGHT);
     };
 
-    void updateBuffers() override final {
+    void updateBuffers() override {
         updateUBOContent();
-        uniformBuffer.update(&ubo, sizeof(UBOType), 0);
+        uniformBuffer.update(&ubo, sizeof(UBOType), swapchain->currentFrame);
     };
 };
 

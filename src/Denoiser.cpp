@@ -12,8 +12,16 @@ void Denoiser::enable() {
     enabled = true;
 }
 
-void Denoiser::updateUBOContent() {
+void Denoiser::setupBuffers() {
+    uniformBuffer.allocate(device, sizeof(ubo), MAX_FRAMES_IN_FLIGHT);
+    tmpBuffer.allocate(device, sizeof(ubo), MAX_FRAMES_IN_FLIGHT);
+}
+
+void Denoiser::updateBuffers() {
     this->ubo.iterationCount = enabled ? iterationCount : 0;
+
+    // When we render with the non-tmp sets, we render our final iteration. In this case, lastIteration=1
+    uniformBuffer.update(&ubo, sizeof(ubo), swapchain->currentFrame);
 }
 
 Denoiser::Denoiser(VulkanDevice *pDevice, Swapchain *pSwapchain) : PostProcessingStep(pDevice, pSwapchain, 0) {
@@ -32,6 +40,7 @@ Denoiser::Denoiser(VulkanDevice *pDevice, Swapchain *pSwapchain) : PostProcessin
 }
 
 Denoiser::~Denoiser() {
+    tmpBuffer.destroy(device);
     tmpTarget.destroyAll();
 }
 
@@ -72,7 +81,7 @@ void Denoiser::updateTmpSets(const RenderTarget& gBuffer) {
             images.push_back(vkutil::createDescriptorImageInfo(tmpTarget.imageViews[j][0], this->samplers[i][0]));
             writes.push_back(vkutil::createDescriptorWriteSampler(images.back(), tmpTargetSets[i][j], 0));
 
-            auto uboInfo = vkutil::createDescriptorBufferInfo(uniformBuffer.buffers[0], 0, sizeof(DenoiserUBO));
+            auto uboInfo = vkutil::createDescriptorBufferInfo(uniformBuffer.buffers[i], 0, sizeof(DenoiserUBO));
             writes.push_back(vkutil::createDescriptorWriteUBO(uboInfo, tmpTargetSets[i][j], 1));
 
             for (int k = 0; k < GBufferTarget::NumAttachments; k++) {
@@ -105,9 +114,24 @@ void Denoiser::recreateTmpTargets() {
 void Denoiser::recordCommandBuffer(
     VkCommandBuffer commandBuffer, VkFramebuffer target, bool renderImGUI)
 {
+    static constexpr int ITER_NUMBER = 0;
+    static constexpr int MULT_ALBEDO = 1;
+
+    std::array<glm::int32, 2> pushValues;
+    pushValues[ITER_NUMBER] = 0;
+    pushValues[MULT_ALBEDO] = 0;
+    PushConstantValues pushValue {
+        .stages = VK_SHADER_STAGE_FRAGMENT_BIT,
+        .offset = 0,
+        .size = pushValues.size() * sizeof(pushValues[0]),
+        .data = pushValues.data(),
+    };
+
     if (ubo.iterationCount <= 1) {
         // Directly pass forward
-        runRenderPass(commandBuffer, target, descriptorSets[swapchain->currentFrame], renderImGUI);
+        pushValues[MULT_ALBEDO] = !ignoreAlbedo;
+        runRenderPass(commandBuffer, target, descriptorSets[swapchain->currentFrame], renderImGUI,
+            {pushValue});
         return;
     }
 
@@ -118,20 +142,32 @@ void Denoiser::recordCommandBuffer(
     // The first iteration is copying to tmpTarget[0], and the last iteration copies
     // from tmpTarget[currentlyIn] to the actual target.
     runRenderPass(commandBuffer, tmpTarget.framebuffers[renderPass][0],
-        descriptorSets[swapchain->currentFrame], false);
+        descriptorSets[swapchain->currentFrame], false, {pushValue});
     int iterRemaining = ubo.iterationCount - 1;
     int currentlyIn = 0;
 
     while (iterRemaining > 1) {
+        pushValues[ITER_NUMBER]++;
         runRenderPass(commandBuffer, tmpTarget.framebuffers[renderPass][currentlyIn ^ 1],
-            tmpSets[currentlyIn], false);
+            tmpSets[currentlyIn], false, {pushValue});
         currentlyIn ^= 1;
         iterRemaining--;
     }
 
-    runRenderPass(commandBuffer, target, tmpSets[currentlyIn], renderImGUI);
+    pushValues[ITER_NUMBER]++;
+    pushValues[MULT_ALBEDO] = !ignoreAlbedo;
+    runRenderPass(commandBuffer, target, tmpSets[currentlyIn], renderImGUI, {pushValue});
 }
 
 void Denoiser::updateCamera(glm::mat4 projection) {
     ubo.inverseP = glm::inverse(projection);
+}
+
+std::vector<VkPushConstantRange> Denoiser::getPushConstantRanges() {
+    return { VkPushConstantRange {
+        .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+        .offset = 0,
+        .size = sizeof(glm::int32) * 2,
+    }
+    };
 }

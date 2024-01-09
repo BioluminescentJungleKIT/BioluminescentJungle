@@ -121,13 +121,14 @@ void JungleApp::drawImGUI() {
                          "Off\0Min-Max\0Moment-Based\0\0");
 
             ImGui::SliderInt("Denoiser iterations",
-                &postprocessing->getDenoiser()->iterationCount, 0, 20);
+                &lighting->getDenoiser()->iterationCount, 0, 5);
             ImGui::SliderFloat("Denoiser Albedo Sigma",
-                &postprocessing->getDenoiser()->ubo.albedoSigma, 0.001, 5.0);
+                &lighting->getDenoiser()->ubo.albedoSigma, 0.001, 5.0);
             ImGui::SliderFloat("Denoiser Normal Sigma",
-                &postprocessing->getDenoiser()->ubo.normalSigma, 0.001, 5.0);
+                &lighting->getDenoiser()->ubo.normalSigma, 0.001, 5.0);
             ImGui::SliderFloat("Denoiser Position Sigma",
-                &postprocessing->getDenoiser()->ubo.positionSigma, 0.001, 5.0);
+                &lighting->getDenoiser()->ubo.positionSigma, 0.001, 5.0);
+            ImGui::Checkbox("Remove albedo", &lighting->getDenoiser()->ignoreAlbedo);
         }
         if (ImGui::CollapsingHeader("Camera Settings")) {
             ImGui::DragFloatRange2("Clipping Planes", &nearPlane, &farPlane, 0.07f, .01f, 100000.f);
@@ -228,7 +229,7 @@ void JungleApp::drawFrame() {
         setupGBuffer();
         scene.createPipelines(sceneRPass, mvpSetLayout, false);
         lighting->handleResize(gBuffer, mvpSetLayout, &scene);
-        postprocessing->handleResize(lighting->compositedLight, gBuffer);
+        postprocessing->handleResize(lighting->finalLight, gBuffer);
     } else {
         VK_CHECK_RESULT(result)
     }
@@ -322,6 +323,7 @@ void JungleApp::recompileShaders() {
 
     scene.createPipelines(sceneRPass, mvpSetLayout, true);
     lighting->createPipeline(true, mvpSetLayout, &scene);
+    lighting->getDenoiser()->createPipeline(true);
     postprocessing->createPipeline(true);
 }
 
@@ -482,6 +484,7 @@ void JungleApp::updateUniformBuffers(uint32_t currentImage) {
     mvpUBO.update(&ubo, sizeof(ubo), currentImage);
     scene.updateBuffers();
     lighting->updateBuffers(ubo.proj * ubo.view, cameraPosition, cameraUpVector);
+    lighting->getDenoiser()->updateCamera(ubo.proj);
 
     // TODO: is there a better way to integrate this somehow? Too lazy to skip the tonemapping render pass completely.
     if (lighting->useDebugPipeline()) {
@@ -491,7 +494,6 @@ void JungleApp::updateUniformBuffers(uint32_t currentImage) {
     }
 
     postprocessing->getFogPointer()->updateCamera(ubo.view, ubo.proj, nearPlane, farPlane);
-    postprocessing->getDenoiser()->updateCamera(ubo.proj);
     postprocessing->updateBuffers();
 }
 
@@ -555,7 +557,7 @@ void JungleApp::createDescriptorSets() {
 
     scene.setupDescriptorSets(descriptorPool);
     lighting->createDescriptorSets(descriptorPool, gBuffer, &scene);
-    postprocessing->createDescriptorSets(descriptorPool, lighting->compositedLight, gBuffer);
+    postprocessing->createDescriptorSets(descriptorPool, lighting->finalLight, gBuffer);
 }
 
 void JungleApp::cleanup() {

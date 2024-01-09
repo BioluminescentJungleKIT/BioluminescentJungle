@@ -29,7 +29,7 @@ struct ComputeParamsBuffer {
     glm::int32_t nTriangles;
 };
 
-DeferredLighting::DeferredLighting(VulkanDevice* device, Swapchain* swapChain) {
+DeferredLighting::DeferredLighting(VulkanDevice* device, Swapchain* swapChain) : denoiser(device, swapChain) {
     this->device = device;
     this->swapchain = swapChain;
 }
@@ -55,6 +55,7 @@ DeferredLighting::~DeferredLighting() {
 
     vkDestroySampler(*device, linearSampler, nullptr);
     compositedLight.destroyAll();
+    finalLight.destroyAll();
 }
 
 void DeferredLighting::createPipeline(bool recompileShaders, VkDescriptorSetLayout mvpLayout, Scene *scene) {
@@ -131,7 +132,7 @@ VkRenderPass DeferredLighting::createRenderPass(bool clearCompositedLight) {
     colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
     colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
     colorAttachment.initialLayout =
-        clearCompositedLight ? VK_IMAGE_LAYOUT_UNDEFINED : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        clearCompositedLight ? VK_IMAGE_LAYOUT_UNDEFINED : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     colorAttachment.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
     VkAttachmentReference colorAttachmentRef{};
@@ -151,7 +152,7 @@ VkRenderPass DeferredLighting::createRenderPass(bool clearCompositedLight) {
     dependencies[0].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
     dependencies[0].srcAccessMask = 0;
     dependencies[0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    dependencies[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    dependencies[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
 
     dependencies[1].srcSubpass = 0;
     dependencies[1].dstSubpass = VK_SUBPASS_EXTERNAL;
@@ -185,6 +186,7 @@ void DeferredLighting::createRenderPass() {
 
 void DeferredLighting::setup(bool recompileShaders, Scene *scene, VkDescriptorSetLayout mvpLayout) {
     this->bvh = std::make_unique<BVH>(device, scene);
+    denoiser.setupRenderStage(recompileShaders);
 
     createRenderPass();
     linearSampler = VulkanHelper::createSampler(device, true);
@@ -288,9 +290,9 @@ void DeferredLighting::recordRaytraceBuffer(
             { samplersSets[swapchain->currentFrame], computeSets[swapchain->currentFrame] });
     }
 
-    // Transition compositedLight COLOR_ATTACHMENT_OPTIMAL layout for rendering of the fog
+    // Transition compositedLight SHADER_READ_ONLY layout for use in the denoise shader
     vkCmdPipelineBarrier(commandBuffer,
-        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
         0,
         0, nullptr,
         0, nullptr,
@@ -301,7 +303,7 @@ void DeferredLighting::recordRasterBuffer(VkCommandBuffer commandBuffer, VkDescr
     VkRenderPassBeginInfo renderPassInfo{};
     renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
     renderPassInfo.renderPass = fogOnly ? restirFogRenderPass : debugRenderPass;
-    renderPassInfo.framebuffer = compositedLight.framebuffers[renderPassInfo.renderPass][swapchain->currentFrame];
+    renderPassInfo.framebuffer = finalLight.framebuffers[renderPassInfo.renderPass][swapchain->currentFrame];
     renderPassInfo.renderArea.offset = {0, 0};
     renderPassInfo.renderArea.extent = swapchain->renderSize();
 
@@ -340,6 +342,8 @@ void DeferredLighting::recordCommandBuffer(
 {
     if (useRaytracingPipeline()) {
         recordRaytraceBuffer(commandBuffer, mvpSet, scene);
+        denoiser.recordCommandBuffer(commandBuffer,
+            finalLight.framebuffers[denoiser.getRenderPass()][swapchain->currentFrame], false);
         recordRasterBuffer(commandBuffer, mvpSet, scene, true);
     } else {
         recordRasterBuffer(commandBuffer, mvpSet, scene, false);
@@ -382,6 +386,7 @@ void DeferredLighting::createDescriptorSets(VkDescriptorPool pool, const RenderT
     this->computeSets =
         VulkanHelper::createDescriptorSetsFromLayout(*device, pool, computeLayout, MAX_FRAMES_IN_FLIGHT);
 
+    denoiser.createDescriptorSets(pool, compositedLight, sourceBuffer);
     updateDescriptors(sourceBuffer, scene);
     setupBarriers(sourceBuffer);
 }
@@ -410,7 +415,7 @@ void DeferredLighting::setupBarriers(const RenderTarget& gBuffer) {
         preComputeBarriers[i].back() = vkutil::createImageBarrier(compositedLight.images[i][0], VK_IMAGE_ASPECT_COLOR_BIT,
             VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL, 0, VK_ACCESS_SHADER_WRITE_BIT);
         postComputeBarriers[i].back() = vkutil::createImageBarrier(compositedLight.images[i][0], VK_IMAGE_ASPECT_COLOR_BIT,
-            VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_COLOR_ATTACHMENT_READ_BIT);
+            VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT);
     }
 }
 
@@ -478,6 +483,7 @@ void DeferredLighting::updateDescriptors(const RenderTarget& gBuffer, Scene *sce
 }
 
 void DeferredLighting::setupBuffers() {
+    denoiser.setupBuffers();
     debugUBO.allocate(device, sizeof(DebugOptions), MAX_FRAMES_IN_FLIGHT);
     lightUBO.allocate(device, sizeof(LightingBuffer), MAX_FRAMES_IN_FLIGHT);
     computeParamsUBO.allocate(device, sizeof(ComputeParamsBuffer), 1);
@@ -503,33 +509,42 @@ void DeferredLighting::updateBuffers(glm::mat4 vp, glm::vec3 cameraPos, glm::vec
     buffer.restirSpatialRadius = restirSpatialRadius;
     buffer.restirSpatialNeighbors = restirSpatialNeighbors;
     lightUBO.update(&buffer, sizeof(buffer), swapchain->currentFrame);
+    denoiser.updateBuffers();
 }
 
 RequiredDescriptors DeferredLighting::getNumDescriptors() {
-    return {
-        .requireUniformBuffers = MAX_FRAMES_IN_FLIGHT * 3,
-        .requireSamplers = 2 * MAX_FRAMES_IN_FLIGHT * GBufferTarget::NumAttachments + MAX_FRAMES_IN_FLIGHT,
-        .requireSSBOs = MAX_FRAMES_IN_FLIGHT * 5,
-    };
+    auto req = denoiser.getNumDescriptors();
+    req.requireUniformBuffers += MAX_FRAMES_IN_FLIGHT * 3;
+    req.requireSamplers += 2 * MAX_FRAMES_IN_FLIGHT * GBufferTarget::NumAttachments + MAX_FRAMES_IN_FLIGHT;
+    req.requireSSBOs += MAX_FRAMES_IN_FLIGHT * 5;
+    return req;
 }
 
 void DeferredLighting::handleResize(const RenderTarget& gBuffer, VkDescriptorSetLayout mvpSetLayout, Scene *scene) {
     compositedLight.destroyAll();
+    finalLight.destroyAll();
+
     setupRenderTarget();
     createPipeline(false, mvpSetLayout, scene);
     updateReservoirs();
     updateDescriptors(gBuffer, scene);
     setupBarriers(gBuffer);
+
+    denoiser.handleResize(compositedLight, gBuffer);
 }
 
 void DeferredLighting::setupRenderTarget() {
     compositedLight.init(device, MAX_FRAMES_IN_FLIGHT);
     compositedLight.addAttachment(swapchain->renderSize(), LIGHT_ACCUMULATION_FORMAT,
-        VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT,
-        VK_IMAGE_ASPECT_COLOR_BIT);
+        VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
 
-    compositedLight.createFramebuffers(debugRenderPass, swapchain->renderSize());
-    compositedLight.createFramebuffers(restirFogRenderPass, swapchain->renderSize());
+    finalLight.init(device, MAX_FRAMES_IN_FLIGHT);
+    finalLight.addAttachment(swapchain->renderSize(), LIGHT_ACCUMULATION_FORMAT,
+        VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
+
+    finalLight.createFramebuffers(debugRenderPass, swapchain->renderSize());
+    finalLight.createFramebuffers(restirFogRenderPass, swapchain->renderSize());
+    finalLight.createFramebuffers(denoiser.getRenderPass(), swapchain->renderSize());
 }
 
 #define NUM_SAMPLES_PER_RESERVOIR 4

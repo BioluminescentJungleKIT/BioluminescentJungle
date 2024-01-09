@@ -1,6 +1,7 @@
 #ifndef LIGHTIG_H
 #define LIGHTIG_H
 
+#include "Denoiser.h"
 #include "Scene.h"
 #include "Swapchain.h"
 #include "UniformBuffer.h"
@@ -71,6 +72,7 @@ class DeferredLighting {
     void createDescriptorSets(VkDescriptorPool pool, const RenderTarget& gBuffer, Scene *scene);
 
     RenderTarget compositedLight;
+    RenderTarget finalLight;
 
     void handleResize(const RenderTarget& gBuffer, VkDescriptorSetLayout mvpSetLayout, Scene *scene);
     void setupRenderTarget();
@@ -117,12 +119,17 @@ class DeferredLighting {
         return swapchain->currentFrame;
     }
 
+    Denoiser *getDenoiser() {
+        return &denoiser;
+    }
+
   private:
     VulkanDevice *device;
     Swapchain *swapchain;
     UniformBuffer debugUBO;
     UniformBuffer lightUBO;
     UniformBuffer computeParamsUBO;
+    Denoiser denoiser;
 
     // *2 for temporary reservoirs while using temporal and spatial reuse
     std::array<DataBuffer, MAX_FRAMES_IN_FLIGHT> reservoirs;

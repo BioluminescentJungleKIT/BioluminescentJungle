@@ -1,7 +1,6 @@
 #ifndef POSTPROCESSING_H
 #define POSTPROCESSING_H
 
-#include "Denoiser.h"
 #include "Swapchain.h"
 
 #define GLFW_INCLUDE_VULKAN
@@ -47,10 +46,6 @@ public:
         return &tonemap;
     }
 
-    Denoiser *getDenoiser() {
-        return &denoiser;
-    }
-
     TAA *getTAAPointer() {
         return &taa;
     }
@@ -71,7 +66,6 @@ private:
     VulkanDevice *device;
     Swapchain *swapchain;
 
-    Denoiser denoiser;
     GlobalFog fog;
     Tonemap tonemap;
     TAA taa;

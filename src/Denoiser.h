@@ -25,12 +25,16 @@ public:
     Denoiser(VulkanDevice *pDevice, Swapchain *pSwapchain);
     ~Denoiser();
     std::string getShaderName() override;
-    void updateUBOContent() override;
+
+    void setupBuffers() override;
+    void updateBuffers() override;
 
     void updateCamera(glm::mat4 projection);
 
     void disable() override;
     void enable() override;
+
+    std::vector<VkPushConstantRange> getPushConstantRanges() override;
 
     void createRenderPass() override;
     void handleResize(const RenderTarget& sourceBuffer, const RenderTarget& gBuffer) override;
@@ -42,12 +46,14 @@ public:
     static constexpr int NR_TMP_BUFFERS = 2;
 
     RenderTarget tmpTarget;
+    UniformBuffer tmpBuffer;
 
     // tmpTargetSets[i][j] has the GBuffer attachments from GBuffer[i] and accColor equal to tmpTarget[j]
     std::array<std::array<VkDescriptorSet, NR_TMP_BUFFERS>, MAX_FRAMES_IN_FLIGHT> tmpTargetSets;
 
-    int32_t iterationCount = 3;
+    int32_t iterationCount = 2;
     bool enabled = true;
+    bool ignoreAlbedo = false;
 
     void recreateTmpTargets();
     void updateTmpSets(const RenderTarget& gBuffer);
