@@ -13,15 +13,15 @@ layout(std430, binding = 1) buffer TransformBuffer
 } transformBuffer;
 
 bool isValid(uint idx) {
-    return bool((bufferMetadata.bitmap[idx/32] << (idx % 32)) & 1);
+    return bool(bufferMetadata.bitmap[idx/32] & (1 << (idx % 32)));
 }
 
 void copy(uint fromIndex, uint toIndex) {
     // copy transform
     transformBuffer.transforms[toIndex] = transformBuffer.transforms[fromIndex];
     // set validity
-    atomicOr(bufferMetadata.bitmap[toIndex/32], 1 >> (toIndex % 32));
-    atomicAnd(bufferMetadata.bitmap[fromIndex/32], ~(1 >> (fromIndex % 32)));
+    atomicOr(bufferMetadata.bitmap[toIndex/32], 1 << (toIndex % 32));
+    atomicAnd(bufferMetadata.bitmap[fromIndex/32], ~(1 << (fromIndex % 32)));
 }
 
 void main() {
@@ -31,7 +31,7 @@ void main() {
         bool foundValid = false;
         while (!foundValid) {
             // get $size and atomic subtract 1
-            uint getFromIndex = atomicAdd(bufferMetadata.size, -1);
+            uint getFromIndex = atomicAdd(bufferMetadata.size, -1) - 1;
             foundValid = isValid(getFromIndex);
             // if index at size is valid, copy to here, else repeat
             if (foundValid) {

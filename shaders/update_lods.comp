@@ -49,29 +49,46 @@ layout( push_constant ) uniform PushConstant {
 void move(uint oldIdx, int upOrDown) {
     if (upOrDown == 0) return;
     else if (upOrDown == 1) {
-        if (!bool(pushConstant.lodMeta.x)) return;
+        if (pushConstant.lodMeta.x < 0.5) return;
         uint newIdx = atomicAdd(upBufferMetadata.upSize, 1);
         upTransformBuffer.upTransforms[newIdx] = transformBuffer.transforms[oldIdx];
         atomicAdd(upBufferMetadata.upCount, 1);
         atomicAdd(bufferMetadata.count, -1);
-        atomicAnd(bufferMetadata.bitmap[oldIdx/32], ~(1 >> (oldIdx % 32)));
-        atomicOr(upBufferMetadata.upBitmap[newIdx/32], 1 >> (newIdx % 32));
+        atomicAnd(bufferMetadata.bitmap[oldIdx/32], ~(1 << (oldIdx % 32)));
+        atomicOr(upBufferMetadata.upBitmap[newIdx/32], 1 << (newIdx % 32));
     } else if (upOrDown == -1) {
-        if (!bool(pushConstant.lodMeta.y)) return;
+        if (pushConstant.lodMeta.y < 0.5) return;
         uint newIdx = atomicAdd(downBufferMetadata.downSize, 1);
         downTransformBuffer.downTransforms[newIdx] = transformBuffer.transforms[oldIdx];
         atomicAdd(downBufferMetadata.downCount, 1);
         atomicAdd(bufferMetadata.count, -1);
-        atomicAnd(bufferMetadata.bitmap[oldIdx/32], ~(1 >> (oldIdx % 32)));
-        atomicOr(downBufferMetadata.downBitmap[newIdx/32], 1 >> (newIdx % 32));
+        atomicAnd(bufferMetadata.bitmap[oldIdx/32], ~(1 << (oldIdx % 32)));
+        atomicOr(downBufferMetadata.downBitmap[newIdx/32], 1 << (newIdx % 32));
     }
 }
 
 void main() {
     uint index = gl_GlobalInvocationID.x;
+
+    /*
+    atomicAnd(bufferMetadata.bitmap[0], 0u);
+    atomicOr(bufferMetadata.bitmap[0], 1u);
+    atomicAnd(bufferMetadata.bitmap[1], 0u);
+    atomicOr(bufferMetadata.bitmap[1], 2u);
+    atomicAnd(bufferMetadata.bitmap[2], 0u);
+    atomicOr(bufferMetadata.bitmap[2], 3u);
+    atomicAnd(bufferMetadata.bitmap[3], 0u);
+    atomicOr(bufferMetadata.bitmap[3], 4u);
+        if (index % 2 == 0) {
+            atomicAnd(bufferMetadata.bitmap[index/32 + 2], ~(1 << (index % 32)));
+        } else {
+            atomicOr(bufferMetadata.bitmap[index/32 + 2], 1 << (index % 32));
+        }
+    */
     if (index < bufferMetadata.count) {
         float distance = distance(transformBuffer.transforms[index][3].xyz, pushConstant.cameraPosition);
         int moveTo = int(distance > pushConstant.lodMeta.z) - int(distance < pushConstant.lodMeta.w);
         move(index, moveTo);
     }
+
 }

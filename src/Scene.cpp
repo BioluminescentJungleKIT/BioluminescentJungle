@@ -191,14 +191,18 @@ void Scene::recordCommandBufferCompute(VkCommandBuffer commandBuffer, glm::vec3 
     VkMemoryBarrier lodCompressionBarrier{};
     lodCompressionBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
     lodCompressionBarrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-    lodCompressionBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    lodCompressionBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_TRANSFER_READ_BIT;
     vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                         VK_PIPELINE_STAGE_VERTEX_SHADER_BIT, {},
+                         VK_PIPELINE_STAGE_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT, {},
                          1, &lodCompressionBarrier, 0, nullptr, 0, nullptr);
     VkBufferCopy instanceCountRegion{};
     instanceCountRegion.size = sizeof(VkDrawIndexedIndirectCommand::instanceCount);
     instanceCountRegion.srcOffset = sizeof(uint32_t);
     instanceCountRegion.dstOffset = offsetof(VkDrawIndexedIndirectCommand, instanceCount);
+    VkBufferCopy countToSizeRegion{};
+    countToSizeRegion.size = sizeof(uint32_t);
+    countToSizeRegion.srcOffset = sizeof(uint32_t);
+    countToSizeRegion.dstOffset = 0;
     for (auto [meshName, lodList]: lods) {
         if (lodList.size() <= 1) continue; // only update loded meshes
         for (int i = 0; i < lodList.size(); i++) {
@@ -208,6 +212,8 @@ void Scene::recordCommandBufferCompute(VkCommandBuffer commandBuffer, glm::vec3 
             for (int j = 0; j < mesh.primitives.size(); j++) {
                 auto drawCommandBuffer = buffers[lodIndirectDrawBufferMap[std::pair(meshIndex, j)]];
                 vkCmdCopyBuffer(commandBuffer, metaBuffer.buffer, drawCommandBuffer.buffer, 1, &instanceCountRegion);
+                // set size equal to count. this is necessary, since invalid transforms at the end would not reduce size
+                vkCmdCopyBuffer(commandBuffer, metaBuffer.buffer, metaBuffer.buffer, 1, &countToSizeRegion);
             }
         }
     }
@@ -355,36 +361,38 @@ void Scene::setupDescriptorSets(VkDescriptorPool descriptorPool) {
                 auto upLodMetaBufferIndex = lodMetaBuffersMap[lodUpIdentifier];
                 auto downLodTransformsBufferIndex = lodTransformsBuffersMap[lodDownIdentifier];
                 auto downLodMetaBufferIndex = lodMetaBuffersMap[lodDownIdentifier];
+                auto trafoSize = sizeof(ModelTransform) * meshTransforms[meshNameMap[meshName]].size();
+                auto metaSize = ((meshTransforms[meshNameMap[meshName]].size() / 32 + 1) + 2) * sizeof(glm::uint);
 
                 VkDescriptorBufferInfo transformsBufferInfo{};
                 transformsBufferInfo.buffer = buffers[lodTransformsBufferIndex].buffer;
                 transformsBufferInfo.offset = 0;
-                transformsBufferInfo.range = sizeof(ModelTransform) * meshTransforms[meshNameMap[meshName]].size();
+                transformsBufferInfo.range = trafoSize;
 
                 VkDescriptorBufferInfo metaBufferInfo{};
                 metaBufferInfo.buffer = buffers[lodMetaBufferIndex].buffer;
                 metaBufferInfo.offset = 0;
-                metaBufferInfo.range = meshTransforms[meshNameMap[meshName]].size() / 8 + sizeof(glm::uint);
+                metaBufferInfo.range = metaSize;
 
                 VkDescriptorBufferInfo upTransformsBufferInfo{};
                 upTransformsBufferInfo.buffer = buffers[upLodTransformsBufferIndex].buffer;
                 upTransformsBufferInfo.offset = 0;
-                upTransformsBufferInfo.range = sizeof(ModelTransform) * meshTransforms[meshNameMap[meshName]].size();
+                upTransformsBufferInfo.range = trafoSize;
 
                 VkDescriptorBufferInfo upMetaBufferInfo{};
                 upMetaBufferInfo.buffer = buffers[upLodMetaBufferIndex].buffer;
                 upMetaBufferInfo.offset = 0;
-                upMetaBufferInfo.range = meshTransforms[meshNameMap[meshName]].size() / 8 + sizeof(glm::uint);
+                upMetaBufferInfo.range = metaSize;
 
                 VkDescriptorBufferInfo downTransformsBufferInfo{};
                 downTransformsBufferInfo.buffer = buffers[downLodTransformsBufferIndex].buffer;
                 downTransformsBufferInfo.offset = 0;
-                downTransformsBufferInfo.range = sizeof(ModelTransform) * meshTransforms[meshNameMap[meshName]].size();
+                downTransformsBufferInfo.range = trafoSize;
 
                 VkDescriptorBufferInfo downMetaBufferInfo{};
                 downMetaBufferInfo.buffer = buffers[downLodMetaBufferIndex].buffer;
                 downMetaBufferInfo.offset = 0;
-                downMetaBufferInfo.range = meshTransforms[meshNameMap[meshName]].size() / 8 + sizeof(glm::uint);
+                downMetaBufferInfo.range = metaSize;
 
                 std::vector<VkDescriptorBufferInfo> updateBufferInfos {
                     upMetaBufferInfo,upTransformsBufferInfo,
