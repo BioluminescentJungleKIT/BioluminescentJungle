@@ -964,6 +964,13 @@ static ShaderList selectShaders(const PipelineDescription &descr) {
         };
     }
 
+    if (!descr.isOpaque) {
+        return ShaderList {
+                {VK_SHADER_STAGE_VERTEX_BIT,   "shaders/simple-texture-wind.vert"},
+                {VK_SHADER_STAGE_FRAGMENT_BIT, "shaders/simple-texture.frag"},
+        };
+    }
+
     if (descr.useNormalMap) {
         return ShaderList {
             {VK_SHADER_STAGE_VERTEX_BIT,   "shaders/displacement.vert"},

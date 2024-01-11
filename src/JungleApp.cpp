@@ -477,7 +477,7 @@ void JungleApp::updateUniformBuffers(uint32_t currentImage) {
     } else {
         ubo.jitt = glm::vec2(0, 0);
     }
-    //jitterSequence %= jitters.size();
+    ubo.time = time;
 
     mvpUBO.copyTo(lastmvpUBO, (currentImage + MAX_FRAMES_IN_FLIGHT - 1) % MAX_FRAMES_IN_FLIGHT, currentImage,
                   sizeof(ubo));

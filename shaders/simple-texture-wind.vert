@@ -1,4 +1,5 @@
 #version 450
+#include "noise3D.glsl"
 
 layout(set = 0, binding = 0) uniform UniformBufferObject {
     mat4 modl;  // global
@@ -29,13 +30,30 @@ layout(location = 1) out vec3 normal;
 layout(location = 2) out vec4 currpos;
 layout(location = 3) out vec4 lastpos;
 
+vec3 noise3D(vec3 position) {
+    return vec3(snoise(position), snoise(position + vec3(314, 145, 457)), snoise(position + vec3(764, 959, 114)));
+}
+
+vec4 displacement(vec4 position, float time, vec3 origin) {
+    vec3 diff = position.xyz - origin;
+    float distSqr = min(dot(diff, diff) * 0.5, 0.1);
+    return position + vec4(noise3D(position.xyz / 5 + vec3(time * 0.4, 0, 0)) * distSqr, 0);
+}
+
 void main() {
     // TODO [optimization] outsource uniform multiplications to the CPU
-    gl_Position = ubo.proj * ubo.view * ubo.modl * model.model[gl_InstanceIndex] * vec4(inPosition, 1.0);
+    mat4 combinedModel = ubo.modl * model.model[gl_InstanceIndex];
+    vec4 worldpos = combinedModel * vec4(inPosition, 1.0);
+    vec3 worldorigin = combinedModel[3].xyz;
+    gl_Position = ubo.proj * ubo.view * displacement(worldpos, ubo.time, worldorigin);
     gl_Position += gl_Position.w * vec4(ubo.jitt.x, ubo.jitt.y, 0, 0);
+
     currpos = gl_Position;
 
-    lastpos = lastubo.proj * lastubo.view * lastubo.modl * model.model[gl_InstanceIndex] * vec4(inPosition, 1.0);
+    mat4 lastCombinedModel = lastubo.modl * model.model[gl_InstanceIndex];
+    vec4 lastworldpos = lastCombinedModel * vec4(inPosition, 1.0);
+    vec3 lastworldorigin = lastCombinedModel[3].xyz;
+    lastpos = lastubo.proj * lastubo.view * displacement(lastworldpos, lastubo.time, lastworldorigin);
     lastpos += lastpos.w * vec4(lastubo.jitt, 0, 0);
 
     uv = inUV;
