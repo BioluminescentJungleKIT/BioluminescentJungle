@@ -556,7 +556,9 @@ void Scene::generateTransforms(int nodeIndex, glm::mat4 oldTransform, int maxRec
             if (light.Has("intensity")) {
                 light_intensity = static_cast<float>(light.Get("intensity").Get<double>());
             }
-            lights.push_back({glm::make_vec3(newTransform[3]), light_color, light_intensity});
+            auto name = light.Get("name").Get<std::string>();
+            float wind = name.find("WIND") != name.npos;
+            lights.push_back({glm::make_vec3(newTransform[3]), light_color, light_intensity, wind});
         } else {
             std::cout << "[lights] WARN: Detected unsupported light of type " << type << std::endl;
         }
@@ -691,6 +693,13 @@ Scene::getLightsAttributeAndBindingDescriptions() {
     intensityAttributeDescription.format = VK_FORMAT_R32_SFLOAT;
     intensityAttributeDescription.offset = offsetof(LightData, intensity);
     attributeDescriptions.push_back(intensityAttributeDescription);
+
+    VkVertexInputAttributeDescription windAttributeDescription{};
+    windAttributeDescription.binding = 0;
+    windAttributeDescription.location = 3;
+    windAttributeDescription.format = VK_FORMAT_R32_SFLOAT;
+    windAttributeDescription.offset = offsetof(LightData, wind);
+    attributeDescriptions.push_back(windAttributeDescription);
 
     return {attributeDescriptions, bindingDescriptions};
 }

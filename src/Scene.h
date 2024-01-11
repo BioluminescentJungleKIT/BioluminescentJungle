@@ -24,6 +24,7 @@ struct LightData {
     glm::vec3 position alignas(16);
     glm::vec3 color alignas(16);
     glm::float32 intensity alignas(16);
+    glm::float32 wind alignas(16);
 };
 struct CameraData{
     std::string name;
