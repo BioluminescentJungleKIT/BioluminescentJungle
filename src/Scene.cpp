@@ -17,6 +17,7 @@
 #include <glm/gtx/quaternion.hpp>
 #include <memory>
 #include <numeric>
+#include <algorithm>
 
 // Definitions of standard names in gltf
 #define POSITION "POSITION"
@@ -583,7 +584,6 @@ void Scene::setupPrimitiveDrawBuffers() {
                     uint32_t numIndices = model.accessors[indexAccessorIndex].count;
                     VkDrawIndexedIndirectCommand drawCommand{};
                     drawCommand.indexCount = numIndices;
-                    lods[model.meshes[mesh].name].size();
                     drawCommand.instanceCount = (i == 0) ? transforms.size() : 0;
                     lodIndirectDrawBufferMap[std::pair(lod.mesh, j)] = buffers.size();
                     buffers.push_back({});
