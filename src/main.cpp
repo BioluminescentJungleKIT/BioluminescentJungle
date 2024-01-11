@@ -20,6 +20,14 @@ int main(int argc, char **argv) {
         if (!strcmp(argv[i], "--crash-on-validation-message")) {
             crashOnValidationWarning = true;
         }
+
+        if (!strcmp(argv[i], "--renderscale")) {
+            Swapchain::renderScale = std::atof(argv[i+1]);
+        }
+
+        if (!strcmp(argv[i], "--ratelimit")) {
+            Swapchain::rateLimit = std::atoi(argv[i+1]);
+        }
     }
 
     try {

@@ -22,7 +22,7 @@ inline VkFormat getGBufferAttachmentFormat(Swapchain *swapChain, GBufferTarget t
         case Albedo:
             return VK_FORMAT_R8G8B8A8_SRGB;
         case Normal:
-            return VK_FORMAT_R8G8B8A8_SRGB;
+            return VK_FORMAT_R8G8B8A8_SNORM;
         case Motion:
             return VK_FORMAT_R32G32_SFLOAT;
         case Depth:

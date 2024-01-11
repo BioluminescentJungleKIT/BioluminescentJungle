@@ -12,6 +12,9 @@ find_package(Vulkan REQUIRED)
 find_package(glfw3 REQUIRED)
 pkg_check_modules(ShaderC REQUIRED shaderc)
 
+add_compile_options(-fsanitize=address)
+add_link_options(-fsanitize=address)
+
 add_executable(Jungle src/main.cpp
         src/JungleApp.cpp
         src/PhysicalDevice.cpp
@@ -21,6 +24,7 @@ add_executable(Jungle src/main.cpp
         src/Tonemap.cpp
         src/TAA.cpp
         src/UniformBuffer.cpp
+        src/DataBuffer.cpp
         src/JungleApp.h
         lib/imgui/imconfig.h
         lib/imgui/imgui.cpp
@@ -49,6 +53,7 @@ add_executable(Jungle src/main.cpp
         src/PostProcessing.cpp
         src/PostProcessingStep.h
         src/GlobalFog.cpp
+        src/Denoiser.cpp
 )
 
 target_include_directories(Jungle PRIVATE lib/imgui lib/imgui/backends lib/imgui/misc/cpp/)
@@ -56,13 +61,6 @@ target_link_libraries(Jungle ${ShaderC_LIBRARIES} glfw Vulkan::Vulkan tinygltf P
 target_include_directories(Jungle PUBLIC ${ShaderC_INCLUDE_DIRS})
 target_compile_options(Jungle PUBLIC ${ShaderC_CFLAGS_OTHER})
 target_link_options(Jungle PRIVATE "${ShaderC_LDFLAGS}")
-
-if (RATELIMIT)
-    target_compile_definitions(Jungle PRIVATE RATELIMIT=${RATELIMIT})
-else()
-    target_compile_definitions(Jungle PRIVATE RATELIMIT=0)
-endif()
-
 
 add_subdirectory(lib/tinygltf)
 include_directories(lib/tinygltf)

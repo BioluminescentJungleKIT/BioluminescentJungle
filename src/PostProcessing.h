@@ -2,7 +2,6 @@
 #define POSTPROCESSING_H
 
 #include "Swapchain.h"
-#include "UniformBuffer.h"
 
 #define GLFW_INCLUDE_VULKAN
 
@@ -12,7 +11,6 @@
 #include "Tonemap.h"
 #include "TAA.h"
 #include "GlobalFog.h"
-#include <memory>
 
 /**
  * A helper class which manages PostProcessingping-related resources
@@ -72,8 +70,18 @@ private:
     Tonemap tonemap;
     TAA taa;
 
-    RenderTarget fogTarget;
-    RenderTarget taaTarget;
+    struct StepInfo {
+        PostProcessingStepBase *algorithm;
+        RenderTarget target = {};
+        bool useRenderSize = true;
+        bool isFinal = false;
+
+        VkExtent2D getTargetSize(Swapchain *swapchain) {
+            return useRenderSize ? swapchain->renderSize() : swapchain->finalBufferSize;
+        }
+    };
+
+    std::vector<StepInfo> steps;
 };
 
 #endif /* end of include guard: POSTPROCESSING_H */

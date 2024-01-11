@@ -8,7 +8,8 @@
  */
 class UniformBuffer {
   public:
-    void allocate(VulkanDevice* device, size_t size, size_t copies);
+    void allocate(VulkanDevice* device, size_t size, size_t copies,
+        VkBufferUsageFlags usageFlags = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
     void update(void* data, size_t size, uint32_t copyIdx);
     void destroy(VulkanDevice *device);
 

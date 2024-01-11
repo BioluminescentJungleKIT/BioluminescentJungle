@@ -19,6 +19,7 @@
 #include <GLFW/glfw3.h>
 #include <vulkan/vulkan_core.h>
 #include "PhysicalDevice.h"
+#include "GlslIncluder.hpp"
 
 static std::string errorString(VkResult errorCode) {
     switch (errorCode) {
@@ -66,21 +67,6 @@ static std::string errorString(VkResult errorCode) {
     }
 }
 
-static std::vector<char> readFile(const std::string &filename) {
-    std::ifstream file(filename, std::ios::ate | std::ios::binary);
-
-    if (!file.is_open()) {
-        throw std::runtime_error("failed to open file!");
-    }
-
-    auto fileSize = file.tellg();
-    std::vector<char> buffer(fileSize);
-    file.seekg(0);
-    file.read(buffer.data(), fileSize);
-    file.close();
-    return buffer;
-}
-
 static void writeFile(const std::string &filename, const std::vector<char> &buffer) {
     std::ofstream file(filename, std::ios::binary);
 
@@ -92,18 +78,19 @@ static void writeFile(const std::string &filename, const std::vector<char> &buff
     file.close();
 }
 
-static bool fileExists(const std::string &filename) {
-    std::ifstream file(filename);
-    return file.good();
-}
+#include <chrono>
 
 static std::tuple<std::vector<char>, std::string> getShaderCode(const std::string &filename, shaderc_shader_kind kind, bool recompile) {
+    auto startTS = std::chrono::system_clock::now();
+    std::cout << "Compiling source file " << filename << std::endl;
+
     std::string message;
     auto sourceName = filename.substr(filename.find_last_of("/\\") + 1, filename.find_last_of('.'));
     auto spvFilename = filename + ".spv";
     if (recompile || !fileExists(spvFilename)) {
         shaderc::Compiler compiler;
         shaderc::CompileOptions options;
+        options.SetIncluder(std::make_unique<GlslIncluder>());
 
         auto file_content = readFile(filename);
         file_content.push_back('\0');
@@ -121,6 +108,11 @@ static std::tuple<std::vector<char>, std::string> getShaderCode(const std::strin
             writeFile(spvFilename, spirv);
         }
     }
+
+    auto endTS = std::chrono::system_clock::now();
+    std::cout << "Compilation of " << filename << " took " <<
+        std::chrono::duration_cast<std::chrono::milliseconds>(endTS-startTS).count() << "ms" << std::endl;
+
     return {readFile(spvFilename), message};
 }
 
@@ -197,32 +189,64 @@ inline VkDescriptorImageInfo createDescriptorImageInfo(VkImageView imageView, Vk
     return imageInfo;
 }
 
-inline VkWriteDescriptorSet createDescriptorWriteUBO(
-    VkDescriptorBufferInfo& bufferInfo, VkDescriptorSet dset, int bindingId)
+inline VkWriteDescriptorSet createDescriptorWriteGenBuffer(
+    VkDescriptorBufferInfo& bufferInfo, VkDescriptorSet dset, int bindingId,
+    VkDescriptorType type)
 {
     VkWriteDescriptorSet descriptorWrite{};
     descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
     descriptorWrite.dstSet = dset;
     descriptorWrite.dstBinding = bindingId;
     descriptorWrite.dstArrayElement = 0;
-    descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    descriptorWrite.descriptorType = type;
     descriptorWrite.descriptorCount = 1;
     descriptorWrite.pBufferInfo = &bufferInfo;
     return descriptorWrite;
 }
 
+inline VkWriteDescriptorSet createDescriptorWriteUBO(
+    VkDescriptorBufferInfo& bufferInfo, VkDescriptorSet dset, int bindingId)
+{
+    return createDescriptorWriteGenBuffer(bufferInfo, dset, bindingId, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
+}
+
+inline VkWriteDescriptorSet createDescriptorWriteSBO(
+    VkDescriptorBufferInfo& bufferInfo, VkDescriptorSet dset, int bindingId)
+{
+    return createDescriptorWriteGenBuffer(bufferInfo, dset, bindingId, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+}
+
 inline VkWriteDescriptorSet createDescriptorWriteSampler(
-    VkDescriptorImageInfo& imageInfo, VkDescriptorSet dset, int bindingId)
+    VkDescriptorImageInfo& imageInfo, VkDescriptorSet dset, int bindingId,
+    VkDescriptorType type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
 {
     VkWriteDescriptorSet descriptorWrite{};
     descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
     descriptorWrite.dstSet = dset;
     descriptorWrite.dstBinding = bindingId;
     descriptorWrite.dstArrayElement = 0;
-    descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    descriptorWrite.descriptorType = type;
     descriptorWrite.descriptorCount = 1;
     descriptorWrite.pImageInfo = &imageInfo;
+    descriptorWrite.pNext = NULL;
     return descriptorWrite;
+}
+
+inline VkImageMemoryBarrier createImageBarrier(VkImage image, VkImageAspectFlags aspect,
+    VkImageLayout oldLayout, VkImageLayout newLayout,
+    VkAccessFlags srcAccess, VkAccessFlags dstAccess)
+{
+    VkImageMemoryBarrier barrier{};
+    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    barrier.oldLayout = oldLayout;
+    barrier.newLayout = newLayout;
+    barrier.image = image;
+    barrier.subresourceRange = { aspect, 0, 1, 0, 1 };
+    barrier.srcAccessMask = srcAccess;
+    barrier.dstAccessMask = dstAccess;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    return barrier;
 }
 }
 

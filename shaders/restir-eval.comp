@@ -1,0 +1,107 @@
+#version 450
+
+#include "restir.glsl"
+
+layout(set = 0, binding = 0) uniform sampler2D albedo;
+layout(set = 0, binding = 1) uniform sampler2D depth;
+layout(set = 0, binding = 2) uniform sampler2D normal;
+layout(set = 0, binding = 3) uniform sampler2D motion;
+
+layout(set = 1, binding = 0) uniform writeonly image2D compositeLight;
+layout(set = 1, binding = 1, std140) uniform LightInfoBlock {
+    SceneLightInfo slInfo;
+};
+
+layout(std140, set = 1, binding = 2) readonly buffer PointLightIn {
+    PointLight pointLights[];
+};
+
+layout(std140, set = 1, binding = 3) uniform Params {
+    int nPointLights;
+    int nTriangles;
+};
+
+layout(std430, set = 1, binding = 7) readonly buffer ReservoirsTmp {
+    Reservoir reservoirsTmp[];
+};
+
+layout(std430, set = 1, binding = 8) writeonly buffer ReservoirsOut {
+    Reservoir reservoirsOut[];
+};
+
+
+layout (local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+
+Reservoir spatialReuse(ivec2 pos, int rIdx, SurfacePoint point, float ourD) {
+    uint rndState = getRandSeed(uvec3(pos, slInfo.randomSeed));
+    Reservoir r = reservoirsTmp[rIdx];
+
+    // Find spatial neighbors, merge reservoirs
+    for (int i = 0; i < slInfo.restirSpatialNeighbors; i++) {
+        float frad = sqrt(nextRand(rndState)) * slInfo.restirSpatialRadius;
+        float theta = nextRand(rndState) * 2 * radians(180);
+        ivec2 reuse = clamp(pos + ivec2(frad * cos(theta), frad * sin(theta)),
+                ivec2(0, 0), ivec2(slInfo.viewportWidth - 1, slInfo.viewportHeight - 1));
+
+        float reuseD = texelFetch(depth, reuse, 0).r;
+        vec3 reuseN = texelFetch(normal, reuse, 0).xyz;
+        bool shouldReuse = abs(reuseD - ourD) < 0.01 && dot(reuseN, point.N) > 0.7;
+
+        if (shouldReuse) {
+            Reservoir otherR = reservoirsTmp[reservoirIdx(reuse, slInfo.viewportWidth)];
+
+            float pHats[NUM_SAMPLES_PER_RESERVOIR];
+            for (int i = 0; i < NUM_SAMPLES_PER_RESERVOIR; i++) {
+                pHats[i] = 0;
+                if (otherR.selected[i] >= 0) {
+                    pHats[i] = evalPointLightStrength(point,
+                            computeLightParams(pointLights[otherR.selected[i]]));
+                }
+            }
+
+            mergeReservoir(rndState, r, otherR, pHats, otherR.totalNumSamples);
+        }
+    }
+
+    // TODO: Spatial reuse
+    reservoirsOut[rIdx] = r;
+    return r;
+}
+
+void main() {
+    ivec2 pos = ivec2(gl_GlobalInvocationID.xy);
+    if (pos.x > slInfo.viewportWidth || pos.y > slInfo.viewportHeight) {
+        return;
+    }
+
+    float depth = texelFetch(depth, pos, 0).r;
+    if (depth > 0.999) {
+        imageStore(compositeLight, ivec2(pos), vec4(0, 0, 0, 1.0));
+        return;
+    }
+
+    SurfacePoint point;
+    point.worldPos = calculatePosition(depth, pos, slInfo);
+    point.albedo = texelFetch(albedo, pos, 0).rgb;
+    point.N = texelFetch(normal, pos, 0).xyz;
+    vec3 finalColor = vec3(0, 0, 0);
+
+    int rIdx = reservoirIdx(pos, slInfo.viewportWidth);
+    Reservoir r = spatialReuse(pos, rIdx, point, depth);
+    for (int i = 0; i < NUM_SAMPLES_PER_RESERVOIR; i++) {
+        int sel = r.selected[i];
+        if (sel >= 0) {
+            PointLightParams light = computeLightParams(pointLights[sel]);
+
+            float f = evalPointLightStrength(point, light);
+            f *= evalFogAbsorption(point, slInfo);
+
+            // Equation (6) from the ReSTIR paper
+            float W = 1.0 / (r.pHat[i] * r.totalNumSamples) * r.sumW[i];
+            finalColor += W * f * light.intensity;
+        }
+    }
+
+    finalColor /= NUM_SAMPLES_PER_RESERVOIR;
+    imageStore(compositeLight, ivec2(pos), vec4(finalColor, 1.0));
+}

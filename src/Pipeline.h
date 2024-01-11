@@ -18,9 +18,11 @@ struct BasicBlending {
 struct RequiredDescriptors {
     unsigned int requireUniformBuffers = 0;
     unsigned int requireSamplers = 0;
+    unsigned int requireSSBOs = 0;
 };
 
-using ShaderList = std::vector<std::pair<VkShaderStageFlagBits, std::string>>;
+using ShaderSource = std::pair<VkShaderStageFlagBits, std::string>;
+using ShaderList = std::vector<ShaderSource>;
 
 struct PipelineParameters {
     ShaderList shadersList;
@@ -36,6 +38,7 @@ struct PipelineParameters {
     // The number of blending options also determines the number of color attachments.
     std::vector<std::optional<BasicBlending>> blending;
     bool useDepthTest = true;
+    std::vector<VkPushConstantRange> pushConstants;
 };
 
 class GraphicsPipeline {
@@ -44,6 +47,24 @@ class GraphicsPipeline {
     ~GraphicsPipeline();
 
     static std::vector<std::pair<std::string, std::string>> errorsFromShaderCompilation;
+
+    VkPipeline pipeline;
+    VkPipelineLayout layout;
+
+  private:
+    VulkanDevice *device;
+};
+
+class ComputePipeline {
+  public:
+    struct Parameters {
+        ShaderSource source;
+        std::vector<VkDescriptorSetLayout> descriptorSetLayouts;
+        bool recompileShaders = false;
+    };
+
+    ComputePipeline(VulkanDevice* device, const Parameters& params);
+    ~ComputePipeline();
 
     VkPipeline pipeline;
     VkPipelineLayout layout;

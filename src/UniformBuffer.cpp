@@ -1,13 +1,13 @@
 #include "UniformBuffer.h"
 #include "VulkanHelper.h"
 
-void UniformBuffer::allocate(VulkanDevice* device, size_t size, size_t copies) {
+void UniformBuffer::allocate(VulkanDevice* device, size_t size, size_t copies, VkBufferUsageFlags usageFlags) {
     buffers.resize(copies);
     memories.resize(copies);
     mappedPointer.resize(copies);
 
     for (int i = 0; i < copies; i++) {
-        VulkanHelper::createBuffer(*device, device->physicalDevice, size, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+        VulkanHelper::createBuffer(*device, device->physicalDevice, size, usageFlags,
             VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
             buffers[i], memories[i]);
 
