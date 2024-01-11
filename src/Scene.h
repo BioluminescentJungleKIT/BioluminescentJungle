@@ -33,8 +33,30 @@ struct CameraData{
     float zfar;
 };
 
-// We may need multiple pipelines for the various parts of the different meshes in the scene.
-// The pipieline description object is used to keep track of all created pipelines.
+struct LodUpdatePushConstants {
+    glm::vec4 lodMeta;
+    glm::vec3 cameraPosition;
+};
+
+struct LoD {
+    int mesh;
+    float dist_min;
+    float dist_max;
+
+
+    friend bool operator<(const LoD& l, const LoD& r)
+    {
+        return l.dist_min < r.dist_min || (l.dist_min == r.dist_min && l.dist_max < r.dist_max) || (l.dist_min == r.dist_min && l.dist_max == r.dist_max && l.mesh < r.mesh);
+    }
+
+    friend bool operator==(const LoD& l, const LoD& r)
+    {
+        return l.dist_min == l.dist_min && l.dist_max == r.dist_max && l.mesh == r.mesh;
+    }
+};
+
+// We may need multiple graphicsPipelines for the various parts of the different meshes in the scene.
+// The pipieline description object is used to keep track of all created graphicsPipelines.
 struct PipelineDescription {
     std::optional<int> vertexPosAccessor;
     std::optional<int> vertexTexcoordsAccessor;
@@ -60,7 +82,7 @@ struct PipelineDescription {
 };
 
 struct MaterialSettings {
-    glm::float32_t heightScale = 0.05;
+    glm::float32_t heightScale = 0.002;
     glm::int32_t raymarchSteps = 100;
     glm::int32_t enableInverseDisplacement = 1;
     glm::int32_t enableLinearApprox = 1;
@@ -86,8 +108,8 @@ public:
     void destroyTextures();
 
     void setupDescriptorSets(VkDescriptorPool descriptorPool);
-    void recordCommandBuffer(
-        VkCommandBuffer commandBuffer, VkDescriptorSet mvpSet);
+    void recordCommandBufferCompute(VkCommandBuffer commandBuffer, glm::vec3 cameraPosition);
+    void recordCommandBufferDraw(VkCommandBuffer commandBuffer, VkDescriptorSet mvpSet);
 
     void destroyBuffers();
     std::tuple<std::vector<VkVertexInputAttributeDescription>, std::vector<VkVertexInputBindingDescription>>
@@ -97,7 +119,7 @@ public:
 
     RequiredDescriptors getNumDescriptors();
 
-    void destroyDescriptorSetLayout();
+    void destroyDescriptorSetLayouts();
     void computeDefaultCameraPos(glm::vec3 &lookAt, glm::vec3 &position, glm::vec3 &up, float &fovy, float &near, float &far);
 
     struct LoadedTexture
@@ -122,10 +144,10 @@ public:
 
     std::vector<DataBuffer> buffers;
 
-    std::map<PipelineDescription, std::unique_ptr<GraphicsPipeline>> pipelines;
+    std::map<PipelineDescription, std::unique_ptr<GraphicsPipeline>> graphicsPipelines;
 
     // meshPrimitivesWithPipeline[description][meshId] -> list of primitives of the mesh with given pipeline
-    std::map<PipelineDescription, std::map<int, std::vector<int>>> meshPrimitivesWithPipeline;
+    std::map<PipelineDescription, std::map<LoD, std::vector<int>>> meshPrimitivesWithPipeline;
     PipelineDescription getPipelineDescriptionForPrimitive(const tinygltf::Primitive& primitive);
 
     void createPipelinesWithDescription(PipelineDescription descr,
@@ -138,21 +160,32 @@ public:
     void ensureDescriptorSetLayouts();
 
     VkVertexInputBindingDescription getVertexBindingDescription(int accessor, int bindingId);
-    void setupUniformBuffers();
+    void setupStorageBuffers();
 
-    VkDescriptorSetLayout uboDescriptorSetLayout{VK_NULL_HANDLE};
+    VkDescriptorSetLayout meshTransformsDescriptorSetLayout{VK_NULL_HANDLE};
     VkDescriptorSetLayout materialsSettingsLayout{VK_NULL_HANDLE};
 
     VkDescriptorSetLayout albedoDSLayout{VK_NULL_HANDLE};
     VkDescriptorSetLayout albedoDisplacementDSLayout{VK_NULL_HANDLE};
 
-    std::vector<VkDescriptorSet> uboDescriptorSets;
+    VkDescriptorSetLayout lodUpdateDescriptorSetLayout{VK_NULL_HANDLE};
+    VkDescriptorSetLayout lodCompressDescriptorSetLayout{VK_NULL_HANDLE};
+
+    std::vector<VkDescriptorSet> meshTransformsDescriptorSets;
+    std::vector<VkDescriptorSet> updateLoDsDescriptorSets;
+    std::vector<VkDescriptorSet> compressLoDsDescriptorSets;
     std::vector<VkDescriptorSet> materialSettingSets;
 
     std::map<int, int> buffersMap;
-    std::map<int, int> descriptorSetsMap;
-    std::vector<VkDescriptorSet> bindingDescriptorSets;
+    std::map<std::pair<int, int>, int> lodTransformsBuffersMap;
+    std::map<std::pair<int, int>, int> lodIndirectDrawBufferMap;
+    std::map<std::pair<int, int>, int> lodMetaBuffersMap;
+    std::map<LoD, int> descriptorSetsMap;
+    std::map<std::pair<int, int>, int> lodComputeDescriptorSetsMap;
 
+    std::map<std::string, int> meshNameMap;
+    std::map<std::string, std::vector<LoD>> lods; // map base names to LoDs. if none exist, just use the same
+    std::vector<VkDescriptorSet> bindingDescriptorSets;
     std::map<int, LoadedTexture> textures;
     std::map<int, VkDescriptorSet> materialDSet;
 
@@ -163,6 +196,17 @@ public:
     MaterialSettings materialSettings;
     UniformBuffer materialBuffer;
     UniformBuffer constantsBuffers;
+
+    void addLoD(int meshIndex);
+
+    std::unique_ptr<ComputePipeline> updateLoDsPipeline;
+    std::unique_ptr<ComputePipeline> compressLoDsPipeline;
+
+    void setupPrimitiveDrawBuffers();
+
+    unsigned int getNumLods();
+
+    void destroyPipelines();
 };
 
 

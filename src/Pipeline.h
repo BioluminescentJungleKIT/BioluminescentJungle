@@ -6,7 +6,7 @@
 #include <vulkan/vulkan_core.h>
 
 /**
- * A class which makes it easier to manage pipelines.
+ * A class which makes it easier to manage graphicsPipelines.
  */
 
 struct BasicBlending {
@@ -60,6 +60,7 @@ class ComputePipeline {
     struct Parameters {
         ShaderSource source;
         std::vector<VkDescriptorSetLayout> descriptorSetLayouts;
+        std::vector<VkPushConstantRange> pushConstantRanges;
         bool recompileShaders = false;
     };
 

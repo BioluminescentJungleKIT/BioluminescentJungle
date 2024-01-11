@@ -9,7 +9,13 @@
 class DataBuffer {
   public:
     void uploadData(VulkanDevice* device, void* data, VkDeviceSize size,
-        VkBufferUsageFlags usage, VkMemoryPropertyFlags properties = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+                    VkBufferUsageFlags usage, VkMemoryPropertyFlags properties = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    void createEmpty(VulkanDevice* device, VkDeviceSize size,
+                    VkBufferUsageFlags usage, VkMemoryPropertyFlags properties = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) {
+        std::vector<uint8_t> empty;
+        empty.resize(size, 0);
+        uploadData(device, empty, usage, properties);
+    }
 
     template<class T>
     void uploadData(VulkanDevice* device, const std::vector<T>& data,

@@ -207,8 +207,9 @@ void JungleApp::drawFrame() {
     beginInfo.pInheritanceInfo = nullptr; // Optional
     VK_CHECK_RESULT(vkBeginCommandBuffer(commandBuffer, &beginInfo))
 
+    scene.recordCommandBufferCompute(commandBuffer, cameraPosition);
     startRenderPass(commandBuffer, swapchain->currentFrame, sceneRPass);
-    scene.recordCommandBuffer(commandBuffer, sceneDescriptorSets[swapchain->currentFrame]);
+    scene.recordCommandBufferDraw(commandBuffer, sceneDescriptorSets[swapchain->currentFrame]);
     vkCmdEndRenderPass(commandBuffer);
 
     lighting->recordCommandBuffer(commandBuffer, sceneDescriptorSets[swapchain->currentFrame], &scene);

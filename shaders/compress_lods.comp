@@ -1,0 +1,42 @@
+#version 450
+
+layout(std430, binding = 0) buffer BufferMetadata
+{
+    uint size;  // index of last valid item
+    uint count;  // number of valid items
+    uint bitmap[];
+} bufferMetadata;
+
+layout(std430, binding = 1) buffer TransformBuffer
+{
+    mat4 transforms[];
+} transformBuffer;
+
+bool isValid(uint idx) {
+    return bool(bufferMetadata.bitmap[idx/32] & (1 << (idx % 32)));
+}
+
+void copy(uint fromIndex, uint toIndex) {
+    // copy transform
+    transformBuffer.transforms[toIndex] = transformBuffer.transforms[fromIndex];
+    // set validity
+    atomicOr(bufferMetadata.bitmap[toIndex/32], 1 << (toIndex % 32));
+    atomicAnd(bufferMetadata.bitmap[fromIndex/32], ~(1 << (fromIndex % 32)));
+}
+
+void main() {
+    uint index = gl_GlobalInvocationID.x;
+    // if this index has invalid value and is less then $count
+    if (index < bufferMetadata.count && !isValid(index)) {
+        bool foundValid = false;
+        while (!foundValid) {
+            // get $size and atomic subtract 1
+            uint getFromIndex = atomicAdd(bufferMetadata.size, -1) - 1;
+            foundValid = isValid(getFromIndex);
+            // if index at size is valid, copy to here, else repeat
+            if (foundValid) {
+                copy(getFromIndex, index);
+            }
+        }
+    }
+}

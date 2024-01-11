@@ -230,6 +230,9 @@ ComputePipeline::ComputePipeline(VulkanDevice* device, const Parameters& params)
     pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
     pipelineLayoutInfo.setLayoutCount = params.descriptorSetLayouts.size();
     pipelineLayoutInfo.pSetLayouts = params.descriptorSetLayouts.data();
+    pipelineLayoutInfo.pushConstantRangeCount = params.pushConstantRanges.size();
+    pipelineLayoutInfo.pPushConstantRanges = params.pushConstantRanges.data();
+
     if (vkCreatePipelineLayout(*device, &pipelineLayoutInfo, nullptr, &layout) != VK_SUCCESS) {
         throw std::runtime_error("failed to create compute pipeline layout!");
     }
