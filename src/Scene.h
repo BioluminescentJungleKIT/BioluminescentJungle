@@ -67,6 +67,8 @@ struct PipelineDescription {
     bool useNormalMap = false;
     bool useDisplacement = false;
 
+    bool isOpaque = true;
+
     auto toTuple() const {
         return std::make_tuple(vertexPosAccessor, vertexTexcoordsAccessor, vertexFixedColorAccessor,
             useNormalMap, useDisplacement, useSSR);

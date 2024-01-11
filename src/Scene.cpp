@@ -47,6 +47,10 @@ static bool materialUsesBaseTexture(const tinygltf::Material& material) {
     return material.values.count(BASE_COLOR_TEXTURE);
 }
 
+static bool materialIsOpaque(tinygltf::Material &material) {
+    return material.alphaMode == "OPAQUE"; // could use double-sided parameter instead
+}
+
 PipelineDescription Scene::getPipelineDescriptionForPrimitive(const tinygltf::Primitive &primitive) {
     PipelineDescription descr;
 
@@ -79,6 +83,8 @@ PipelineDescription Scene::getPipelineDescriptionForPrimitive(const tinygltf::Pr
             descr.useDisplacement = true;
         }
     }
+
+    descr.isOpaque = materialIsOpaque(material);
 
     return descr;
 }
@@ -583,7 +589,6 @@ void Scene::setupPrimitiveDrawBuffers() {
                     uint32_t numIndices = model.accessors[indexAccessorIndex].count;
                     VkDrawIndexedIndirectCommand drawCommand{};
                     drawCommand.indexCount = numIndices;
-                    lods[model.meshes[mesh].name].size();
                     drawCommand.instanceCount = (i == 0) ? transforms.size() : 0;
                     lodIndirectDrawBufferMap[std::pair(lod.mesh, j)] = buffers.size();
                     buffers.push_back({});
@@ -1033,6 +1038,7 @@ void Scene::createPipelinesWithDescription(PipelineDescription descr, VkRenderPa
     params.vertexInputDescription = bindingDescriptions;
     params.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
     params.extent = swapchain->renderSize();
+    params.backFaceCulling = descr.isOpaque;
 
     // We don't want any blending for the color attachments (-1 for the depth attachment)
     params.blending.assign(GBufferTarget::NumAttachments - 1, {});
