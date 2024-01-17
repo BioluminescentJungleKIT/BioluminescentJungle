@@ -131,6 +131,7 @@ public:
         VkDeviceMemory memory;
         VkImageView imageView;
         VkSampler sampler;
+        VkFormat imageFormat;
     };
 
     void drawPointLights(VkCommandBuffer buffer);

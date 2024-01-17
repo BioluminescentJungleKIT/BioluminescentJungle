@@ -854,7 +854,8 @@ void copyBufferToImage(VulkanDevice *device, VkBuffer buffer, VkImage image, uin
 
 Scene::LoadedTexture uploadGLTFImage(VulkanDevice *device, const tinygltf::Image &image) {
     Scene::LoadedTexture loadedTex;
-    const uint32_t imageSize = image.width * image.height * image.component;
+    const uint32_t imageSize = image.width * image.height * image.component * image.bits / 8;
+    loadedTex.imageFormat = VulkanHelper::gltfImageToVkFormat(image);
     VkBuffer stagingBuffer;
     VkDeviceMemory stagingBufferMemory;
     VulkanHelper::createBuffer(device->device, device->physicalDevice,
@@ -867,14 +868,14 @@ Scene::LoadedTexture uploadGLTFImage(VulkanDevice *device, const tinygltf::Image
     memcpy(data, image.image.data(), static_cast<size_t>(imageSize));
     vkUnmapMemory(*device, stagingBufferMemory);
 
-    device->createImage(image.width, image.height, VK_FORMAT_R8G8B8A8_SRGB,
+    device->createImage(image.width, image.height, loadedTex.imageFormat,
                         VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
                         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, loadedTex.image, loadedTex.memory);
 
-    device->transitionImageLayout(loadedTex.image, VK_FORMAT_R8G8B8A8_SRGB,
+    device->transitionImageLayout(loadedTex.image, loadedTex.imageFormat,
                                   VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
     copyBufferToImage(device, stagingBuffer, loadedTex.image, image.width, image.height);
-    device->transitionImageLayout(loadedTex.image, VK_FORMAT_R8G8B8A8_SRGB,
+    device->transitionImageLayout(loadedTex.image, loadedTex.imageFormat,
                                   VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
     vkDestroyBuffer(*device, stagingBuffer, nullptr);
@@ -898,7 +899,7 @@ void Scene::setupTextures() {
 
         textures[gTexture.source] = uploadGLTFImage(device, image);
         textures[gTexture.source].imageView =
-            device->createImageView(textures[gTexture.source].image, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_ASPECT_COLOR_BIT);
+            device->createImageView(textures[gTexture.source].image, textures[gTexture.source].imageFormat, VK_IMAGE_ASPECT_COLOR_BIT);
         textures[gTexture.source].sampler = VulkanHelper::createSampler(device, true);
     };
 

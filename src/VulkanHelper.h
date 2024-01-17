@@ -157,6 +157,8 @@ public:
     static glm::mat4
     transformFromMatrixOrComponents(std::vector<double> matrix, std::vector<double> scale, std::vector<double> rotation,
                                     std::vector<double> translation);
+
+    static VkFormat gltfImageToVkFormat(const tinygltf::Image &image);
 };
 
 namespace vkutil {
