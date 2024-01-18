@@ -1,0 +1,128 @@
+#version 450
+#include
+
+struct Butterfly {
+    vec3 position;
+    vec3 velocity;
+};
+
+vec3 noise3D(vec3 position, index, time) {
+    return vec3(
+        snoise(position + vec3(312, 862, 150) * (index + time * 0.01)),
+        snoise(position + vec3(567, 457, 184) * (index + time * 0.01)),
+        snoise(position + vec3(981, 217, 824) * (index + time * 0.01))
+    );  // yes they are correllated, no i dont care.
+}
+
+layout(binding = 0) uniform UniformBufferObject {
+    vec3 cameraPosition;
+    float time;
+    float timeDelta;
+    int bufferflyVolumeTriangleCount;
+} ubo;
+
+layout(binding = 1) buffer Bufferflies
+{
+    Butterfly utterflies[];
+} b;
+
+layout(std430, binding = 2) buffer BufferflyVolumeVertices
+{
+    vec3 vertices[];
+} bvv;
+
+// better use precomputed
+vec3 calculateNormalOfNthTriangle(int n, vec3 position) {
+    vec3 a = bvv.vertices[n * 3 + 0];
+    vec3 b = bvv.vertices[n * 3 + 1];
+    vec3 c = bvv.vertices[n * 3 + 2];
+
+    return cross(b - a, c - a);
+}
+
+// from https://github.com/embree/embree/blob/master/tutorials/common/math/closest_point.h (Apache 2.0)
+vec3 closestPointTriangle(const vec3 p, const vec3 a, const vec3 b, const vec3 c)
+{
+    const vec3 ab = b - a;
+    const vec3 ac = c - a;
+    const vec3 ap = p - a;
+
+    const float d1 = dot(ab, ap);
+    const float d2 = dot(ac, ap);
+    if (d1 <= 0.f && d2 <= 0.f) return a;
+
+    const vec3 bp = p - b;
+    const float d3 = dot(ab, bp);
+    const float d4 = dot(ac, bp);
+    if (d3 >= 0.f && d4 <= d3) return b;
+
+    const vec3 cp = p - c;
+    const float d5 = dot(ab, cp);
+    const float d6 = dot(ac, cp);
+    if (d6 >= 0.f && d5 <= d6) return c;
+
+    const float vc = d1 * d4 - d3 * d2;
+    if (vc <= 0.f && d1 >= 0.f && d3 <= 0.f)
+    {
+        const float v = d1 / (d1 - d3);
+        return a + v * ab;
+    }
+
+    const float vb = d5 * d2 - d1 * d6;
+    if (vb <= 0.f && d2 >= 0.f && d6 <= 0.f)
+    {
+        const float v = d2 / (d2 - d6);
+        return a + v * ac;
+    }
+
+    const float va = d3 * d6 - d5 * d4;
+    if (va <= 0.f && (d4 - d3) >= 0.f && (d5 - d6) >= 0.f)
+    {
+        const float v = (d4 - d3) / ((d4 - d3) + (d5 - d6));
+        return b + v * (c - b);
+    }
+
+    const float denom = 1.f / (va + vb + vc);
+    const float v = vb * denom;
+    const float w = vc * denom;
+    return a + v * ab + w * ac;
+}
+
+float calculateSignedSquaredDistanceOfNthTriangle(int n, vec3 position) {
+    vec3 diff = position -
+    closestPointTriangle(
+        position,
+        bvv.vertices[n * 3 + 0],
+        bvv.vertices[n * 3 + 1],
+        bvv.vertices[n * 3 + 2]
+    );
+    return dot(diff, diff) * sign(dot(diff, calculateNormalOfNthTriangle(n)));
+}
+
+void main() {
+    uint index = gl_GlobalInvocationID.x;
+    vec3 random = noise3D(b.utterflies[index].position, index, ubo.time);
+    // initialize random position
+    b.utterflies[index].position += (random * 5 + cameraPosition) * int(b.utterflies[index].position == vec3(0));
+
+    // This is probably suboptimal, but it might work for near-convex meshes. Maybe we could only consider
+    // the 2 or 3 nearest triangles or something like that, but there would always be an egde case of some
+    // shape where it could break. Ideally, we'd compute if we are inside or outside the mesh (e.g. compute
+    // and count in/out ray-intersections), or even a correct sdf, but that would probably be even more
+    // expensive.
+    vec3 volumeForce = vec3(0);
+    for (int i = 0; i < bufferflyVolumeTriangleCount; i++) {
+        vec3 dir = -calculateNormalOfNthTriangle(i);
+        float dist = calculateSignedSquaredDistanceOfNthTriangle(i, b.utterflies[index].position);
+        volumeForce += smoothstep(1, 0, dist) * dir;
+    }
+    volumeForce *= 5;
+
+    // move towards camera if far away, no LoD needed ;)
+    vec3 cameraVector = cameraPosition - b.utterflies[index].position;
+    vec3 cameraForce = cameraVector * smoothstep(10, 20, dot(cameraVector, cameraVector));
+
+    b.utterflies[index].velocity += (random + cameraForce + volumeForce) * vec3(0.1,0.1,0.01);
+
+    b.utterflies[index].position += b.utterflies[index].velocity * ubo.timeDelta;
+}
