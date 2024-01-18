@@ -34,6 +34,18 @@ struct CameraData{
     float zfar;
 };
 
+struct Butterfly {
+    glm::vec3 position alignas(16);
+    glm::vec3 velocity alignas(16);
+};
+
+struct ButterfliesMeta {
+    glm::vec3 cameraPosition;
+    float time;
+    float timeDelta;
+    int bufferflyVolumeTriangleCount;
+};
+
 struct LodUpdatePushConstants {
     glm::vec4 lodMeta;
     glm::vec3 cameraPosition;
@@ -197,17 +209,25 @@ public:
     std::map<int, int> butterflies;
     std::map<int, LightData> butterflyLights;
     ModelTransform butterflyVolumeTransform;
+    int butterflyVolumeMesh{-1};
+    unsigned long butterfliesBuffer;
+    unsigned long butterflyVolumeBuffer;
+    unsigned long butterfliesMetaBuffer;
+    std::vector<glm::vec3> butterflyVolume;
+
+    std::vector<glm::vec3> computeButterflyVolumeVertices();
 
     std::vector<LightData> lights;
-    int lightsBuffer{-1};
 
+    int lightsBuffer{-1};
     std::vector<CameraData> cameras;
     MaterialSettings materialSettings;
+
     UniformBuffer materialBuffer;
 
     UniformBuffer constantsBuffers;
-
     void addLoD(int meshIndex);
+
     std::unique_ptr<ComputePipeline> updateLoDsPipeline;
 
     std::unique_ptr<ComputePipeline> compressLoDsPipeline;
@@ -217,6 +237,7 @@ public:
     unsigned int getNumLods();
 
     void destroyPipelines();
+
 };
 
 

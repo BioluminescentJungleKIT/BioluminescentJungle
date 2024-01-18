@@ -545,6 +545,7 @@ void Scene::generateTransforms(int nodeIndex, glm::mat4 oldTransform, int maxRec
     if (node.mesh >= 0) {
         if (node.name == "BUTTERFLYVOLUME") {
             butterflyVolumeTransform = ModelTransform{newTransform};
+            butterflyVolumeMesh = node.mesh;
         } else {
             meshTransforms[node.mesh].push_back(ModelTransform{newTransform});
         }
@@ -658,6 +659,25 @@ void Scene::setupStorageBuffers() {
         buffers.back().uploadData(device, lights,
             VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
     }
+    if (butterflies.size() > 0 && butterflyVolumeMesh >= 0) {
+        butterfliesBuffer = buffers.size();
+        buffers.push_back({});
+        buffers.back().createEmpty(device, sizeof(Butterfly) * butterflies.size(),
+                                   VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                   VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+        butterflyVolume = computeButterflyVolumeVertices();
+        butterflyVolumeBuffer = buffers.size();
+        buffers.push_back({});
+        buffers.back().uploadData(device, butterflyVolume,
+                                  VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                  VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+        butterfliesMetaBuffer = buffers.size();
+        buffers.push_back({});
+        buffers.back().createEmpty(device, sizeof(ButterfliesMeta),
+                                  VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                                  VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    }
+
 
     materialBuffer.allocate(device, sizeof(MaterialSettings), MAX_FRAMES_IN_FLIGHT);
 
@@ -1156,4 +1176,30 @@ void Scene::addLoD(int meshIndex) {
         meshNameMap[name] = meshIndex;
     }
     lods[name].push_back(lod);
+}
+
+std::vector<glm::vec3> Scene::computeButterflyVolumeVertices() {
+    std::vector<glm::vec3> vertices;
+    for (auto primitve: model.meshes[butterflyVolumeMesh].primitives) {
+        auto positionAccessor = model.accessors[primitve.attributes[POSITION]];
+        auto positionBufferView = model.bufferViews[positionAccessor.bufferView];
+        auto indexAccessor = model.accessors[primitve.indices];
+        auto indexBufferView = model.bufferViews[indexAccessor.bufferView];
+
+        assert(positionAccessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT);
+        assert(positionAccessor.type == TINYGLTF_TYPE_VEC3);
+        assert(indexAccessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT);
+        assert(indexAccessor.type == TINYGLTF_TYPE_SCALAR);
+
+        auto indexBuffer = model.buffers[indexBufferView.buffer].data;
+        auto positionBuffer = model.buffers[positionBufferView.buffer].data;
+
+        for (int i = indexBufferView.byteOffset; i < indexBufferView.byteOffset + indexBufferView.byteLength; i += indexBufferView.byteStride) {
+            uint32_t index = *(uint32_t*)&indexBuffer[i];
+            auto positionPosition = positionBufferView.byteOffset + positionBufferView.byteStride * index;
+            glm::vec3 position = *(glm::vec3*)&positionBuffer[positionPosition];
+            vertices.push_back(position);
+        }
+    }
+    return vertices;
 }
