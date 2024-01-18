@@ -187,23 +187,29 @@ public:
     std::map<LoD, int> descriptorSetsMap;
     std::map<std::pair<int, int>, int> lodComputeDescriptorSetsMap;
 
+
     std::map<std::string, int> meshNameMap;
     std::map<std::string, std::vector<LoD>> lods; // map base names to LoDs. if none exist, just use the same
     std::vector<VkDescriptorSet> bindingDescriptorSets;
     std::map<int, LoadedTexture> textures;
     std::map<int, VkDescriptorSet> materialDSet;
 
+    std::map<int, int> butterflies;
+    std::map<int, LightData> butterflyLights;
+    ModelTransform butterflyVolumeTransform;
+
     std::vector<LightData> lights;
     int lightsBuffer{-1};
-    std::vector<CameraData> cameras;
 
+    std::vector<CameraData> cameras;
     MaterialSettings materialSettings;
     UniformBuffer materialBuffer;
+
     UniformBuffer constantsBuffers;
 
     void addLoD(int meshIndex);
-
     std::unique_ptr<ComputePipeline> updateLoDsPipeline;
+
     std::unique_ptr<ComputePipeline> compressLoDsPipeline;
 
     void setupPrimitiveDrawBuffers();

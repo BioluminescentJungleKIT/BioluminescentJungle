@@ -519,7 +519,7 @@ void Scene::setupBuffers() {
     buffers.resize(numBuffers);
     for (unsigned long i = 0; i < numBuffers; ++i) {
         buffers[i].uploadData(device, model.buffers[i].data,
-            VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+            VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
     }
     for (auto node: model.scenes[model.defaultScene].nodes) {
         generateTransforms(node, glm::mat4(1.f), MAX_RECURSION);
@@ -533,14 +533,21 @@ void Scene::generateTransforms(int nodeIndex, glm::mat4 oldTransform, int maxRec
     if (maxRecursion <= 0) return;
 
     auto node = model.nodes[nodeIndex];
-    if (node.mesh >= 0 && lods[model.meshes[node.mesh].name].size() == 0) return; // is lod mesh. ignore.
+    if (node.mesh >= 0 && lods[model.meshes[node.mesh].name].size() == 0 && !(node.name == "BUTTERFLYVOLUME")) {
+        // transforms for the mesh contained in the node come from a different source (butterflies, LOD-models)
+        return;
+    }
 
     auto transform = VulkanHelper::transformFromMatrixOrComponents(node.matrix,
                                                                    node.scale, node.rotation, node.translation);
     auto newTransform = oldTransform * transform;
 
     if (node.mesh >= 0) {
-        meshTransforms[node.mesh].push_back(ModelTransform{newTransform});
+        if (node.name == "BUTTERFLYVOLUME") {
+            butterflyVolumeTransform = ModelTransform{newTransform};
+        } else {
+            meshTransforms[node.mesh].push_back(ModelTransform{newTransform});
+        }
     } else if (node.extensions.contains("KHR_lights_punctual")) {
         auto light_idx = node.extensions["KHR_lights_punctual"].Get("light").Get<int>();
         auto light = model.extensions["KHR_lights_punctual"].Get("lights").Get(light_idx);
@@ -558,7 +565,16 @@ void Scene::generateTransforms(int nodeIndex, glm::mat4 oldTransform, int maxRec
             }
             auto name = light.Get("name").Get<std::string>();
             float wind = name.find("WIND") != name.npos;
-            lights.push_back({glm::make_vec3(newTransform[3]), light_color, light_intensity, wind});
+            if (name.starts_with("BUTTERFLYLIGHT_")) {
+                butterflyLights[stoi(name.substr(15))] = {
+                        glm::make_vec3(newTransform[3]),
+                        light_color,
+                        light_intensity,
+                        wind
+                };
+            } else {
+                lights.push_back({glm::make_vec3(newTransform[3]), light_color, light_intensity, wind});
+            }
         } else {
             std::cout << "[lights] WARN: Detected unsupported light of type " << type << std::endl;
         }
@@ -1105,7 +1121,13 @@ void Scene::addLoD(int meshIndex) {
     auto name = mesh.name;
     LoD lod{meshIndex, 0, INFINITY};
     size_t index;
-    if ((index = name.find("_LOD_")) != std::string::npos) {
+    if (name.starts_with("BUTTERFLY_")) {
+        butterflies[stoi(name.substr(10))] = meshIndex;
+        return;
+    } else if (name == "BUTTERFLYVOLUME") {
+        // skip rendering
+        return;
+    } else if ((index = name.find("_LOD_")) != std::string::npos) {
         auto basename = name.substr(0, index);
         auto indexMin = index + 5;
         auto indexMax = name.find('_', index + 6);
