@@ -116,12 +116,12 @@ void traceReflection(vec3 N, float d, float ssrStrength, inout vec4 color) {
 }
 
 void main() {
-    vec4 color = texelFetch(accColor, ivec2(gl_FragCoord), 0);
     float d = texelFetch(depth, ivec2(gl_FragCoord), 0).x;
+    vec4 color = texelFetch(accColor, ivec2(gl_FragCoord), 0);
     vec4 albedo = texelFetch(albedo, ivec2(gl_FragCoord), 0);
 
     float worldDepth = getWorldDepth(d);
-    color.rgb += albedo.rgb * fogAmbientTerm(d);
+    color.rgb += albedo.rgb * fogAmbientTerm(worldDepth);
 
     vec3 fogLight = fog.brightness * fog.color;
     // depth illumination: integral from 0 to depth: color * exp(-absorption*x) dx
