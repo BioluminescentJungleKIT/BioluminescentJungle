@@ -53,7 +53,7 @@ public:
     bool enabled{true};
 
     glm::float32 ssrStrength{1.0};
-    glm::float32 ssrHitThreshold{1e-5};
+    glm::float32 ssrHitThreshold{1e-3};
     glm::float32 ssrEdgeSmoothing{1};
     glm::int32 ssrRaySteps{200};
 };
