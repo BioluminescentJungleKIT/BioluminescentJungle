@@ -1331,10 +1331,10 @@ void Scene::addLoD(int meshIndex) {
 
 std::vector<glm::vec3> Scene::computeButterflyVolumeVertices() {
     std::vector<glm::vec3> vertices;
-    for (auto primitve: model.meshes[butterflyVolumeMesh].primitives) {
-        auto positionAccessor = model.accessors[primitve.attributes[POSITION]];
+    for (auto primitive: model.meshes[butterflyVolumeMesh].primitives) {
+        auto positionAccessor = model.accessors[primitive.attributes[POSITION]];
         auto positionBufferView = model.bufferViews[positionAccessor.bufferView];
-        auto indexAccessor = model.accessors[primitve.indices];
+        auto indexAccessor = model.accessors[primitive.indices];
         auto indexBufferView = model.bufferViews[indexAccessor.bufferView];
 
         assert(positionAccessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT);
@@ -1350,9 +1350,12 @@ std::vector<glm::vec3> Scene::computeButterflyVolumeVertices() {
         auto indexBufferEnd = indexBufferStart + indexBufferView.byteLength;
         auto indexBufferStride = indexBufferView.byteStride == 0 ? sizeof(uint16_t) : indexBufferView.byteStride;
 
+        auto positionBufferStart = positionBufferView.byteOffset;
+        auto positionBufferStride = positionBufferView.byteStride == 0 ? sizeof(glm::vec3) : positionBufferView.byteStride;
+
         for (auto i = indexBufferStart; i < indexBufferEnd; i += indexBufferStride) {
             uint32_t index = *(uint16_t*)&indexBuffer[i];
-            auto positionPosition = positionBufferView.byteOffset + positionBufferView.byteStride * index;
+            auto positionPosition = positionBufferStart + positionBufferStride * index;
             glm::vec3 position = *(glm::vec3*)&positionBuffer[positionPosition];
             vertices.push_back(position);
         }

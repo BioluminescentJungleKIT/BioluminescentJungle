@@ -91,13 +91,14 @@ vec3 closestPointTriangle(const vec3 p, const vec3 a, const vec3 b, const vec3 c
 float calculateSignedSquaredDistanceOfNthTriangle(int n, vec3 position) {
     vec3 diff = position -
     closestPointTriangle(
-        position,
-        bvv.vertices[n * 3 + 0],
-        bvv.vertices[n * 3 + 1],
-        bvv.vertices[n * 3 + 2]
+    position,
+    bvv.vertices[n * 3 + 0],
+    bvv.vertices[n * 3 + 1],
+    bvv.vertices[n * 3 + 2]
     );
     return dot(diff, diff) * sign(dot(diff, calculateNormalOfNthTriangle(n)));
 }
+
 
 void main() {
     uint index = gl_GlobalInvocationID.x;
@@ -113,21 +114,25 @@ void main() {
     // expensive.
     vec3 volumeForce = vec3(0);
     for (int i = 0; i < ubo.bufferflyVolumeTriangleCount; i++) {
-        vec3 dir = -calculateNormalOfNthTriangle(i);
-        float dist = calculateSignedSquaredDistanceOfNthTriangle(i, b.utterflies[index].position);
-        volumeForce += smoothstep(1, 0, dist) * dir;
+        vec3 diff = b.utterflies[index].position -
+        closestPointTriangle(
+        b.utterflies[index].position,
+        bvv.vertices[i * 3 + 0],
+        bvv.vertices[i * 3 + 1],
+        bvv.vertices[i * 3 + 2]
+        );
+        volumeForce += (1 - smoothstep(0, 2, dot(diff, diff))) * normalize(diff) * 0.5;
     }
-    volumeForce *= 5;
-    volumeForce = clamp(volumeForce, -0.1, 0.1);
+    //volumeForce = clamp(volumeForce, -0.1, 0.1);
 
     // move towards camera if far away, no LoD needed ;)
-    vec3 cameraForce = cameraVector * smoothstep(10, 20, dot(cameraVector, cameraVector)) * 0.1;
+    vec3 cameraForce = cameraVector * smoothstep(20, 30, dot(cameraVector, cameraVector)) * 0.1;
 
-    b.utterflies[index].velocity += (random + cameraForce /*+ volumeForce*/) * vec3(1,1,0.1) * ubo.timeDelta;
+    b.utterflies[index].velocity += (random * vec3(1,1,0.1) + cameraForce + volumeForce) * ubo.timeDelta;
 
     b.utterflies[index].velocity = clamp(b.utterflies[index].velocity, vec3(-1, -1, -1), vec3(1, 1, 1));
     float speed = length(b.utterflies[index].velocity);
-    b.utterflies[index].velocity = clamp(b.utterflies[index].velocity, vec3(-1, -1, speed * -0.1), vec3(1, 1, speed * 0.1));
+    b.utterflies[index].velocity = clamp(b.utterflies[index].velocity, vec3(-1, -1, speed * -0.2), vec3(1, 1, speed * 0.2));
 
     b.utterflies[index].position += b.utterflies[index].velocity * ubo.timeDelta;
     //b.utterflies[index].position = vec3(0,0,0);
