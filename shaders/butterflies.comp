@@ -126,7 +126,7 @@ void main() {
     //volumeForce = clamp(volumeForce, -0.1, 0.1);
 
     // move towards camera if far away, no LoD needed ;)
-    vec3 cameraForce = cameraVector * smoothstep(20, 30, dot(cameraVector, cameraVector)) * 0.1;
+    vec3 cameraForce = cameraVector * smoothstep(30, 100, dot(cameraVector, cameraVector)) * 0.1;
 
     b.utterflies[index].velocity += (random * vec3(1,1,0.1) + cameraForce + volumeForce) * ubo.timeDelta;
 
