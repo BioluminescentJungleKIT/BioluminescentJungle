@@ -327,6 +327,10 @@ void Scene::setupDescriptorSets(VkDescriptorPool descriptorPool) {
     compressLoDsDescriptorSets = VulkanHelper::createDescriptorSetsFromLayout(
             *device, descriptorPool, lodCompressDescriptorSetLayout, getNumLods());
 
+    if (butterflies.size() > 0 && butterflyVolumeMesh >= 0) {
+        setupButterfliesDescriptorSets(descriptorPool);
+    }
+
     int transformsDescriptorIndex = 0;
     int lodComputeDescriptorIndex = 0;
     for (auto [meshName, lodList]: lods) {
@@ -499,10 +503,71 @@ void Scene::setupDescriptorSets(VkDescriptorPool descriptorPool) {
     }
 }
 
+
+void Scene::setupButterfliesDescriptorSets(VkDescriptorPool descriptorPool) {
+    updateButterfliesDescriptorSet = VulkanHelper::createDescriptorSetsFromLayout(
+            *device, descriptorPool, updateButterfliesDescriptorSetLayout, 1)[0];
+
+    renderButterfliesDescriptorSet = VulkanHelper::createDescriptorSetsFromLayout(
+            *device, descriptorPool, renderButterfliesDescriptorSetLayout, 1)[0];
+
+    VkDescriptorBufferInfo butterfliesMetaBufferInfo{};
+    butterfliesMetaBufferInfo.buffer = buffers[butterfliesMetaBuffer].buffer;
+    butterfliesMetaBufferInfo.offset = 0;
+    butterfliesMetaBufferInfo.range = sizeof(ButterfliesMeta);
+
+    VkDescriptorBufferInfo butterfliesBufferInfo{};
+    butterfliesBufferInfo.buffer = buffers[butterfliesBuffer].buffer;
+    butterfliesBufferInfo.offset = 0;
+    butterfliesBufferInfo.range = sizeof(Butterfly) * numButterflies;
+
+    VkDescriptorBufferInfo butterflyVolumeBufferInfo{};
+    butterflyVolumeBufferInfo.buffer = buffers[butterflyVolumeBuffer].buffer;
+    butterflyVolumeBufferInfo.offset = 0;
+    butterflyVolumeBufferInfo.range = sizeof(butterflyVolume[0]) * butterflyVolume.size();
+
+    std::vector<VkDescriptorBufferInfo> updateBufferInfos {
+            butterfliesMetaBufferInfo, butterfliesBufferInfo, butterflyVolumeBufferInfo
+    };
+
+    VkWriteDescriptorSet descriptorWriteUpdate{};
+    descriptorWriteUpdate.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    descriptorWriteUpdate.dstSet = updateButterfliesDescriptorSet;
+    descriptorWriteUpdate.dstBinding = 0;
+    descriptorWriteUpdate.dstArrayElement = 0;
+    descriptorWriteUpdate.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    descriptorWriteUpdate.descriptorCount = updateBufferInfos.size();
+    descriptorWriteUpdate.pBufferInfo = updateBufferInfos.data();
+    descriptorWriteUpdate.pImageInfo = nullptr; // Optional
+    descriptorWriteUpdate.pTexelBufferView = nullptr; // Optional
+
+    std::vector<VkDescriptorBufferInfo> renderBufferInfos {
+            butterfliesBufferInfo
+    };
+
+    VkWriteDescriptorSet descriptorWriteRender{};
+    descriptorWriteRender.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    descriptorWriteRender.dstSet = renderButterfliesDescriptorSet;
+    descriptorWriteRender.dstBinding = 0;
+    descriptorWriteRender.dstArrayElement = 0;
+    descriptorWriteRender.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    descriptorWriteRender.descriptorCount = renderBufferInfos.size();
+    descriptorWriteRender.pBufferInfo = renderBufferInfos.data();
+    descriptorWriteRender.pImageInfo = nullptr; // Optional
+    descriptorWriteRender.pTexelBufferView = nullptr; // Optional
+
+    std::vector<VkWriteDescriptorSet> descriptorWrites {
+            descriptorWriteUpdate, descriptorWriteRender
+    };
+
+    vkUpdateDescriptorSets(*device, descriptorWrites.size(), descriptorWrites.data(), 0, nullptr);
+
+}
+
 RequiredDescriptors Scene::getNumDescriptors() {
     return RequiredDescriptors{
             .requireUniformBuffers = getNumLods() * 2 /*transforms, meta*/ +
-                    (unsigned int) model.materials.size() + MAX_FRAMES_IN_FLIGHT,
+                    (unsigned int) model.materials.size() + MAX_FRAMES_IN_FLIGHT + 2 /*butterflies*/,
             .requireSamplers = (unsigned int) model.materials.size() * 3,
     };
 }
@@ -662,7 +727,7 @@ void Scene::setupStorageBuffers() {
     if (butterflies.size() > 0 && butterflyVolumeMesh >= 0) {
         butterfliesBuffer = buffers.size();
         buffers.push_back({});
-        buffers.back().createEmpty(device, sizeof(Butterfly) * butterflies.size(),
+        buffers.back().createEmpty(device, sizeof(Butterfly) * numButterflies,
                                    VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
                                    VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
         butterflyVolume = computeButterflyVolumeVertices();
@@ -762,6 +827,25 @@ void Scene::ensureDescriptorSetLayouts() {
                 vkutil::createSetLayoutBinding(3, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT),
                 vkutil::createSetLayoutBinding(4, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT),
                 vkutil::createSetLayoutBinding(5, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT),
+            }
+        );
+    }
+
+
+    if (updateButterfliesDescriptorSetLayout == VK_NULL_HANDLE) {
+        updateButterfliesDescriptorSetLayout = device->createDescriptorSetLayout(
+            {
+                vkutil::createSetLayoutBinding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT),
+                vkutil::createSetLayoutBinding(1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT),
+                vkutil::createSetLayoutBinding(2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT),
+            }
+        );
+    }
+
+    if (renderButterfliesDescriptorSetLayout == VK_NULL_HANDLE) {
+        renderButterfliesDescriptorSetLayout = device->createDescriptorSetLayout(
+            {
+                vkutil::createSetLayoutBinding(0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_VERTEX_BIT),
             }
         );
     }

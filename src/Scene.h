@@ -206,6 +206,7 @@ public:
     std::map<int, LoadedTexture> textures;
     std::map<int, VkDescriptorSet> materialDSet;
 
+    static const unsigned int numButterflies = 30;
     std::map<int, int> butterflies;
     std::map<int, LightData> butterflyLights;
     ModelTransform butterflyVolumeTransform;
@@ -214,6 +215,12 @@ public:
     unsigned long butterflyVolumeBuffer;
     unsigned long butterfliesMetaBuffer;
     std::vector<glm::vec3> butterflyVolume;
+    VkDescriptorSetLayout updateButterfliesDescriptorSetLayout{VK_NULL_HANDLE};
+    VkDescriptorSetLayout renderButterfliesDescriptorSetLayout{VK_NULL_HANDLE};
+    VkDescriptorSet updateButterfliesDescriptorSet;
+    VkDescriptorSet renderButterfliesDescriptorSet;
+    std::unique_ptr<ComputePipeline> updateButterfliesPipeline;
+    std::unique_ptr<GraphicsPipeline> renderButterfliesPipeline;
 
     std::vector<glm::vec3> computeButterflyVolumeVertices();
 
@@ -238,6 +245,7 @@ public:
 
     void destroyPipelines();
 
+    void setupButterfliesDescriptorSets(VkDescriptorPool descriptorPool);
 };
 
 
