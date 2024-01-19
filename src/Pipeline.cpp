@@ -196,6 +196,8 @@ GraphicsPipeline::GraphicsPipeline(VulkanDevice* device, VkRenderPass renderPass
         vkDestroyShaderModule(*device, module, nullptr);
     }
 
+    this->isButterfly = params.isButterfly;
+
     this->device = device;
 }
 

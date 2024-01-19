@@ -142,6 +142,10 @@ Scene::Scene(VulkanDevice *device, Swapchain *swapchain, std::string filename) {
 
                 auto descr = getPipelineDescriptionForPrimitive(model.meshes[lod.mesh].primitives[j]);
 
+                if (basename.starts_with("BUTTERFLY_")) {
+                    descr.isButterfly = true;
+                }
+
                 if (!descr.vertexTexcoordsAccessor.has_value() && !descr.vertexFixedColorAccessor.has_value()) {
                     std::cout << "Unsupported primitive meshId=" << lod.mesh << " primitiveId=" << j
                               << ": no texture or vertex color specified." << std::endl;
@@ -155,6 +159,13 @@ Scene::Scene(VulkanDevice *device, Swapchain *swapchain, std::string filename) {
 }
 
 void Scene::recordCommandBufferCompute(VkCommandBuffer commandBuffer, glm::vec3 cameraPosition) {
+    if (butterflies.size() > 0 && butterflyVolumeMesh >= 0) {
+        // update butterflies
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, updateButterfliesPipeline->pipeline);
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, updateButterfliesPipeline->layout,
+                                0, 1, &updateButterfliesDescriptorSet, 0, nullptr);
+        vkCmdDispatch(commandBuffer, numButterflies, 1, 1);
+    }
     // update lods
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, updateLoDsPipeline->pipeline);
     for (auto &[meshName, meshLods]: lods) {
@@ -233,18 +244,20 @@ void Scene::recordCommandBufferCompute(VkCommandBuffer commandBuffer, glm::vec3 
 }
 
 void Scene::recordCommandBufferDraw(VkCommandBuffer commandBuffer, VkDescriptorSet mvpSet) {
+    VulkanHelper::setFullViewportScissor(commandBuffer, swapchain->renderSize());
     // Draw all primitives with all available graphicsPipelines.
     for (auto &[programDescr, lodMeshMap]: meshPrimitivesWithPipeline) {
         auto &pipeline = graphicsPipelines[programDescr];
         vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->pipeline);
-        VulkanHelper::setFullViewportScissor(commandBuffer, swapchain->renderSize());
-
         for (auto &[lod, primitivesList]: lodMeshMap) {
             // bind transformations for each mesh
             bindingDescriptorSets.clear();
             bindingDescriptorSets.push_back(mvpSet);
-            bindingDescriptorSets.push_back(
-                    meshTransformsDescriptorSets[descriptorSetsMap[lod]]);
+            if (pipeline->isButterfly) {
+                bindingDescriptorSets.push_back(renderButterfliesDescriptorSet);
+            } else {
+                bindingDescriptorSets.push_back(meshTransformsDescriptorSets[descriptorSetsMap[lod]]);
+            }
             vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->layout, 0,
                                     bindingDescriptorSets.size(), bindingDescriptorSets.data(), 0, nullptr);
 
@@ -258,7 +271,6 @@ void Scene::recordCommandBufferDraw(VkCommandBuffer commandBuffer, VkDescriptorS
 
 void Scene::renderPrimitiveInstances(int meshId, int primitiveId, VkCommandBuffer commandBuffer,
                                      const PipelineDescription &descr, VkPipelineLayout pipelineLayout) {
-    //if (meshTransforms.find(meshId) == meshTransforms.end()) return; // 0 instances. skip. todo is this needed for lods?
 
     auto &primitive = model.meshes[meshId].primitives[primitiveId];
     if (materialDSet.contains(primitive.material)) {
@@ -512,7 +524,7 @@ void Scene::setupButterfliesDescriptorSets(VkDescriptorPool descriptorPool) {
             *device, descriptorPool, renderButterfliesDescriptorSetLayout, 1)[0];
 
     VkDescriptorBufferInfo butterfliesMetaBufferInfo{};
-    butterfliesMetaBufferInfo.buffer = buffers[butterfliesMetaBuffer].buffer;
+    butterfliesMetaBufferInfo.buffer = butterfliesMetaBuffer.buffers[0]; // TODO multiple frames...
     butterfliesMetaBufferInfo.offset = 0;
     butterfliesMetaBufferInfo.range = sizeof(ButterfliesMeta);
 
@@ -526,20 +538,35 @@ void Scene::setupButterfliesDescriptorSets(VkDescriptorPool descriptorPool) {
     butterflyVolumeBufferInfo.offset = 0;
     butterflyVolumeBufferInfo.range = sizeof(butterflyVolume[0]) * butterflyVolume.size();
 
-    std::vector<VkDescriptorBufferInfo> updateBufferInfos {
-            butterfliesMetaBufferInfo, butterfliesBufferInfo, butterflyVolumeBufferInfo
+    std::vector<VkDescriptorBufferInfo> updateUBOBufferInfos {
+            butterfliesMetaBufferInfo
     };
 
-    VkWriteDescriptorSet descriptorWriteUpdate{};
-    descriptorWriteUpdate.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    descriptorWriteUpdate.dstSet = updateButterfliesDescriptorSet;
-    descriptorWriteUpdate.dstBinding = 0;
-    descriptorWriteUpdate.dstArrayElement = 0;
-    descriptorWriteUpdate.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    descriptorWriteUpdate.descriptorCount = updateBufferInfos.size();
-    descriptorWriteUpdate.pBufferInfo = updateBufferInfos.data();
-    descriptorWriteUpdate.pImageInfo = nullptr; // Optional
-    descriptorWriteUpdate.pTexelBufferView = nullptr; // Optional
+    VkWriteDescriptorSet descriptorWriteUpdateUBO{};
+    descriptorWriteUpdateUBO.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    descriptorWriteUpdateUBO.dstSet = updateButterfliesDescriptorSet;
+    descriptorWriteUpdateUBO.dstBinding = 0;
+    descriptorWriteUpdateUBO.dstArrayElement = 0;
+    descriptorWriteUpdateUBO.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    descriptorWriteUpdateUBO.descriptorCount = updateUBOBufferInfos.size();
+    descriptorWriteUpdateUBO.pBufferInfo = updateUBOBufferInfos.data();
+    descriptorWriteUpdateUBO.pImageInfo = nullptr; // Optional
+    descriptorWriteUpdateUBO.pTexelBufferView = nullptr; // Optional
+
+    std::vector<VkDescriptorBufferInfo> updateBufferInfos {
+            butterfliesBufferInfo, butterflyVolumeBufferInfo
+    };
+
+    VkWriteDescriptorSet descriptorWriteUpdateStorage{};
+    descriptorWriteUpdateStorage.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    descriptorWriteUpdateStorage.dstSet = updateButterfliesDescriptorSet;
+    descriptorWriteUpdateStorage.dstBinding = 1;
+    descriptorWriteUpdateStorage.dstArrayElement = 0;
+    descriptorWriteUpdateStorage.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    descriptorWriteUpdateStorage.descriptorCount = updateBufferInfos.size();
+    descriptorWriteUpdateStorage.pBufferInfo = updateBufferInfos.data();
+    descriptorWriteUpdateStorage.pImageInfo = nullptr; // Optional
+    descriptorWriteUpdateStorage.pTexelBufferView = nullptr; // Optional
 
     std::vector<VkDescriptorBufferInfo> renderBufferInfos {
             butterfliesBufferInfo
@@ -557,7 +584,7 @@ void Scene::setupButterfliesDescriptorSets(VkDescriptorPool descriptorPool) {
     descriptorWriteRender.pTexelBufferView = nullptr; // Optional
 
     std::vector<VkWriteDescriptorSet> descriptorWrites {
-            descriptorWriteUpdate, descriptorWriteRender
+            descriptorWriteUpdateUBO, descriptorWriteUpdateStorage, descriptorWriteRender
     };
 
     vkUpdateDescriptorSets(*device, descriptorWrites.size(), descriptorWrites.data(), 0, nullptr);
@@ -673,7 +700,13 @@ void Scene::setupPrimitiveDrawBuffers() {
                     uint32_t numIndices = model.accessors[indexAccessorIndex].count;
                     VkDrawIndexedIndirectCommand drawCommand{};
                     drawCommand.indexCount = numIndices;
-                    drawCommand.instanceCount = (i == 0) ? transforms.size() : 0;
+                    if (model.meshes[mesh].name.starts_with("BUTTERFLY_")) {
+                        auto butterflyCount = getButterflyCount(stoi(model.meshes[mesh].name.substr(10)));
+                        drawCommand.firstInstance = butterflyCount.first;
+                        drawCommand.instanceCount = (i == 0) ? butterflyCount.second : 0;
+                    } else {
+                        drawCommand.instanceCount = (i == 0) ? transforms.size() : 0;
+                    }
                     lodIndirectDrawBufferMap[std::pair(lod.mesh, j)] = buffers.size();
                     buffers.push_back({});
                     buffers.back().uploadData(device, &drawCommand, sizeof(drawCommand),
@@ -683,6 +716,20 @@ void Scene::setupPrimitiveDrawBuffers() {
             }
         }
     }
+}
+
+std::pair<unsigned long, unsigned long> Scene::getButterflyCount(int butterflyType) {
+    auto numButterflyTypes = butterflies.size();
+    int lastButterflyType = -1;
+    for (auto butterfly : butterflies) {
+        lastButterflyType = (lastButterflyType < butterfly.first) ? butterfly.first : lastButterflyType;
+    }
+    for (int i = 1; i < lastButterflyType; i++) {
+        assert(butterflies.contains(i)); // assume every butterfly type from 1 to max exists.
+    }
+    auto countPerType = numButterflies / numButterflyTypes;
+    auto lastButterflyCount = numButterflies - countPerType * (numButterflyTypes - 1);
+    return {countPerType * butterflyType, (butterflyType == lastButterflyType) ? lastButterflyCount : countPerType};
 }
 
 void Scene::setupStorageBuffers() {
@@ -736,11 +783,7 @@ void Scene::setupStorageBuffers() {
         buffers.back().uploadData(device, butterflyVolume,
                                   VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
                                   VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-        butterfliesMetaBuffer = buffers.size();
-        buffers.push_back({});
-        buffers.back().createEmpty(device, sizeof(ButterfliesMeta),
-                                  VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-                                  VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+        butterfliesMetaBuffer.allocate(device, sizeof(ButterfliesMeta), 1);
     }
 
 
@@ -759,6 +802,7 @@ std::pair<VkBuffer, size_t> Scene::getPointLights() {
 
 void Scene::destroyBuffers() {
     for (auto buffer: buffers) buffer.destroy(device);
+    butterfliesMetaBuffer.destroy(device);
     materialBuffer.destroy(device);
     constantsBuffers.destroy(device);
 }
@@ -894,6 +938,8 @@ void Scene::destroyDescriptorSetLayouts() {
     vkDestroyDescriptorSetLayout(*device, materialsSettingsLayout, nullptr);
     vkDestroyDescriptorSetLayout(*device, lodUpdateDescriptorSetLayout, nullptr);
     vkDestroyDescriptorSetLayout(*device, lodCompressDescriptorSetLayout, nullptr);
+    vkDestroyDescriptorSetLayout(*device, updateButterfliesDescriptorSetLayout, nullptr);
+    vkDestroyDescriptorSetLayout(*device, renderButterfliesDescriptorSetLayout, nullptr);
 }
 
 void calculateBoundingBox(const tinygltf::Model &model, glm::vec3 &minBounds, glm::vec3 &maxBounds) {
@@ -1061,6 +1107,7 @@ void Scene::destroyPipelines() {
     graphicsPipelines.clear();
     updateLoDsPipeline.reset();
     compressLoDsPipeline.reset();
+    updateButterfliesPipeline.reset();
 }
 
 void Scene::createPipelines(VkRenderPass renderPass, VkDescriptorSetLayout mvpLayout, bool forceRecompile) {
@@ -1068,6 +1115,11 @@ void Scene::createPipelines(VkRenderPass renderPass, VkDescriptorSetLayout mvpLa
     for (auto &[descr, _]: meshPrimitivesWithPipeline) {
         createPipelinesWithDescription(descr, renderPass, mvpLayout, forceRecompile);
     }
+    ComputePipeline::Parameters butterfliesParams{};
+    butterfliesParams.source = {VK_SHADER_STAGE_COMPUTE_BIT, "shaders/butterflies.comp"};
+    butterfliesParams.recompileShaders = forceRecompile;
+    butterfliesParams.descriptorSetLayouts = {updateButterfliesDescriptorSetLayout};
+    this->updateButterfliesPipeline = std::make_unique<ComputePipeline>(device, butterfliesParams);
 
     ComputePipeline::Parameters updateParams{};
     updateParams.source = {VK_SHADER_STAGE_COMPUTE_BIT, "shaders/update_lods.comp"};
@@ -1087,6 +1139,13 @@ void Scene::createPipelines(VkRenderPass renderPass, VkDescriptorSetLayout mvpLa
 }
 
 static ShaderList selectShaders(const PipelineDescription &descr) {
+    if (descr.isButterfly) {
+        return ShaderList {
+                {VK_SHADER_STAGE_VERTEX_BIT,   "shaders/butterflies.vert"},
+                {VK_SHADER_STAGE_FRAGMENT_BIT, "shaders/simple-texture.frag"},
+        };
+    }
+
     if (descr.vertexFixedColorAccessor.has_value()) {
         return ShaderList {
             {VK_SHADER_STAGE_VERTEX_BIT,   "shaders/shader.vert"},
@@ -1182,6 +1241,9 @@ void Scene::createPipelinesWithDescription(PipelineDescription descr, VkRenderPa
     params.useDepthTest = true;
 
     params.descriptorSetLayouts = dsLayouts;
+
+    params.isButterfly = descr.isButterfly;
+
     graphicsPipelines[descr] = std::make_unique<GraphicsPipeline>(device, renderPass, 0, params);
 }
 
@@ -1206,8 +1268,14 @@ void Scene::cameraButtons(glm::vec3& lookAt, glm::vec3& position, glm::vec3& up,
     }
 }
 
-void Scene::updateBuffers() {
+void Scene::updateBuffers(float sceneTime, glm::vec3 cameraPosition, float timeDelta) {
     materialBuffer.update(&materialSettings, sizeof(materialSettings), swapchain->currentFrame);
+    ButterfliesMeta butterfliesMeta{};
+    butterfliesMeta.time = sceneTime;
+    butterfliesMeta.cameraPosition = cameraPosition;
+    butterfliesMeta.bufferflyVolumeTriangleCount = butterflyVolume.size() / 3;
+    butterfliesMeta.timeDelta = timeDelta;
+    butterfliesMetaBuffer.update(&butterfliesMeta, sizeof(ButterfliesMeta), 0);
 }
 
 void Scene::drawImGUIMaterialSettings() {
@@ -1227,7 +1295,6 @@ void Scene::addLoD(int meshIndex) {
     size_t index;
     if (name.starts_with("BUTTERFLY_")) {
         butterflies[stoi(name.substr(10))] = meshIndex;
-        return;
     } else if (name == "BUTTERFLYVOLUME") {
         // skip rendering
         return;
@@ -1272,14 +1339,19 @@ std::vector<glm::vec3> Scene::computeButterflyVolumeVertices() {
 
         assert(positionAccessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT);
         assert(positionAccessor.type == TINYGLTF_TYPE_VEC3);
-        assert(indexAccessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT);
+        assert(indexAccessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT);
         assert(indexAccessor.type == TINYGLTF_TYPE_SCALAR);
 
         auto indexBuffer = model.buffers[indexBufferView.buffer].data;
         auto positionBuffer = model.buffers[positionBufferView.buffer].data;
 
-        for (int i = indexBufferView.byteOffset; i < indexBufferView.byteOffset + indexBufferView.byteLength; i += indexBufferView.byteStride) {
-            uint32_t index = *(uint32_t*)&indexBuffer[i];
+
+        auto indexBufferStart = indexBufferView.byteOffset;
+        auto indexBufferEnd = indexBufferStart + indexBufferView.byteLength;
+        auto indexBufferStride = indexBufferView.byteStride == 0 ? sizeof(uint16_t) : indexBufferView.byteStride;
+
+        for (auto i = indexBufferStart; i < indexBufferEnd; i += indexBufferStride) {
+            uint32_t index = *(uint16_t*)&indexBuffer[i];
             auto positionPosition = positionBufferView.byteOffset + positionBufferView.byteStride * index;
             glm::vec3 position = *(glm::vec3*)&positionBuffer[positionPosition];
             vertices.push_back(position);

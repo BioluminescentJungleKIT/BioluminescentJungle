@@ -39,7 +39,7 @@ struct Butterfly {
     glm::vec3 velocity alignas(16);
 };
 
-struct ButterfliesMeta {
+struct alignas(16) ButterfliesMeta {
     glm::vec3 cameraPosition;
     float time;
     float timeDelta;
@@ -94,6 +94,8 @@ struct PipelineDescription {
     bool operator == (const PipelineDescription& other) const {
         return toTuple() == other.toTuple();
     }
+
+    bool isButterfly{false};
 };
 
 struct MaterialSettings {
@@ -117,7 +119,7 @@ public:
     void destroyAll();
 
     void setupBuffers();
-    void updateBuffers();
+    void updateBuffers(float sceneTime, glm::vec3 cameraPosition, float timeDelta);
 
     void setupTextures();
     void destroyTextures();
@@ -206,21 +208,20 @@ public:
     std::map<int, LoadedTexture> textures;
     std::map<int, VkDescriptorSet> materialDSet;
 
-    static const unsigned int numButterflies = 30;
-    std::map<int, int> butterflies;
+    static const unsigned int numButterflies = 100;
+    std::map<int, int> butterflies;  // butterfly number to mesh index
     std::map<int, LightData> butterflyLights;
     ModelTransform butterflyVolumeTransform;
     int butterflyVolumeMesh{-1};
     unsigned long butterfliesBuffer;
     unsigned long butterflyVolumeBuffer;
-    unsigned long butterfliesMetaBuffer;
+    UniformBuffer butterfliesMetaBuffer;
     std::vector<glm::vec3> butterflyVolume;
     VkDescriptorSetLayout updateButterfliesDescriptorSetLayout{VK_NULL_HANDLE};
     VkDescriptorSetLayout renderButterfliesDescriptorSetLayout{VK_NULL_HANDLE};
     VkDescriptorSet updateButterfliesDescriptorSet;
     VkDescriptorSet renderButterfliesDescriptorSet;
     std::unique_ptr<ComputePipeline> updateButterfliesPipeline;
-    std::unique_ptr<GraphicsPipeline> renderButterfliesPipeline;
 
     std::vector<glm::vec3> computeButterflyVolumeVertices();
 
@@ -246,6 +247,8 @@ public:
     void destroyPipelines();
 
     void setupButterfliesDescriptorSets(VkDescriptorPool descriptorPool);
+
+    std::pair<unsigned long, unsigned long> getButterflyCount(int butterflyType);
 };
 
 

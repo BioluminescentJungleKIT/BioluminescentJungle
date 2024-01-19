@@ -44,26 +44,21 @@ mat4 computeModel(Butterfly butterfly, float timeDelta) {
     vec3 s = normalize(cross(vec3(0, 0, 1), f)); // up x forward = sideways
     vec3 u  = cross(f, s); // forward x sideways = up
 
-    // see also glm::lookAt
-    model[0][0] = s.x;
-    model[1][0] = s.y;
-    model[2][0] = s.z;
-    model[0][1] = u.x;
-    model[1][1] = u.y;
-    model[2][1] = u.z;
-    model[0][2] = f.x;
-    model[1][2] = f.y;
-    model[2][2] = f.z;
-    model[3][0] = -dot(s, p);
-    model[3][1] = -dot(u, p);
-    model[3][2] = -dot(f, p);
+    model[0].xyz = s;
+    model[0].w = 0;
+    model[1].xyz = f;
+    model[1].w = 0;
+    model[2].xyz = u;
+    model[2].w = 0;
+    model[3].xyz = p;
+    model[3].w = 1;
     return model;
 }
 
 void main() {
     // TODO [optimization] outsource uniform multiplications to the CPU
-    gl_Position = ubo.proj * ubo.view * ubo.modl
-                  * computeModel(b.utterflies[gl_InstanceIndex], 0)  * vec4(inPosition, 1.0);
+    mat4 model = computeModel(b.utterflies[gl_InstanceIndex], 0);
+    gl_Position = ubo.proj * ubo.view * ubo.modl * model * vec4(inPosition, 1.0);
     gl_Position += gl_Position.w * vec4(ubo.jitt.x, ubo.jitt.y, 0, 0);
     currpos = gl_Position;
 
@@ -72,5 +67,5 @@ void main() {
     lastpos += lastpos.w * vec4(lastubo.jitt, 0, 0);
 
     uv = inUV;
-    normal = (transpose(inverse(ubo.modl * model.model[gl_InstanceIndex])) * vec4(inNormal, 0.0)).xyz;
+    normal = (transpose(inverse(ubo.modl * model)) * vec4(inNormal, 0.0)).xyz;
 }

@@ -40,6 +40,7 @@ struct PipelineParameters {
     bool useDepthTest = true;
     std::vector<VkPushConstantRange> pushConstants;
     bool backFaceCulling = true;
+    bool isButterfly;
 };
 
 class GraphicsPipeline {
@@ -51,6 +52,8 @@ class GraphicsPipeline {
 
     VkPipeline pipeline;
     VkPipelineLayout layout;
+
+    bool isButterfly;
 
   private:
     VulkanDevice *device;

@@ -1,20 +1,12 @@
 #version 450
-#include
+#include "noise3D.glsl"
 
 struct Butterfly {
     vec3 position;
     vec3 velocity;
 };
 
-vec3 noise3D(vec3 position, index, time) {
-    return vec3(
-        snoise(position + vec3(312, 862, 150) * (index + time * 0.01)),
-        snoise(position + vec3(567, 457, 184) * (index + time * 0.01)),
-        snoise(position + vec3(981, 217, 824) * (index + time * 0.01))
-    );  // yes they are correllated, no i dont care.
-}
-
-layout(std430, binding = 0) uniform UniformBufferObject {
+layout(binding = 0) uniform UniformBufferObject {
     vec3 cameraPosition;
     float time;
     float timeDelta;
@@ -31,8 +23,16 @@ layout(std430, binding = 2) buffer BufferflyVolumeVertices
     vec3 vertices[];
 } bvv;
 
+vec3 noise3D(vec3 position, uint index, float time) {
+    return vec3(
+    snoise(position + vec3(312, 862, 150) * (index + time / length(vec3(312, 862, 150)))),
+    snoise(position + vec3(567, 457, 184) * (index + time / length(vec3(567, 457, 184)))),
+    snoise(position + vec3(981, 217, 824) * (index + time / length(vec3(981, 217, 824))))
+    );  // yes they are correllated, no i dont care.
+}
+
 // better use precomputed
-vec3 calculateNormalOfNthTriangle(int n, vec3 position) {
+vec3 calculateNormalOfNthTriangle(int n) {
     vec3 a = bvv.vertices[n * 3 + 0];
     vec3 b = bvv.vertices[n * 3 + 1];
     vec3 c = bvv.vertices[n * 3 + 2];
@@ -101,9 +101,10 @@ float calculateSignedSquaredDistanceOfNthTriangle(int n, vec3 position) {
 
 void main() {
     uint index = gl_GlobalInvocationID.x;
-    vec3 random = noise3D(b.utterflies[index].position, index, ubo.time);
+    vec3 random = noise3D(b.utterflies[index].position * 3, index * 10, ubo.time);
+    vec3 cameraVector = ubo.cameraPosition - b.utterflies[index].position;
     // initialize random position
-    b.utterflies[index].position += (random * 5 + cameraPosition) * int(b.utterflies[index].position == vec3(0));
+    b.utterflies[index].position += (random * 15 + ubo.cameraPosition) * int(dot(cameraVector, cameraVector) > 10000 || b.utterflies[index].position == vec3(0,0,0));
 
     // This is probably suboptimal, but it might work for near-convex meshes. Maybe we could only consider
     // the 2 or 3 nearest triangles or something like that, but there would always be an egde case of some
@@ -111,18 +112,23 @@ void main() {
     // and count in/out ray-intersections), or even a correct sdf, but that would probably be even more
     // expensive.
     vec3 volumeForce = vec3(0);
-    for (int i = 0; i < bufferflyVolumeTriangleCount; i++) {
+    for (int i = 0; i < ubo.bufferflyVolumeTriangleCount; i++) {
         vec3 dir = -calculateNormalOfNthTriangle(i);
         float dist = calculateSignedSquaredDistanceOfNthTriangle(i, b.utterflies[index].position);
         volumeForce += smoothstep(1, 0, dist) * dir;
     }
     volumeForce *= 5;
+    volumeForce = clamp(volumeForce, -0.1, 0.1);
 
     // move towards camera if far away, no LoD needed ;)
-    vec3 cameraVector = cameraPosition - b.utterflies[index].position;
-    vec3 cameraForce = cameraVector * smoothstep(10, 20, dot(cameraVector, cameraVector));
+    vec3 cameraForce = cameraVector * smoothstep(10, 20, dot(cameraVector, cameraVector)) * 0.1;
 
-    b.utterflies[index].velocity += (random + cameraForce + volumeForce) * vec3(0.1,0.1,0.01);
+    b.utterflies[index].velocity += (random + cameraForce /*+ volumeForce*/) * vec3(1,1,0.1) * ubo.timeDelta;
+
+    b.utterflies[index].velocity = clamp(b.utterflies[index].velocity, vec3(-1, -1, -1), vec3(1, 1, 1));
+    float speed = length(b.utterflies[index].velocity);
+    b.utterflies[index].velocity = clamp(b.utterflies[index].velocity, vec3(-1, -1, speed * -0.1), vec3(1, 1, speed * 0.1));
 
     b.utterflies[index].position += b.utterflies[index].velocity * ubo.timeDelta;
+    //b.utterflies[index].position = vec3(0,0,0);
 }

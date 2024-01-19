@@ -458,6 +458,7 @@ void JungleApp::createUniformBuffers() {
 
 void JungleApp::updateUniformBuffers(uint32_t currentImage) {
     static auto startTime = std::chrono::high_resolution_clock::now();
+    static float lastTime = 0;
 
     auto currentTime = std::chrono::high_resolution_clock::now();
     float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
@@ -482,7 +483,7 @@ void JungleApp::updateUniformBuffers(uint32_t currentImage) {
     mvpUBO.copyTo(lastmvpUBO, (currentImage + MAX_FRAMES_IN_FLIGHT - 1) % MAX_FRAMES_IN_FLIGHT, currentImage,
                   sizeof(ubo));
     mvpUBO.update(&ubo, sizeof(ubo), currentImage);
-    scene.updateBuffers();
+    scene.updateBuffers(time, cameraPosition, time - lastTime);
     lighting->updateBuffers(ubo.proj * ubo.view, cameraPosition, cameraUpVector);
     lighting->getDenoiser()->updateCamera(ubo.proj);
 
@@ -495,6 +496,7 @@ void JungleApp::updateUniformBuffers(uint32_t currentImage) {
 
     postprocessing->getFogPointer()->updateCamera(ubo.view, ubo.proj, nearPlane, farPlane);
     postprocessing->updateBuffers();
+    lastTime = time;
 }
 
 void JungleApp::createDescriptorPool() {
