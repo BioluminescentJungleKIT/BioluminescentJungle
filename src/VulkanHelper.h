@@ -90,7 +90,11 @@ static std::tuple<std::vector<char>, std::string> getShaderCode(const std::strin
     if (recompile || !fileExists(spvFilename)) {
         shaderc::Compiler compiler;
         shaderc::CompileOptions options;
+#ifndef NDEBUG
+        options.SetGenerateDebugInfo();
+#endif
         options.SetIncluder(std::make_unique<GlslIncluder>());
+        options.SetTargetEnvironment(shaderc_target_env_vulkan, shaderc_env_version_vulkan_1_3);
 
         auto file_content = readFile(filename);
         file_content.push_back('\0');
