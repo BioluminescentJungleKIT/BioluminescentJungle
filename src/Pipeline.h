@@ -39,6 +39,7 @@ struct PipelineParameters {
     std::vector<std::optional<BasicBlending>> blending;
     bool useDepthTest = true;
     std::vector<VkPushConstantRange> pushConstants;
+    bool backFaceCulling = true;
 };
 
 class GraphicsPipeline {

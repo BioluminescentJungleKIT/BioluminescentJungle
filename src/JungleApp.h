@@ -17,11 +17,12 @@
 const uint32_t WIDTH = 1800;
 const uint32_t HEIGHT = 1200;
 
-struct UniformBufferObject {
+struct alignas(16) UniformBufferObject {
     glm::mat4 modl;
     glm::mat4 view;
     glm::mat4 proj;
     glm::vec2 jitt;
+    float time;
 };
 
 class JungleApp {

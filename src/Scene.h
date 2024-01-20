@@ -24,6 +24,7 @@ struct LightData {
     glm::vec3 position alignas(16);
     glm::vec3 color alignas(16);
     glm::float32 intensity alignas(16);
+    glm::float32 wind alignas(16);
 };
 struct CameraData{
     std::string name;
@@ -66,6 +67,8 @@ struct PipelineDescription {
     bool useSSR = false;
     bool useNormalMap = false;
     bool useDisplacement = false;
+
+    bool isOpaque = true;
 
     auto toTuple() const {
         return std::make_tuple(vertexPosAccessor, vertexTexcoordsAccessor, vertexFixedColorAccessor,

@@ -48,6 +48,10 @@ static bool materialUsesBaseTexture(const tinygltf::Material& material) {
     return material.values.count(BASE_COLOR_TEXTURE);
 }
 
+static bool materialIsOpaque(tinygltf::Material &material) {
+    return material.alphaMode == "OPAQUE"; // could use double-sided parameter instead
+}
+
 PipelineDescription Scene::getPipelineDescriptionForPrimitive(const tinygltf::Primitive &primitive) {
     PipelineDescription descr;
 
@@ -80,6 +84,8 @@ PipelineDescription Scene::getPipelineDescriptionForPrimitive(const tinygltf::Pr
             descr.useDisplacement = true;
         }
     }
+
+    descr.isOpaque = materialIsOpaque(material);
 
     return descr;
 }
@@ -551,7 +557,9 @@ void Scene::generateTransforms(int nodeIndex, glm::mat4 oldTransform, int maxRec
             if (light.Has("intensity")) {
                 light_intensity = static_cast<float>(light.Get("intensity").Get<double>());
             }
-            lights.push_back({glm::make_vec3(newTransform[3]), light_color, light_intensity});
+            auto name = light.Get("name").Get<std::string>();
+            float wind = name.find("WIND") != name.npos;
+            lights.push_back({glm::make_vec3(newTransform[3]), light_color, light_intensity, wind});
         } else {
             std::cout << "[lights] WARN: Detected unsupported light of type " << type << std::endl;
         }
@@ -686,6 +694,13 @@ Scene::getLightsAttributeAndBindingDescriptions() {
     intensityAttributeDescription.format = VK_FORMAT_R32_SFLOAT;
     intensityAttributeDescription.offset = offsetof(LightData, intensity);
     attributeDescriptions.push_back(intensityAttributeDescription);
+
+    VkVertexInputAttributeDescription windAttributeDescription{};
+    windAttributeDescription.binding = 0;
+    windAttributeDescription.location = 3;
+    windAttributeDescription.format = VK_FORMAT_R32_SFLOAT;
+    windAttributeDescription.offset = offsetof(LightData, wind);
+    attributeDescriptions.push_back(windAttributeDescription);
 
     return {attributeDescriptions, bindingDescriptions};
 }
@@ -959,6 +974,13 @@ static ShaderList selectShaders(const PipelineDescription &descr) {
         };
     }
 
+    if (!descr.isOpaque) {
+        return ShaderList {
+                {VK_SHADER_STAGE_VERTEX_BIT,   "shaders/simple-texture-wind.vert"},
+                {VK_SHADER_STAGE_FRAGMENT_BIT, "shaders/simple-texture.frag"},
+        };
+    }
+
     if (descr.useNormalMap) {
         return ShaderList {
             {VK_SHADER_STAGE_VERTEX_BIT,   "shaders/displacement.vert"},
@@ -1033,6 +1055,7 @@ void Scene::createPipelinesWithDescription(PipelineDescription descr, VkRenderPa
     params.vertexInputDescription = bindingDescriptions;
     params.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
     params.extent = swapchain->renderSize();
+    params.backFaceCulling = descr.isOpaque;
 
     // We don't want any blending for the color attachments (-1 for the depth attachment)
     params.blending.assign(GBufferTarget::NumAttachments - 1, {});

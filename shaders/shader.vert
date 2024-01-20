@@ -5,6 +5,7 @@ layout(set = 0, binding = 0) uniform UniformBufferObject {
     mat4 view;
     mat4 proj;
     vec2 jitt;
+    float time;
 } ubo;
 
 layout(set = 0, binding = 1) uniform UniformBufferObject2 {
@@ -12,6 +13,7 @@ layout(set = 0, binding = 1) uniform UniformBufferObject2 {
     mat4 view;
     mat4 proj;
     vec2 jitt;
+    float time;
 } lastubo;
 
 layout(set = 1, binding = 0) buffer ModelTransform {

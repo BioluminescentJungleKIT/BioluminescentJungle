@@ -38,6 +38,7 @@ struct PointLight {
     vec4 position; // just xyz
     vec4 color; // just xyz
     vec4 intensity; // just x
+    vec4 wind; // just x
 };
 
 struct PointLightParams {

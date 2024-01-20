@@ -8,6 +8,7 @@ layout(set = 0, binding = 0) uniform UniformBufferObject {
     mat4 view;
     mat4 proj;
     vec2 jitt;
+    float time;
 } ubo;
 
 layout(set = 2, binding = 0, std140) uniform DebugOptions {

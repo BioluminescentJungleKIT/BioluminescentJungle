@@ -1,4 +1,5 @@
 #version 450
+#include "wind.glsl"
 
 layout(set = 0, binding = 0) uniform UniformBufferObject {
     mat4 modl;  // global
@@ -30,12 +31,18 @@ layout(location = 2) out vec4 currpos;
 layout(location = 3) out vec4 lastpos;
 
 void main() {
-    // TODO [optimization] outsource uniform multiplications to the CPU
-    gl_Position = ubo.proj * ubo.view * ubo.modl * model.model[gl_InstanceIndex] * vec4(inPosition, 1.0);
+    mat4 combinedModel = ubo.modl * model.model[gl_InstanceIndex];
+    vec4 worldpos = combinedModel * vec4(inPosition, 1.0);
+    vec3 worldorigin = combinedModel[3].xyz;
+    gl_Position = ubo.proj * ubo.view * windDisplacement(worldpos, ubo.time, worldorigin, 1);
     gl_Position += gl_Position.w * vec4(ubo.jitt.x, ubo.jitt.y, 0, 0);
+
     currpos = gl_Position;
 
-    lastpos = lastubo.proj * lastubo.view * lastubo.modl * model.model[gl_InstanceIndex] * vec4(inPosition, 1.0);
+    mat4 lastCombinedModel = lastubo.modl * model.model[gl_InstanceIndex];
+    vec4 lastworldpos = lastCombinedModel * vec4(inPosition, 1.0);
+    vec3 lastworldorigin = lastCombinedModel[3].xyz;
+    lastpos = lastubo.proj * lastubo.view * windDisplacement(lastworldpos, lastubo.time, lastworldorigin, 1);
     lastpos += lastpos.w * vec4(lastubo.jitt, 0, 0);
 
     uv = inUV;
