@@ -378,3 +378,54 @@ std::vector<VkDescriptorSet> VulkanHelper::createDescriptorSetsFromLayout(
     VK_CHECK_RESULT(vkAllocateDescriptorSets(device, &allocInfo, sets.data()));
     return sets;
 }
+
+VkFormat VulkanHelper::gltfImageToVkFormat(const tinygltf::Image &image) {
+    switch (image.component) {
+        case 1:
+            switch (image.bits) {
+                case 8:
+                    return VK_FORMAT_R8_SRGB;
+                case 16:
+                    return VK_FORMAT_R16_UNORM;
+                case 32:
+                    return VK_FORMAT_R32_SFLOAT;
+                default:
+                    throw std::runtime_error("image bits not in (8, 16, 32)");
+            }
+        case 2:
+            switch (image.bits) {
+                case 8:
+                    return VK_FORMAT_R8G8_SRGB;
+                case 16:
+                    return VK_FORMAT_R16G16_UNORM;
+                case 32:
+                    return VK_FORMAT_R32G32_SFLOAT;
+                default:
+                    throw std::runtime_error("image bits not in (8, 16, 32)");
+            }
+        case 3:
+            switch (image.bits) {
+                case 8:
+                    return VK_FORMAT_R8G8B8_SRGB;
+                case 16:
+                    return VK_FORMAT_R16G16B16_UNORM;
+                case 32:
+                    return VK_FORMAT_R32G32B32_SFLOAT;
+                default:
+                    throw std::runtime_error("image bits not in (8, 16, 32)");
+            }
+        case 4:
+            switch (image.bits) {
+                case 8:
+                    return VK_FORMAT_R8G8B8A8_SRGB;
+                case 16:
+                    return VK_FORMAT_R16G16B16A16_UNORM;
+                case 32:
+                    return VK_FORMAT_R32G32B32A32_SFLOAT;
+                default:
+                    throw std::runtime_error("image bits not in (8, 16, 32)");
+            }
+        default:
+            throw std::runtime_error("image component count not in [1;4]");
+    }
+}
