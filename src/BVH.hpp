@@ -4,12 +4,14 @@
 #include "PhysicalDevice.h"
 #include "Scene.h"
 #include "tiny_gltf.h"
+#include <glm/gtx/component_wise.hpp>
 #include <vulkan/vulkan_core.h>
 #include <iostream>
 #include <chrono>
 #include <numeric>
 #include <iomanip>
 #include <algorithm>
+#include <cmath>
 
 inline std::ostream &operator<<(std::ostream &out, const glm::vec3 &value) {
     out << std::setprecision(4) << "(" << value.x << "," << value.y << "," << value.z << ")";
@@ -68,7 +70,7 @@ class BVH {
         auto startTS = std::chrono::system_clock::now();
 
         this->triangles = extractTriangles<Triangle>(scene);
-        constructBVH();
+        int bvhDepth = constructBVH();
         //std::cout << "Got triangles from the model: " << triangles.size() << std::endl;
         //for (size_t i = 0; i < triangles.size(); i++) {
         //    std::cout << "idx=" << i << ": "
@@ -82,8 +84,9 @@ class BVH {
         //}
 
         auto endTS = std::chrono::system_clock::now();
-        std::cout << "Finished building BVH in " <<
-            std::chrono::duration_cast<std::chrono::milliseconds>(endTS-startTS).count() << "ms" << std::endl;
+        std::cout << "Finished building BVH (tris=" << triangles.size() << ", maxdepth=" << bvhDepth
+            << ") in " << std::chrono::duration_cast<std::chrono::milliseconds>(endTS-startTS).count()
+            << "ms" << std::endl;
 
         triangleBuffer.uploadData(device, triangles, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
         bvhBuffer.uploadData(device, bvh, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
@@ -125,15 +128,15 @@ class BVH {
     std::vector<Triangle> triangles;
     std::vector<BVHNode> bvh;
 
-    void constructBVH() {
+    int constructBVH() {
         bvh.push_back({});
         std::vector<int> triIndices(triangles.size());
         std::iota(triIndices.begin(), triIndices.end(), 0);
-        constructBVHRec(triIndices.begin(), triIndices.end(), 0, 0);
+        return constructBVHRec(triIndices.begin(), triIndices.end(), 0, 0);
     }
 
     using iter = std::vector<int>::iterator;
-    void constructBVHRec(iter fst, iter lst, int curNodeIdx, int depth)
+    int constructBVHRec(iter fst, iter lst, int curNodeIdx, int depth)
     {
         const size_t size = lst - fst;
         // Leaf
@@ -143,18 +146,43 @@ class BVH {
             auto& tri = triangles[*fst];
             bvh[curNodeIdx].low = glm::min(glm::min(tri.x, tri.y), tri.z);
             bvh[curNodeIdx].high = glm::max(glm::max(tri.x, tri.y), tri.z);
-            return;
+            return depth;
         }
+
+        const auto& updateBBox = [this] (glm::vec3& cmin, glm::vec3& cmax, int triIdx) {
+            cmin = glm::min(cmin, triangles[triIdx].x);
+            cmin = glm::min(cmin, triangles[triIdx].y);
+            cmin = glm::min(cmin, triangles[triIdx].y);
+
+            cmax = glm::max(cmax, triangles[triIdx].x);
+            cmax = glm::max(cmax, triangles[triIdx].y);
+            cmax = glm::max(cmax, triangles[triIdx].y);
+        };
+
+        static constexpr glm::vec3 MIN = glm::vec3(-1e9, -1e9, -1e9);
+        static constexpr glm::vec3 MAX = glm::vec3(1e9, 1e9, 1e9);
+
+        glm::vec3 bboxMin = MAX, bboxMax = MIN;
+        std::for_each(fst, lst, [&] (int triIdx) {
+            updateBBox(bboxMin, bboxMax, triIdx);
+        });
+
+        // Heuristic: split along the widest axis
+        glm::vec3 dim = bboxMax - bboxMin;
+        float mx = glm::compMax(dim);
+        int sortBy = ((dim[0] == mx) ? 0 : ((dim[1] == mx) ? 1 : 2));
 
         // Sort based on x, y, z
         std::sort(fst, lst, [&] (int a, int b) {
-            if (depth % 3 == 0) {
+            switch (sortBy) {
+              case 0:
                 return midpoint(triangles[a]).x < midpoint(triangles[b]).x;
-            } else if (depth % 3 == 1) {
+              case 1:
                 return midpoint(triangles[a]).y < midpoint(triangles[b]).y;
-            } else {
+              case 2:
                 return midpoint(triangles[a]).z < midpoint(triangles[b]).z;
             }
+            assert(false);
         });
 
         int leftIdx = bvh.size();
@@ -164,10 +192,59 @@ class BVH {
         bvh[curNodeIdx].left = leftIdx;
         bvh[curNodeIdx].right = rightIdx;
 
-        constructBVHRec(fst, fst + size / 2, leftIdx, depth + 1);
-        constructBVHRec(fst + size / 2, lst, rightIdx, depth + 1);
+        // Split in the middle
+        auto split = fst + size / 2;
+
+        // We have to adhere to the maximal stack size in the shader and thus have to avoid unbalancing.
+        // We can use the SAH heuristic only if we can guarantee that in the unlucky case, we still manage to
+        // switch to balanced splits and not exceed the depth.
+        int needBalancedDepth = std::ceil(std::log2(size)) + 1;
+        static constexpr int MAX_STACK_SIZE = 32;
+
+        if (depth + needBalancedDepth < MAX_STACK_SIZE - 2) {
+            // pseudo-SAH, improve the split candidate.
+            // Implementation: first compute prefix BBs.
+            // Then, iterate forward and compute SAH heuristic.
+            bboxMin = MAX;
+            bboxMax = MIN;
+            std::vector<glm::vec3> suffixBBMin(size), suffixBBMax(size);
+            for (int i = size - 1; i >= 0; i--) {
+                int triIdx = *(fst + i);
+                updateBBox(bboxMin, bboxMax, triIdx);
+                suffixBBMin[i] = bboxMin;
+                suffixBBMax[i] = bboxMax;
+            }
+
+            // Forward pass, split in [0, i), [i, size)
+            bboxMin = MAX;
+            bboxMax = MIN;
+            updateBBox(bboxMin, bboxMax, *fst);
+
+            const auto& surfaceArea = [](glm::vec3 min, glm::vec3 max) {
+                auto d = max - min;
+                return d.x * d.y + d.x * d.z + d.y * d.z;
+            };
+
+            float optimal = 1e18;
+            for (int i = 1; i < size; i++) {
+                float S1 = surfaceArea(bboxMin, bboxMax);
+                float S2 = surfaceArea(suffixBBMin[i], suffixBBMax[i]);
+                float cost = i * S1 + (size - i) * S2;
+                if (cost < optimal) {
+                    optimal = cost;
+                    split = fst + i;
+                }
+
+                int triIdx = *(fst + i);
+                updateBBox(bboxMin, bboxMax, triIdx);
+            }
+        }
+
+        int depthL = constructBVHRec(fst, split, leftIdx, depth + 1);
+        int depthR = constructBVHRec(split, lst, rightIdx, depth + 1);
         bvh[curNodeIdx].low = glm::min(bvh[leftIdx].low, bvh[rightIdx].low);
         bvh[curNodeIdx].high = glm::max(bvh[leftIdx].high, bvh[rightIdx].high);
+        return std::max(depthL, depthR);
     }
 
   public:
