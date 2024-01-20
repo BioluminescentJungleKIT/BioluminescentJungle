@@ -18,33 +18,33 @@ struct BVHNode {
 };
 
 // Thanks Stackoverflow
-// https://stackoverflow.com/questions/59257678/intersect-a-ray-with-a-triangle-in-glsl-c
-float PointInOrOn(vec3 P1, vec3 P2, vec3 A, vec3 B)
+// https://stackoverflow.com/questions/54564286/triangle-intersection-test-in-opengl-es-glsl
+bool IntersectTriangle(Ray ray, vec3 p0, vec3 p1, vec3 p2,
+        out float hit, out vec3 barycentricCoord, out vec3 triangleNormal)
 {
-    vec3 CP1 = cross(B - A, P1 - A);
-    vec3 CP2 = cross(B - A, P2 - A);
-    return step(0.0, dot(CP1, CP2));
-}
+    const vec3 e0 = p1 - p0;
+    const vec3 e1 = p0 - p2;
+    triangleNormal = cross( e1, e0 );
 
-bool PointInTriangle(vec3 px, vec3 p0, vec3 p1, vec3 p2)
-{
-    return PointInOrOn(px, p0, p1, p2) * PointInOrOn(px, p1, p2, p0) * PointInOrOn(px, p2, p0, p1) > 0;
-}
+    const vec3 e2 = ( 1.0 / dot( triangleNormal, ray.dir ) ) * ( p0 - ray.origin );
+    const vec3 i  = cross( ray.dir, e2 );
 
-vec3 IntersectPlane(Ray ray, vec3 p0, vec3 p1, vec3 p2)
-{
-    vec3 N = cross(p1-p0, p2-p0);
-    vec3 X = ray.origin + ray.dir * dot(p0 - ray.origin, N) / dot(ray.dir, N);
-    return X;
+    barycentricCoord.y = dot( i, e1 );
+    barycentricCoord.z = dot( i, e0 );
+    barycentricCoord.x = 1.0 - (barycentricCoord.z + barycentricCoord.y);
+    hit   = dot( triangleNormal, e2 );
+
+    return  /*(hit < ray.tmax) && */ (hit > 0.001) && all(greaterThanEqual(barycentricCoord, vec3(0.0)));
 }
 
 float intersectTriangle(Triangle tri, Ray r) {
-    vec3 X = IntersectPlane(r, tri.x.xyz, tri.y.xyz, tri.z.xyz);
-    if (PointInTriangle(X, tri.x.xyz, tri.y.xyz, tri.z.xyz)) {
-        return dot(X - r.origin, r.dir);
-    }
+    float t;
+    vec3 bcoord;
+    vec3 normal;
 
-    return -1.0;
+    bool f = IntersectTriangle(r, tri.x.xyz, tri.y.xyz, tri.z.xyz, t, bcoord, normal);
+    if (f) return t;
+    return -1;
 }
 
 // Adapted from: https://tavianator.com/2022/ray_box_boundary.html
@@ -52,16 +52,14 @@ vec2 intersectAABB(vec3 bounds[2], Ray r, vec2 tmimaxInit) {
     float tmin = tmimaxInit.x;
     float tmax = tmimaxInit.y;
 
-    for (int d = 0; d < 3; ++d) {
-        int sgn = int(sign(r.invDir[d]) < 0);
-        float bmin = bounds[sgn][d];
-        float bmax = bounds[1 - sgn][d];
+    vec3 t1 = (bounds[0] - r.origin) * r.invDir;
+    vec3 t2 = (bounds[1] - r.origin) * r.invDir;
 
-        float dmin = (bmin - r.origin[d]) * r.invDir[d];
-        float dmax = (bmax - r.origin[d]) * r.invDir[d];
-        tmin = max(dmin, tmin);
-        tmax = min(dmax, tmax);
-    }
+    float c1 = max(min(t1[0], t2[0]), max(min(t1[1], t2[1]), min(t1[2], t2[2])));
+    float c2 = min(max(t1[0], t2[0]), min(max(t1[1], t2[1]), max(t1[2], t2[2])));
+
+    tmin = max(c1, tmin);
+    tmax = min(c2, tmax);
 
     return vec2(tmin, tmax);
 }

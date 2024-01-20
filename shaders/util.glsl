@@ -71,11 +71,11 @@ float evalPseudoGeometryTerm(vec3 Pa, vec3 Na, vec3 Pb, vec3 intensity, float r,
     float dist = length(L);
     L /= dist;
 
-    float b = max3(intensity);
-    float f = max(min(1.0 - pow(dist / (r * sqrt(b)), 4), 1), 0) / (dist * dist);
-    f = max(f, 0);
+ //   float b = max3(intensity);
+  //  float f = max(min(1.0 - pow(dist / (r * sqrt(b)), 4), 1), 0) / (dist * dist);
+//    f = max(f, 0);
 
-    return f * max(0.0, dot(L, Na));
+    return max(0.0, dot(L, Na)) / (dist * dist);
 }
 
 float evalEmittingPoint(in SurfacePoint point, vec3 emitterPoint, vec3 emitterIntensity, vec3 emitterN) {

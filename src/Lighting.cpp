@@ -39,6 +39,7 @@ DeferredLighting::~DeferredLighting() {
     debugUBO.destroy(device);
     lightUBO.destroy(device);
     computeParamsUBO.destroy(device);
+    emissiveTriangles.destroy(device);
 
     for (int i = 0; i < reservoirs.size(); i++) {
         reservoirs[i].destroy(device);

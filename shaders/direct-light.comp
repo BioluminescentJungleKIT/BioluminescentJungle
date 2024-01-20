@@ -77,6 +77,15 @@ bool testShadowBruteforce(SurfacePoint point, vec3 lightPos) {
     return false;
 }
 
+bool doesIntersectAABB(int node, vec2 tmimaxInit, Ray lightRay) {
+    vec3 aabb[2];
+    aabb[0] = bvh[node].low.xyz;
+    aabb[1] = bvh[node].high.xyz;
+
+    vec2 isec = intersectAABB(aabb, lightRay, tmimaxInit);
+    return isec.x <= isec.y;
+}
+
 bool testShadowAABB(SurfacePoint point, vec3 lightPos) {
     float rayLen;
     Ray lightRay = getLightRay(point, lightPos, rayLen);
@@ -86,6 +95,9 @@ bool testShadowAABB(SurfacePoint point, vec3 lightPos) {
     int cur = 0;
 
     const vec2 tmimaxInit = vec2(0.1, rayLen - 0.03);
+    if (!doesIntersectAABB(0, tmimaxInit, lightRay)) {
+        return false;
+    }
 
     // Recursive test in the BVH
     while (cur >= 0) {
@@ -102,16 +114,14 @@ bool testShadowAABB(SurfacePoint point, vec3 lightPos) {
             continue;
         }
 
-        // Split node: test AABB, if yes, check the two children
-        vec3 aabb[2];
-        aabb[0] = bvh[node].low.xyz;
-        aabb[1] = bvh[node].high.xyz;
-
-        vec2 isec = intersectAABB(aabb, lightRay, tmimaxInit);
-        if (isec.x <= isec.y) {
+        if (doesIntersectAABB(bvh[node].left, tmimaxInit, lightRay)) {
             stack[cur + 1] = bvh[node].left;
-            stack[cur + 2] = bvh[node].right;
-            cur += 2;
+            cur++;
+        }
+
+        if (doesIntersectAABB(bvh[node].right, tmimaxInit, lightRay)) {
+            stack[cur + 1] = bvh[node].right;
+            cur++;
         }
     }
 
@@ -201,9 +211,11 @@ Reservoir fillReservoir(ivec2 pos, SurfacePoint point, float depth, inout uint r
     }
 
     for (int i = 0; i < NUM_SAMPLES_PER_PIXEL; i++) {
-        int totalNum = nPointLights + nEmissiveTriangles;
-        int lightIdx = int(floor(nextRand(rndState) * totalNum));
+//        int totalNum = nPointLights + nEmissiveTriangles;
+//        int lightIdx = int(floor(nextRand(rndState) * totalNum));
 
+        int totalNum = nEmissiveTriangles;
+        int lightIdx = int(floor(nextRand(rndState) * totalNum)) + nPointLights;
 
         if (lightIdx < nPointLights) {
             PointLightParams params = computeLightParams(pointLights[lightIdx]);
