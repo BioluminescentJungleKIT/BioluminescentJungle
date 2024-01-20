@@ -28,6 +28,11 @@
 
 const int MAX_RECURSION = 10;
 
+struct DisplacementPushConstants {
+    glm::int32_t normalMapOnly;
+    glm::float32_t materialReflectivity;
+};
+
 static bool string_contains(std::string a, std::string b) {
     return a.find(b) != a.npos;
 }
@@ -282,6 +287,12 @@ void Scene::renderPrimitiveInstances(int meshId, int primitiveId, VkCommandBuffe
     if (descr.useNormalMap) {
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
             pipelineLayout, 3, 1, &materialSettingSets[swapchain->currentFrame], 0, nullptr);
+
+        DisplacementPushConstants pc;
+        pc.normalMapOnly = !descr.useDisplacement;
+        pc.materialReflectivity = descr.useSSR ? 1.0 : 0.0;
+        vkCmdPushConstants(commandBuffer, pipelineLayout,
+            VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(DisplacementPushConstants), &pc);
     }
 
     std::vector<VkBuffer> vertexBuffers;
@@ -489,12 +500,10 @@ void Scene::setupDescriptorSets(VkDescriptorPool descriptorPool) {
                 if (materialUsesDisplacedTexture(model.materials[i])) {
                     auto& disp = findTexture(model.materials[i].occlusionTexture.index);
                     boundTextures.push_back(vkutil::createDescriptorImageInfo(disp.imageView, disp.sampler));
-                    boundBuffers.push_back(vkutil::createDescriptorBufferInfo(constantsBuffers.buffers[0], 0, sizeof(glm::int32_t)));
                 } else {
                     // We map the normal texture as both normal texture and as the height map.
                     // Vulkan requires that we bind all textures even if we don't use them ...
                     boundTextures.push_back(boundTextures.back());
-                    boundBuffers.push_back(vkutil::createDescriptorBufferInfo(constantsBuffers.buffers[1], 0, sizeof(glm::int32_t)));
                 }
             }
         }
@@ -710,6 +719,7 @@ void Scene::setupPrimitiveDrawBuffers() {
                     } else {
                         drawCommand.instanceCount = (i == 0) ? transforms.size() : 0;
                     }
+
                     lodIndirectDrawBufferMap[std::pair(lod.mesh, j)] = buffers.size();
                     buffers.push_back({});
                     buffers.back().uploadData(device, &drawCommand, sizeof(drawCommand),
@@ -791,12 +801,6 @@ void Scene::setupStorageBuffers() {
 
 
     materialBuffer.allocate(device, sizeof(MaterialSettings), MAX_FRAMES_IN_FLIGHT);
-
-    constantsBuffers.allocate(device, sizeof(glm::int32_t), 2);
-    // Just two buffers with the constants 0 and 1, allowing us to reuse the shader ..
-    for (glm::int32_t v = 0; v < 2; v++) {
-        constantsBuffers.update(&v, sizeof(v), v);
-    }
 }
 
 std::pair<VkBuffer, size_t> Scene::getPointLights() {
@@ -807,7 +811,6 @@ void Scene::destroyBuffers() {
     for (auto buffer: buffers) buffer.destroy(device);
     butterfliesMetaBuffer.destroy(device);
     materialBuffer.destroy(device);
-    constantsBuffers.destroy(device);
 }
 
 std::tuple<std::vector<VkVertexInputAttributeDescription>, std::vector<VkVertexInputBindingDescription>>
@@ -1211,6 +1214,8 @@ void Scene::createPipelinesWithDescription(PipelineDescription descr, VkRenderPa
         throw std::runtime_error("Unsupported mesh: we require normals for all vertices!");
     }
 
+    PipelineParameters params;
+
     ensureDescriptorSetLayouts();
     std::vector<VkDescriptorSetLayout> dsLayouts{mvpLayout, meshTransformsDescriptorSetLayout};
     addAttributeAndBinding(0, 0, *descr.vertexPosAccessor);
@@ -1223,6 +1228,11 @@ void Scene::createPipelinesWithDescription(PipelineDescription descr, VkRenderPa
         if (descr.useNormalMap) {
             dsLayouts.push_back(albedoDisplacementDSLayout);
             dsLayouts.push_back(materialsSettingsLayout);
+            params.pushConstants.push_back(VkPushConstantRange{
+                .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+                .offset = 0,
+                .size = sizeof(DisplacementPushConstants),
+            });
         } else {
             dsLayouts.push_back(albedoDSLayout);
         }
@@ -1230,7 +1240,6 @@ void Scene::createPipelinesWithDescription(PipelineDescription descr, VkRenderPa
         throw std::runtime_error("Mesh primitive without color or texcoords is not supported by shaders!");
     }
 
-    PipelineParameters params;
     params.shadersList = selectShaders(descr);
     params.recompileShaders = forceRecompile;
     params.vertexAttributeDescription = attributeDescriptions;

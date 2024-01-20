@@ -20,9 +20,6 @@ layout(set = 0, binding = 0) uniform UniformBufferObject {
 layout(set = 2, binding = 0) uniform sampler2D albedo;
 layout(set = 2, binding = 1) uniform sampler2D normalMap;
 layout(set = 2, binding = 2) uniform sampler2D heightMap;
-layout(set = 2, binding = 3) uniform IsNormalMap {
-    int isNormalMapOnly;
-} isNormal;
 
 layout(set = 3, binding = 0, std140) uniform MaterialSettings {
     float heightScale;
@@ -31,6 +28,12 @@ layout(set = 3, binding = 0, std140) uniform MaterialSettings {
     int enableLinearApprox;
     int useInvertedFormat;
 } mapping;
+
+layout(push_constant) uniform constants
+{
+    int normalMapOnly;
+    float materialReflectivity;
+};
 
 void computeTangentSpace(vec3 N, out vec3 T, out vec3 B) {
     vec3 Q1 = dFdx(fsPos);
@@ -65,7 +68,7 @@ void main() {
 
     vec3 T, B;
     computeTangentSpace(N, T, B);
-    if (isNormal.isNormalMapOnly > 0 || mapping.enableInverseDisplacement == 0) {
+    if (normalMapOnly > 0 || mapping.enableInverseDisplacement == 0) {
         outColor = vec4(texture(albedo, uv).rgb, 0);
         // Convert normal to world space, because our lighting uses it
         readConvertNormal(T, B, N, uv, vec3(0));
@@ -118,7 +121,7 @@ void main() {
             vec4 finalNdcPos = ubo.proj * vec4(finalViewPos, 1.0);
             gl_FragDepth = finalNdcPos.z / finalNdcPos.w;
 
-            outColor = vec4(texture(albedo, currentPos.st).rgb, 0.0);
+            outColor = vec4(texture(albedo, currentPos.st).rgb, materialReflectivity);
             readConvertNormal(T, B, N, currentPos.st, finalViewPos - fsPos);
             return;
         } else {

@@ -232,8 +232,6 @@ public:
     MaterialSettings materialSettings;
 
     UniformBuffer materialBuffer;
-
-    UniformBuffer constantsBuffers;
     void addLoD(int meshIndex);
 
     std::unique_ptr<ComputePipeline> updateLoDsPipeline;
