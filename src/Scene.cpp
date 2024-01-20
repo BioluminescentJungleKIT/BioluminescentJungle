@@ -315,8 +315,10 @@ void Scene::renderPrimitiveInstances(int meshId, int primitiveId, VkCommandBuffe
         auto indexBufferType = VulkanHelper::gltfTypeToVkIndexType(
                 model.accessors[indexAccessorIndex].componentType);
         vkCmdBindIndexBuffer(commandBuffer, indexBuffer.buffer, indexBufferOffset, indexBufferType);
-        vkCmdDrawIndexedIndirect(commandBuffer, buffers[lodIndirectDrawBufferMap[std::pair(meshId, primitiveId)]].buffer,
-                                 0, 1, 0);
+        if (lodIndirectDrawBufferMap.count({meshId, primitiveId})) {
+            vkCmdDrawIndexedIndirect(commandBuffer,
+                buffers[lodIndirectDrawBufferMap[std::pair(meshId, primitiveId)]].buffer, 0, 1, 0);
+        }
     } else {
         throw std::runtime_error("Non-indexed geometry is currently not supported.");
     }
@@ -1276,7 +1278,9 @@ void Scene::updateBuffers(float sceneTime, glm::vec3 cameraPosition, float timeD
     butterfliesMeta.cameraPosition = cameraPosition;
     butterfliesMeta.bufferflyVolumeTriangleCount = butterflyVolume.size() / 3;
     butterfliesMeta.timeDelta = timeDelta;
-    butterfliesMetaBuffer.update(&butterfliesMeta, sizeof(ButterfliesMeta), 0);
+    if (!butterflies.empty()) {
+        butterfliesMetaBuffer.update(&butterfliesMeta, sizeof(ButterfliesMeta), 0);
+    }
 }
 
 void Scene::drawImGUIMaterialSettings() {
