@@ -26,7 +26,6 @@ vec4 fetchFrom(sampler2D smpl, ivec2 coords) {
 vec2
 sample_motion(int radius)
 {
-    return vec2(0, 0);
     float longest_square = 0;
     vec2 longest_vector = vec2(0, 0);
     for (int y = -radius; y <= radius; y++) {

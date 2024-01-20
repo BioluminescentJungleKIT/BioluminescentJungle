@@ -35,7 +35,7 @@ void main() {
     vec4 worldpos = combinedModel * vec4(inPosition, 1.0);
     vec3 worldorigin = combinedModel[3].xyz;
     gl_Position = ubo.proj * ubo.view * windDisplacement(worldpos, ubo.time, worldorigin, 1);
-    gl_Position += gl_Position.w * vec4(ubo.jitt.x, ubo.jitt.y, 0, 0);
+    gl_Position += gl_Position.w * vec4(ubo.jitt, 0, 0);
 
     currpos = gl_Position;
 
@@ -43,7 +43,7 @@ void main() {
     vec4 lastworldpos = lastCombinedModel * vec4(inPosition, 1.0);
     vec3 lastworldorigin = lastCombinedModel[3].xyz;
     lastpos = lastubo.proj * lastubo.view * windDisplacement(lastworldpos, lastubo.time, lastworldorigin, 1);
-    lastpos += lastpos.w * vec4(lastubo.jitt, 0, 0);
+    lastpos += lastpos.w * vec4(ubo.jitt, 0, 0);
 
     uv = inUV;
     normal = (transpose(inverse(ubo.modl * model.model[gl_InstanceIndex])) * vec4(inNormal, 0.0)).xyz;

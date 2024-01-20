@@ -34,6 +34,18 @@ struct CameraData{
     float zfar;
 };
 
+struct Butterfly {
+    glm::vec3 position alignas(16);
+    glm::vec3 velocity alignas(16);
+};
+
+struct alignas(16) ButterfliesMeta {
+    glm::vec3 cameraPosition;
+    float time;
+    float timeDelta;
+    int bufferflyVolumeTriangleCount;
+};
+
 struct LodUpdatePushConstants {
     glm::vec4 lodMeta;
     glm::vec3 cameraPosition;
@@ -82,6 +94,8 @@ struct PipelineDescription {
     bool operator == (const PipelineDescription& other) const {
         return toTuple() == other.toTuple();
     }
+
+    bool isButterfly{false};
 };
 
 struct MaterialSettings {
@@ -105,7 +119,7 @@ public:
     void destroyAll();
 
     void setupBuffers();
-    void updateBuffers();
+    void updateBuffers(float sceneTime, glm::vec3 cameraPosition, float timeDelta);
 
     void setupTextures();
     void destroyTextures();
@@ -187,23 +201,43 @@ public:
     std::map<LoD, int> descriptorSetsMap;
     std::map<std::pair<int, int>, int> lodComputeDescriptorSetsMap;
 
+
     std::map<std::string, int> meshNameMap;
     std::map<std::string, std::vector<LoD>> lods; // map base names to LoDs. if none exist, just use the same
     std::vector<VkDescriptorSet> bindingDescriptorSets;
     std::map<int, LoadedTexture> textures;
     std::map<int, VkDescriptorSet> materialDSet;
 
+    static const unsigned int numButterflies = 1000;
+    std::map<int, int> butterflies;  // butterfly number to mesh index
+    std::map<int, LightData> butterflyLights;
+    ModelTransform butterflyVolumeTransform;
+    int butterflyVolumeMesh{-1};
+    unsigned long butterfliesBuffer;
+    unsigned long butterflyVolumeBuffer;
+    UniformBuffer butterfliesMetaBuffer;
+    std::vector<glm::vec3> butterflyVolume;
+    VkDescriptorSetLayout updateButterfliesDescriptorSetLayout{VK_NULL_HANDLE};
+    VkDescriptorSetLayout renderButterfliesDescriptorSetLayout{VK_NULL_HANDLE};
+    VkDescriptorSet updateButterfliesDescriptorSet;
+    VkDescriptorSet renderButterfliesDescriptorSet;
+    std::unique_ptr<ComputePipeline> updateButterfliesPipeline;
+
+    std::vector<glm::vec3> computeButterflyVolumeVertices();
+
     std::vector<LightData> lights;
+
     int lightsBuffer{-1};
     std::vector<CameraData> cameras;
-
     MaterialSettings materialSettings;
-    UniformBuffer materialBuffer;
-    UniformBuffer constantsBuffers;
 
+    UniformBuffer materialBuffer;
+
+    UniformBuffer constantsBuffers;
     void addLoD(int meshIndex);
 
     std::unique_ptr<ComputePipeline> updateLoDsPipeline;
+
     std::unique_ptr<ComputePipeline> compressLoDsPipeline;
 
     void setupPrimitiveDrawBuffers();
@@ -211,6 +245,10 @@ public:
     unsigned int getNumLods();
 
     void destroyPipelines();
+
+    void setupButterfliesDescriptorSets(VkDescriptorPool descriptorPool);
+
+    std::pair<unsigned long, unsigned long> getButterflyCount(int butterflyType);
 };
 
 
