@@ -122,7 +122,7 @@ void JungleApp::drawImGUI() {
                          "Off\0Min-Max\0Moment-Based\0\0");
 
             ImGui::SliderInt("Denoiser iterations",
-                &lighting->getDenoiser()->iterationCount, 0, 5);
+                &lighting->getDenoiser()->iterationCount, 0, 20);
             ImGui::SliderFloat("Denoiser Albedo Sigma",
                 &lighting->getDenoiser()->ubo.albedoSigma, 0.001, 5.0);
             ImGui::SliderFloat("Denoiser Normal Sigma",
