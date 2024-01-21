@@ -56,7 +56,7 @@ Reservoir createEmptyReservoir() {
 
 void updateReservoirIdx(inout Reservoir r, inout uint randState, int id, float w, float pHat, vec3 pos, int i) {
     r.sumW[i] += w;
-    if (nextRand(randState) < w / r.sumW[i]) {
+    if (w > 0 && nextRand(randState) < w / r.sumW[i]) {
         r.selected[i] = id;
         r.pHat[i] = pHat;
         r.position[i] = pos;
@@ -78,9 +78,9 @@ void mergeReservoir(inout uint randState, inout Reservoir dest, Reservoir src, f
     }
 
     // Correction factor to make sure that the old samples don't outweigh the new ones too much.
-    const float f = min(maxSamplesTake, src.totalNumSamples) / src.totalNumSamples;
+    const float f = min(maxSamplesTake, src.totalNumSamples) * (1.0 / src.totalNumSamples);
     for (int i = 0; i < NUM_SAMPLES_PER_RESERVOIR; i++) {
-        if (src.selected[i] != 0) {
+        if (src.selected[i] != 0 && correctedPHats[i] > 0) {
             float w = correctedPHats[i] / src.pHat[i] * src.sumW[i] * f;
             updateReservoirIdx(dest, randState, src.selected[i], w, correctedPHats[i], src.position[i], i);
         }
