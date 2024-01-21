@@ -210,7 +210,7 @@ Reservoir fillReservoir(ivec2 pos, SurfacePoint point, float depth, inout uint r
         return r;
     }
 
-    for (int i = 0; i < NUM_SAMPLES_PER_PIXEL; i++) {
+    for (int i = 0; i < slInfo.restirInitialSamples; i++) {
 //        int totalNum = nPointLights + nEmissiveTriangles;
 //        int lightIdx = int(floor(nextRand(rndState) * totalNum));
 

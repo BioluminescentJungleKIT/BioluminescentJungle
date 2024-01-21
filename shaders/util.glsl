@@ -12,6 +12,7 @@ struct SceneLightInfo {
     float restirTemporalFactor;
     int restirSpatialRadius;
     int restirSpatialNeighbors;
+    int restirInitialSamples;
 };
 
 vec3 calculatePositionFromUV(float depth, vec2 uv, mat4 inverseVP) {
@@ -35,14 +36,14 @@ struct SurfacePoint {
 };
 
 struct PointLight {
-    vec4 position; // just xyz
+    vec4 position; // just xyz, the w is the index in the transforms buffer, if >= 0
     vec4 color; // just xyz
     vec4 intensity; // just x
     vec4 wind; // just x
 };
 
 struct EmissiveTriangle {
-    vec4 x; // just xyz
+    vec4 x; // just xyz, the w is the index in the transforms buffer, if >= 0
     vec4 y; // just xyz
     vec4 z; // just xyz
     vec4 emission;

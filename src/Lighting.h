@@ -94,6 +94,7 @@ class DeferredLighting {
     float restirSpatialFactor = 1;
     int restirSpatialRadius = 4;
     int restirSpatialNeighbors = 4;
+    int restirInitialSamples = 32;
 
     bool useRaytracingPipeline() {
         return debug.compositionMode == 0;

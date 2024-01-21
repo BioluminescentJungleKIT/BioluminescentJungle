@@ -22,6 +22,7 @@ struct LightingBuffer {
     glm::float32 restirTemporalFactor;
     glm::int32 restirSpatialRadius;
     glm::int32 restirSpatialNeighbors;
+    glm::int32 restirInitialSamples;
 };
 
 struct ComputeParamsBuffer {
@@ -522,6 +523,7 @@ void DeferredLighting::updateBuffers(glm::mat4 vp, glm::vec3 cameraPos, glm::vec
     buffer.restirTemporalFactor = restirTemporalFactor;
     buffer.restirSpatialRadius = restirSpatialRadius;
     buffer.restirSpatialNeighbors = restirSpatialNeighbors;
+    buffer.restirInitialSamples = restirInitialSamples;
     lightUBO.update(&buffer, sizeof(buffer), swapchain->currentFrame);
     denoiser.updateBuffers();
 }
