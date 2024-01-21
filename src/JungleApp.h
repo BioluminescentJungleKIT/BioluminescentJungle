@@ -145,6 +145,7 @@ private:
     bool playMusic;
     uint32_t jitterSequence = 0;
     bool doJitter = true;
+    bool doMotion = true;
 };
 
 
