@@ -29,8 +29,8 @@
 const int MAX_RECURSION = 10;
 
 struct DisplacementPushConstants {
-    glm::int32_t normalMapOnly;
-    glm::float32_t materialReflectivity;
+    glm::int32_t normalMapOnly alignas(4);
+    glm::float32_t materialReflectivity alignas(4);
 };
 
 static bool string_contains(std::string a, std::string b) {
@@ -290,7 +290,7 @@ void Scene::renderPrimitiveInstances(int meshId, int primitiveId, VkCommandBuffe
 
         DisplacementPushConstants pc;
         pc.normalMapOnly = !descr.useDisplacement;
-        pc.materialReflectivity = descr.useSSR ? 1.0 : 0.0;
+        pc.materialReflectivity = descr.useSSR;
         vkCmdPushConstants(commandBuffer, pipelineLayout,
             VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(DisplacementPushConstants), &pc);
     }

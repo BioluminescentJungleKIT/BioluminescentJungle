@@ -29,7 +29,7 @@ layout(set = 3, binding = 0, std140) uniform MaterialSettings {
     int useInvertedFormat;
 } mapping;
 
-layout(push_constant) uniform constants
+layout(push_constant, std430) uniform constants
 {
     int normalMapOnly;
     float materialReflectivity;
@@ -69,7 +69,7 @@ void main() {
     vec3 T, B;
     computeTangentSpace(N, T, B);
     if (normalMapOnly > 0 || mapping.enableInverseDisplacement == 0) {
-        outColor = vec4(texture(albedo, uv).rgb, 0);
+        outColor = vec4(texture(albedo, uv).rgb, materialReflectivity);
         // Convert normal to world space, because our lighting uses it
         readConvertNormal(T, B, N, uv, vec3(0));
         gl_FragDepth = fsPosClipSpace.z / fsPosClipSpace.w;
