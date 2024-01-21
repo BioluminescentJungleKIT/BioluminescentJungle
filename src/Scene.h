@@ -25,6 +25,7 @@ struct LightData {
     glm::vec3 color alignas(16);
     glm::float32 intensity alignas(16);
     glm::float32 wind alignas(16);
+    glm::vec3 velocity alignas(16);
 };
 struct CameraData{
     std::string name;
@@ -32,11 +33,6 @@ struct CameraData{
     float yfov;
     float znear;
     float zfar;
-};
-
-struct Butterfly {
-    glm::vec3 position alignas(16);
-    glm::vec3 velocity alignas(16);
 };
 
 struct alignas(16) ButterfliesMeta {
@@ -132,7 +128,15 @@ public:
     std::tuple<std::vector<VkVertexInputAttributeDescription>, std::vector<VkVertexInputBindingDescription>>
     getLightsAttributeAndBindingDescriptions();
 
-    std::pair<VkBuffer, size_t> getPointLights();
+    struct PointLightCount {
+        VkBuffer buffer;
+        // Number of butterflies: they are actually used for ReSTIR lighting
+        size_t butterflies;
+        // Total amount of point lights, including ones for approximation of fog scattering
+        size_t totalPointLights;
+    };
+
+    PointLightCount getPointLights();
 
     RequiredDescriptors getNumDescriptors();
 
@@ -213,7 +217,6 @@ public:
     std::map<int, LightData> butterflyLights;
     ModelTransform butterflyVolumeTransform;
     int butterflyVolumeMesh{-1};
-    unsigned long butterfliesBuffer;
     unsigned long butterflyVolumeBuffer;
     UniformBuffer butterfliesMetaBuffer;
     std::vector<glm::vec3> butterflyVolume;

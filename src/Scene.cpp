@@ -541,9 +541,9 @@ void Scene::setupButterfliesDescriptorSets(VkDescriptorPool descriptorPool) {
     butterfliesMetaBufferInfo.range = sizeof(ButterfliesMeta);
 
     VkDescriptorBufferInfo butterfliesBufferInfo{};
-    butterfliesBufferInfo.buffer = buffers[butterfliesBuffer].buffer;
+    butterfliesBufferInfo.buffer = buffers[lightsBuffer].buffer;
     butterfliesBufferInfo.offset = 0;
-    butterfliesBufferInfo.range = sizeof(Butterfly) * numButterflies;
+    butterfliesBufferInfo.range = sizeof(LightData) * numButterflies;
 
     VkDescriptorBufferInfo butterflyVolumeBufferInfo{};
     butterflyVolumeBufferInfo.buffer = buffers[butterflyVolumeBuffer].buffer;
@@ -672,10 +672,11 @@ void Scene::generateTransforms(int nodeIndex, glm::mat4 oldTransform, int maxRec
             float wind = name.find("WIND") != name.npos;
             if (name.starts_with("BUTTERFLYLIGHT_")) {
                 butterflyLights[stoi(name.substr(15))] = {
-                        glm::make_vec3(newTransform[3]),
+                        glm::vec3(0.0f),
                         light_color,
                         light_intensity,
-                        wind
+                        wind,
+                        glm::vec3(0.0f),
                 };
             } else {
                 lights.push_back({glm::make_vec3(newTransform[3]), light_color, light_intensity, wind});
@@ -778,18 +779,18 @@ void Scene::setupStorageBuffers() {
             }
         }
     }
-    if (lights.size() > 0) {
-        lightsBuffer = buffers.size();
-        buffers.push_back({});
-        buffers.back().uploadData(device, lights,
-            VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
-    }
+
+    std::vector<LightData> allLights;
+
+
     if (butterflies.size() > 0 && butterflyVolumeMesh >= 0) {
-        butterfliesBuffer = buffers.size();
-        buffers.push_back({});
-        buffers.back().createEmpty(device, sizeof(Butterfly) * numButterflies,
-                                   VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                                   VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+        for (auto& [butterflyType, butterflyIdx] : butterflies) {
+            size_t count = getButterflyCount(butterflyType).second;
+            for (size_t i = 0; i < count; i++) {
+                allLights.push_back(butterflyLights[butterflyType]);
+            }
+        }
+
         butterflyVolume = computeButterflyVolumeVertices();
         butterflyVolumeBuffer = buffers.size();
         buffers.push_back({});
@@ -799,12 +800,23 @@ void Scene::setupStorageBuffers() {
         butterfliesMetaBuffer.allocate(device, sizeof(ButterfliesMeta), 1);
     }
 
+    if (lights.size() > 0) {
+        std::copy(lights.begin(), lights.end(), std::back_inserter(allLights));
+    }
+
+    if (allLights.size() > 0) {
+        lights = std::move(allLights);
+        lightsBuffer = buffers.size();
+        buffers.push_back({});
+        buffers.back().uploadData(device, lights,
+            VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+    }
 
     materialBuffer.allocate(device, sizeof(MaterialSettings), MAX_FRAMES_IN_FLIGHT);
 }
 
-std::pair<VkBuffer, size_t> Scene::getPointLights() {
-    return {buffers[lightsBuffer].buffer, lights.size()};
+Scene::PointLightCount Scene::getPointLights() {
+    return {buffers[lightsBuffer].buffer, numButterflies, lights.size()};
 }
 
 void Scene::destroyBuffers() {

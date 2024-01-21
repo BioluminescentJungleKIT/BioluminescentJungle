@@ -1,9 +1,6 @@
 #version 450
 
-struct Butterfly {
-    vec3 position;
-    vec3 velocity;
-};
+#include "util.glsl"
 
 layout(set = 0, binding = 0) uniform UniformBufferObject {
     mat4 modl;  // global
@@ -23,7 +20,7 @@ layout(set = 0, binding = 1) uniform UniformBufferObject2 {
 
 layout(set = 1, binding = 0) buffer Bufferflies
 {
-    Butterfly utterflies[];
+    PointLight utterflies[];
 } b;
 
 layout(location = 0) in vec3 inPosition;
@@ -35,12 +32,12 @@ layout(location = 1) out vec3 normal;
 layout(location = 2) out vec4 currpos;
 layout(location = 3) out vec4 lastpos;
 
-mat4 computeModel(Butterfly butterfly, float timeDelta) {
+mat4 computeModel(PointLight butterfly, float timeDelta) {
     mat4 model;
 
-    vec3 p = butterfly.position - butterfly.velocity * timeDelta;
+    vec3 p = butterfly.position.xyz - butterfly.velocity.xyz * timeDelta;
 
-    vec3 f = normalize(butterfly.velocity);  // forward
+    vec3 f = normalize(butterfly.velocity.xyz);  // forward
     vec3 s = normalize(cross(vec3(0, 0, 1), f)); // up x forward = sideways
     vec3 u  = cross(f, s); // forward x sideways = up
 

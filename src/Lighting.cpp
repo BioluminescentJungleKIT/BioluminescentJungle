@@ -430,12 +430,12 @@ void DeferredLighting::setupBarriers(const RenderTarget& gBuffer) {
 }
 
 void DeferredLighting::updateDescriptors(const RenderTarget& gBuffer, Scene *scene) {
-    auto [pointLights, pointLightsNum] = scene->getPointLights();
+    auto [pointLights, butterflyNum, pointLightsNum] = scene->getPointLights();
     auto pointLightsBuffer =
-        vkutil::createDescriptorBufferInfo(pointLights, 0, pointLightsNum * sizeof(LightData));
+        vkutil::createDescriptorBufferInfo(pointLights, 0, butterflyNum * sizeof(LightData));
 
     ComputeParamsBuffer computeParams;
-    computeParams.nPointLights = pointLightsNum;
+    computeParams.nPointLights = butterflyNum;
     computeParams.nTriangles = bvh->getNTriangles();
     computeParams.nEmissiveTriangles = emissiveTriangles.size / sizeof(BVH::Triangle);
     std::cout << "Got " << computeParams.nEmissiveTriangles << " triangles " << std::endl;
@@ -567,11 +567,11 @@ void DeferredLighting::setupRenderTarget() {
 
 void DeferredLighting::updateReservoirs() {
     struct Reservoir {
-        glm::int32 selected[NUM_SAMPLES_PER_RESERVOIR];
-        glm::vec4 positions[NUM_SAMPLES_PER_RESERVOIR];
-        glm::float32 sumW[NUM_SAMPLES_PER_RESERVOIR];
-        glm::float32 pHat[NUM_SAMPLES_PER_RESERVOIR];
-        glm::int32 totalNumSamples;
+        alignas(16) glm::int32 selected[NUM_SAMPLES_PER_RESERVOIR];
+        alignas(16) glm::vec4 positions[NUM_SAMPLES_PER_RESERVOIR];
+        alignas(16) glm::float32 sumW[NUM_SAMPLES_PER_RESERVOIR];
+        alignas(16) glm::float32 pHat[NUM_SAMPLES_PER_RESERVOIR];
+        alignas(16) glm::int32 totalNumSamples;
     };
 
     size_t numReservoirs = swapchain->renderSize().width * swapchain->renderSize().height;
