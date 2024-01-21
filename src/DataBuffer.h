@@ -21,7 +21,10 @@ class DataBuffer {
     void uploadData(VulkanDevice* device, const std::vector<T>& data,
         VkBufferUsageFlags usage, VkMemoryPropertyFlags properties = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)
     {
-        uploadData(device, (void*)data.data(), sizeof(T) * data.size(), usage, properties);
+        if (data.size() > 0)
+        {
+            uploadData(device, (void*)data.data(), sizeof(T) * data.size(), usage, properties);
+        }
     }
 
     VkDescriptorBufferInfo& getDescriptor() {
