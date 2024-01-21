@@ -123,7 +123,7 @@ class BVH {
     std::vector<Triangle> triangles;
     std::vector<glm::vec3> cachedMin;
     std::vector<glm::vec3> cachedMax;
-    std::vector<int> orderByMid[3];
+    std::vector<float> midPoints[3];
 
     std::vector<BVHNode> bvh;
 
@@ -141,39 +141,39 @@ class BVH {
         // This way, we can parallelize the construction of each level of the BVH.
 
         struct BVHPartialNode {
-            iter start;
-            iter end;
-            int curNodeIdx;
+            int32_t start;
+            int32_t end;
+            int32_t curNodeIdx;
         };
 
-        std::vector<BVHPartialNode> splitsSoFar = {{fst, lst, 0}};
+        std::vector<BVHPartialNode> splitsSoFar = {{0, (int)triangles.size(), 0}};
         int depth = 0;
 
         while (!splitsSoFar.empty()) {
-            std::vector<iter> middles(splitsSoFar.size());
+            std::vector<int32_t> middles(splitsSoFar.size());
 
             // Compute splits with a parallel for
             #pragma omp parallel for
             for (size_t i = 0; i < splitsSoFar.size(); i++) {
-                iter start = splitsSoFar[i].start;
-                iter end = splitsSoFar[i].end;
+                iter start = triIndices.begin() + splitsSoFar[i].start;
+                iter end = triIndices.begin() + splitsSoFar[i].end;
                 if (end - start <= 1) {
                     setLeaf(splitsSoFar[i].curNodeIdx, *start);
                 } else {
-                    middles[i] = selectBVHSplit(start, end, depth);
+                    middles[i] = selectBVHSplit(start, end, depth) - triIndices.begin();
                 }
             }
 
             // Update the BVH single-threadedly
             std::vector<BVHPartialNode> nextSplits;
             for (size_t i = 0; i < splitsSoFar.size(); i++) {
-                iter start = splitsSoFar[i].start;
-                iter end = splitsSoFar[i].end;
+                iter start = triIndices.begin() + splitsSoFar[i].start;
+                iter end = triIndices.begin() + splitsSoFar[i].end;
                 if (end - start > 1) {
                     auto [leftIdx, rightIdx] = doSplit(splitsSoFar[i].curNodeIdx);
-                    iter mid = middles[i];
-                    nextSplits.push_back({start, mid, leftIdx});
-                    nextSplits.push_back({mid, end, rightIdx});
+                    iter mid = triIndices.begin() + middles[i];
+                    nextSplits.push_back({splitsSoFar[i].start, middles[i], leftIdx});
+                    nextSplits.push_back({middles[i], splitsSoFar[i].end, rightIdx});
                 }
             }
 
@@ -187,24 +187,16 @@ class BVH {
     void cachePrecompute() {
         this->cachedMin.resize(triangles.size());
         this->cachedMax.resize(triangles.size());
+        for (int component = 0; component < 3; component++) {
+            midPoints[component].resize(triangles.size());
+        }
+
+#pragma omp parallel for
         for (size_t i = 0; i < triangles.size(); i++) {
             cachedMin[i] = glm::min(glm::min(triangles[i].x, triangles[i].y), triangles[i].z);
             cachedMax[i] = glm::max(glm::max(triangles[i].x, triangles[i].y), triangles[i].z);
-        }
-
-        // precompute sorting
-#pragma omp parallel for
-        for (int component = 0; component < 3; component++) {
-            std::vector<int> triIndices(triangles.size());
-            std::iota(triIndices.begin(), triIndices.end(), 0);
-
-            this->orderByMid[component].resize(triangles.size());
-            std::sort(triIndices.begin(), triIndices.end(), [&] (int a, int b) {
-                return midpoint(triangles[a], component) < midpoint(triangles[b], component);
-            });
-
-            for (size_t i = 0; i < triangles.size(); i++) {
-                orderByMid[component][triIndices[i]] = i;
+            for (int component = 0; component < 3; component++) {
+                midPoints[component][i] = midpoint(triangles[i], component);
             }
         }
     }
@@ -213,7 +205,7 @@ class BVH {
         cachedMin.clear();
         cachedMax.clear();
         for (int component = 0; component < 3; component++) {
-            this->orderByMid[component].clear();
+            this->midPoints[component].clear();
         }
     }
 
@@ -241,7 +233,7 @@ class BVH {
 
         // Sort based on x, y, z
         std::sort(fst, lst, [&] (int a, int b) {
-            return orderByMid[sortBy][a] < orderByMid[sortBy][b];
+            return midPoints[sortBy][a] < midPoints[sortBy][b];
         });
         // Split in the middle
         auto split = fst + size / 2;
