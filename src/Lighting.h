@@ -81,7 +81,7 @@ class DeferredLighting {
     void setupBuffers();
     void updateBuffers(glm::mat4 VP, glm::vec3 cameraPos, glm::vec3 cameraUp);
 
-    float lightRadiusLog = 0.5;
+    float lightRadiusLog = 0;
     DebugOptions debug;
 
     RequiredDescriptors getNumDescriptors();

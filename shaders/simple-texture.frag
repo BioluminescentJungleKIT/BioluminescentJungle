@@ -16,9 +16,9 @@ float rand(vec2 co){
 }
 
 void main() {
+    float random = rand(uv * 10000 + gl_FragCoord.xy);
     vec4 color = texture(texSampler, uv);
-    // alpha hashing
-    if ( color.a <= rand(uv * 10000 + gl_FragCoord.xy) ) discard;
+    if (color.a < 0.05 || (color.a < 0.95 && color.a <= random)) discard;
     outColor = vec4(color.rgb, 0.0);
     outNormal = vec4(normalize(normal), 0.0);
     outMotion = (lastpos/lastpos.w - currpos/currpos.w).xy;
