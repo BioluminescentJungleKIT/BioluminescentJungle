@@ -40,8 +40,8 @@ PointLightParams getPointLight(int idx) {
     return computeLightParams(pointLights[idx]);
 }
 
-void getEmissiveTriangle(int idx, out vec3 emission, out vec3 N, out float area) {
-    getEmissiveTriangleParams(emissiveTris[idx], emission, N, area);
+void getEmissiveTriangle(int idx, out float intensity, out vec3 N, out float area) {
+    getEmissiveTriangleParams(emissiveTris[idx], intensity, N, area);
 }
 
 Reservoir spatialReuse(ivec2 pos, int rIdx, SurfacePoint point, float ourD) {
@@ -96,22 +96,18 @@ void main() {
         if (sel != 0) {
             float f = evalFogAbsorption(point, slInfo);
 
-            vec3 intensity;
+            vec3 color;
             if (sel > 0) {
-                intensity = computeLightParams(pointLights[sel-1]).intensity;
+                color = computeLightParams(pointLights[sel-1]).color;
             } else {
-                vec3 tmp;
-                float area;
-                getEmissiveTriangle(-sel-1, intensity, tmp, area);
-                //intensity *= area;
-                //f *= evalEmittingPoint(point, r.position[i], intensity, tmp);
+                color = emissiveTris[-sel-1].emission.rgb;
             }
 
             // Equation (6) from the ReSTIR paper:
             // L_ris = f / pHat * (1/M) * sum w[i]
             // Here, pHat = f, so they cancel out
             float W = 1.0 / (r.totalNumSamples) * r.sumW[i];
-            finalColor += W * f * intensity;
+            finalColor += W * f * color;
         }
     }
 

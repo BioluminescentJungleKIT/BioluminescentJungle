@@ -50,7 +50,8 @@ void main() {
 
         PointLightParams light;
         light.pos = fPosition;
-        light.intensity = fIntensity;
+        light.color = fIntensity;
+        light.intensity = 1.0; // intensity already multiplied in color
         light.r = debug.radius;
 
         if (debug.compositionMode == 7) { // legacy rendering, point lights only

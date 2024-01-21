@@ -97,8 +97,8 @@ float sum3(vec3 x) {
     return x.x + x.y + x.z;
 }
 
-void getEmissiveTriangleParams(EmissiveTriangle tri, out vec3 emission, out vec3 N, out float area) {
-    emission = tri.emission.rgb * tri.emission.w;
+void getEmissiveTriangleParams(EmissiveTriangle tri, out float intensity, out vec3 N, out float area) {
+    intensity = tri.emission.w;
     vec3 p1 = tri.x.xyz;
     vec3 p2 = tri.y.xyz;
     vec3 p3 = tri.z.xyz;
@@ -110,16 +110,16 @@ void getEmissiveTriangleParams(EmissiveTriangle tri, out vec3 emission, out vec3
 // The following few functions are declared / duplicated in the respective shaders because it seems I can't declare the SSBOs in the included file,
 // and I cannot pass a variable length array as a parameter. https://github.com/KhronosGroup/GLSL/issues/142
 PointLightParams getPointLight(int idx);
-void getEmissiveTriangle(int idx, out vec3 emission, out vec3 N, out float area);
+void getEmissiveTriangle(int idx, out float intensity, out vec3 N, out float area);
 
 void calculatePHats(Reservoir r, SurfacePoint point, out float pHats[NUM_SAMPLES_PER_RESERVOIR]) {
     for (int i = 0; i < NUM_SAMPLES_PER_RESERVOIR; i++) {
         int sel = r.selected[i];
         if (sel < 0) {
-            vec3 N, emission;
-            float area;
-            getEmissiveTriangle(-sel-1, emission, N, area);
-            pHats[i] = evalEmittingPoint(point, r.position[i], emission, N);
+            vec3 N;
+            float intensity, area;
+            getEmissiveTriangle(-sel-1, intensity, N, area);
+            pHats[i] = evalEmittingPoint(point, r.position[i], N) * intensity;
         } else if (sel > 0) {
             pHats[i] = evalPointLightStrength(point, getPointLight(sel-1));
         } else {
