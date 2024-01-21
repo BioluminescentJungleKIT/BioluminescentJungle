@@ -5,6 +5,8 @@
 #include <shaderc/shaderc.hpp>
 #include <fstream>
 #include <stdexcept>
+#include <set>
+#include <iostream>
 
 static std::vector<char> readFile(const std::string &filename) {
     std::ifstream file(filename, std::ios::ate | std::ios::binary);
@@ -45,6 +47,7 @@ class GlslIncluder : public shaderc::CompileOptions::IncluderInterface {
         auto result = new CustomData;
         result->file = filePath;
         result->content = readFile(filePath);
+        outDeps->insert(filePath);
         return customDataToShaderCResult(result);
     }
 
@@ -56,12 +59,17 @@ class GlslIncluder : public shaderc::CompileOptions::IncluderInterface {
         delete data;
     }
 
+    GlslIncluder(std::set<std::string> *outDeps) {
+        this->outDeps = outDeps;
+    }
+
   private:
     struct CustomData {
         std::vector<char> content;
         std::string file;
     };
 
+    std::set<std::string> *outDeps;
     shaderc_include_result *customDataToShaderCResult(CustomData *result)
     {
         shaderc_include_result *shaderc_result = new shaderc_include_result;
