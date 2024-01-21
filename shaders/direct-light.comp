@@ -241,18 +241,17 @@ Reservoir fillReservoir(ivec2 pos, SurfacePoint point, float depth, inout uint r
     // Test visibility and reject samples if that is the case.
     // No need to waste time with them, we hope to get more samples with Spatial and Temporal reuse.
     for (int i = 0; i < NUM_SAMPLES_PER_RESERVOIR; i++) {
+        float p = 0.0;
         if (r.selected[i] < 0) {
             vec3 emitterN, emission;
             float area;
             getEmissiveTriangle(-r.selected[i]-1, emission, emitterN, area);
-            float p = 1.0 / (area * totalNum);
-            if (r.pHat[i] * p < 1e-3) {
-                r.selected[i] = 0;
-                r.pHat[i] = 0;
-            }
+            p = 1.0 / (area * totalNum);
+        } else if (r.selected[i] > 0) {
+            p = 1.0 / totalNum;
         }
 
-        if (r.selected[i] != 0 && testShadowAABB(point, r.position[i])) {
+        if (r.pHat[i] * p >= 1e-2 && testShadowAABB(point, r.position[i])) {
             // Lies in shadow => ignore
             r.selected[i] = 0;
             r.pHat[i] = 0;
