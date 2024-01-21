@@ -12,6 +12,8 @@ find_package(Vulkan REQUIRED)
 find_package(glfw3 REQUIRED)
 pkg_check_modules(ShaderC REQUIRED shaderc)
 
+find_package(OpenMP)
+
 #add_compile_options(-fsanitize=address)
 #add_link_options(-fsanitize=address)
 
@@ -57,7 +59,7 @@ add_executable(Jungle src/main.cpp
 )
 
 target_include_directories(Jungle PRIVATE lib/imgui lib/imgui/backends lib/imgui/misc/cpp/)
-target_link_libraries(Jungle ${ShaderC_LIBRARIES} glfw Vulkan::Vulkan tinygltf PortAudio)
+target_link_libraries(Jungle ${ShaderC_LIBRARIES} glfw Vulkan::Vulkan tinygltf PortAudio OpenMP::OpenMP_CXX)
 target_include_directories(Jungle PUBLIC ${ShaderC_INCLUDE_DIRS})
 target_compile_options(Jungle PUBLIC ${ShaderC_CFLAGS_OTHER})
 target_link_options(Jungle PRIVATE "${ShaderC_LDFLAGS}")

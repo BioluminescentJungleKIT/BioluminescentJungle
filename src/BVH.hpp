@@ -70,18 +70,13 @@ class BVH {
         auto startTS = std::chrono::system_clock::now();
 
         this->triangles = extractTriangles<Triangle>(scene);
-        int bvhDepth = constructBVH();
-        //std::cout << "Got triangles from the model: " << triangles.size() << std::endl;
-        //for (size_t i = 0; i < triangles.size(); i++) {
-        //    std::cout << "idx=" << i << ": "
-        //        << triangles[i].x << " " << triangles[i].y << " " << triangles[i].z << std::endl;
-        //}
 
-        //std::cout << "BVH has " << bvh.size() << std::endl;
-        //for (size_t i = 0; i < bvh.size(); i++) {
-        //    std::cout << "idx=" << i << ": " << bvh[i].low << " " << bvh[i].high <<
-        //        " " << bvh[i].left << " " << bvh[i].right << std::endl;
-        //}
+        cachePrecompute();
+        int bvhDepth = constructBVH();
+
+        // Free memory for augmented triangles.
+        // We don't need them anymore so no point in keeping them in memory.
+        freeCached();
 
         auto endTS = std::chrono::system_clock::now();
         std::cout << "Finished building BVH (tris=" << triangles.size() << ", maxdepth=" << bvhDepth
@@ -114,8 +109,8 @@ class BVH {
     DataBuffer bvhBuffer;
     DataBuffer triangleBuffer;
 
-    static inline glm::vec3 midpoint(const Triangle& tri) {
-        return (tri.x + tri.y + tri.z) / 3.0f;
+    static inline float midpoint(const Triangle& tri, int component) {
+        return (tri.x[component] + tri.y[component] + tri.z[component]) / 3.0f;
     }
 
     // TODO: currently, this BVH construction is extremely simple.
@@ -126,37 +121,109 @@ class BVH {
     // size, and if we have some room to tweak the BVH, we can use a different and better strategy.
 
     std::vector<Triangle> triangles;
+    std::vector<glm::vec3> cachedMin;
+    std::vector<glm::vec3> cachedMax;
+    std::vector<int> orderByMid[3];
+
     std::vector<BVHNode> bvh;
 
     int constructBVH() {
         bvh.push_back({});
         std::vector<int> triIndices(triangles.size());
         std::iota(triIndices.begin(), triIndices.end(), 0);
-        return constructBVHRec(triIndices.begin(), triIndices.end(), 0, 0);
+
+        auto fst = triIndices.begin();
+        auto lst = triIndices.end();
+
+        // Iterative splitting so that we can use parallelization
+        // The idea is this: we have a list of ranges, that are iteratively splitted.
+        // We do a BFS of the BVH.
+        // This way, we can parallelize the construction of each level of the BVH.
+
+        struct BVHPartialNode {
+            iter start;
+            iter end;
+            int curNodeIdx;
+        };
+
+        std::vector<BVHPartialNode> splitsSoFar = {{fst, lst, 0}};
+        int depth = 0;
+
+        while (!splitsSoFar.empty()) {
+            std::vector<iter> middles(splitsSoFar.size());
+
+            // Compute splits with a parallel for
+            #pragma omp parallel for
+            for (size_t i = 0; i < splitsSoFar.size(); i++) {
+                iter start = splitsSoFar[i].start;
+                iter end = splitsSoFar[i].end;
+                if (end - start <= 1) {
+                    setLeaf(splitsSoFar[i].curNodeIdx, *start);
+                } else {
+                    middles[i] = selectBVHSplit(start, end, depth);
+                }
+            }
+
+            // Update the BVH single-threadedly
+            std::vector<BVHPartialNode> nextSplits;
+            for (size_t i = 0; i < splitsSoFar.size(); i++) {
+                iter start = splitsSoFar[i].start;
+                iter end = splitsSoFar[i].end;
+                if (end - start > 1) {
+                    auto [leftIdx, rightIdx] = doSplit(splitsSoFar[i].curNodeIdx);
+                    iter mid = middles[i];
+                    nextSplits.push_back({start, mid, leftIdx});
+                    nextSplits.push_back({mid, end, rightIdx});
+                }
+            }
+
+            depth++;
+            splitsSoFar = std::move(nextSplits);
+        }
+
+        return computeBVH_AABB(0);
+    }
+
+    void cachePrecompute() {
+        this->cachedMin.resize(triangles.size());
+        this->cachedMax.resize(triangles.size());
+        for (size_t i = 0; i < triangles.size(); i++) {
+            cachedMin[i] = glm::min(glm::min(triangles[i].x, triangles[i].y), triangles[i].z);
+            cachedMax[i] = glm::max(glm::max(triangles[i].x, triangles[i].y), triangles[i].z);
+        }
+
+        // precompute sorting
+#pragma omp parallel for
+        for (int component = 0; component < 3; component++) {
+            std::vector<int> triIndices(triangles.size());
+            std::iota(triIndices.begin(), triIndices.end(), 0);
+
+            this->orderByMid[component].resize(triangles.size());
+            std::sort(triIndices.begin(), triIndices.end(), [&] (int a, int b) {
+                return midpoint(triangles[a], component) < midpoint(triangles[b], component);
+            });
+
+            for (size_t i = 0; i < triangles.size(); i++) {
+                orderByMid[component][triIndices[i]] = i;
+            }
+        }
+    }
+
+    void freeCached() {
+        cachedMin.clear();
+        cachedMax.clear();
+        for (int component = 0; component < 3; component++) {
+            this->orderByMid[component].clear();
+        }
     }
 
     using iter = std::vector<int>::iterator;
-    int constructBVHRec(iter fst, iter lst, int curNodeIdx, int depth)
-    {
-        const size_t size = lst - fst;
-        // Leaf
-        if (size == 1) {
-            bvh[curNodeIdx].left = -*fst;
 
-            auto& tri = triangles[*fst];
-            bvh[curNodeIdx].low = glm::min(glm::min(tri.x, tri.y), tri.z);
-            bvh[curNodeIdx].high = glm::max(glm::max(tri.x, tri.y), tri.z);
-            return depth;
-        }
-
+    iter selectBVHSplit(iter fst, iter lst, int depth) {
+        const int size = lst - fst;
         const auto& updateBBox = [this] (glm::vec3& cmin, glm::vec3& cmax, int triIdx) {
-            cmin = glm::min(cmin, triangles[triIdx].x);
-            cmin = glm::min(cmin, triangles[triIdx].y);
-            cmin = glm::min(cmin, triangles[triIdx].y);
-
-            cmax = glm::max(cmax, triangles[triIdx].x);
-            cmax = glm::max(cmax, triangles[triIdx].y);
-            cmax = glm::max(cmax, triangles[triIdx].y);
+            cmin = glm::min(cmin, cachedMin[triIdx]);
+            cmax = glm::max(cmax, cachedMax[triIdx]);
         };
 
         static constexpr glm::vec3 MIN = glm::vec3(-1e9, -1e9, -1e9);
@@ -174,24 +241,8 @@ class BVH {
 
         // Sort based on x, y, z
         std::sort(fst, lst, [&] (int a, int b) {
-            switch (sortBy) {
-              case 0:
-                return midpoint(triangles[a]).x < midpoint(triangles[b]).x;
-              case 1:
-                return midpoint(triangles[a]).y < midpoint(triangles[b]).y;
-              case 2:
-                return midpoint(triangles[a]).z < midpoint(triangles[b]).z;
-            }
-            assert(false);
+            return orderByMid[sortBy][a] < orderByMid[sortBy][b];
         });
-
-        int leftIdx = bvh.size();
-        bvh.push_back({});
-        int rightIdx = bvh.size();
-        bvh.push_back({});
-        bvh[curNodeIdx].left = leftIdx;
-        bvh[curNodeIdx].right = rightIdx;
-
         // Split in the middle
         auto split = fst + size / 2;
 
@@ -240,11 +291,35 @@ class BVH {
             }
         }
 
-        int depthL = constructBVHRec(fst, split, leftIdx, depth + 1);
-        int depthR = constructBVHRec(split, lst, rightIdx, depth + 1);
-        bvh[curNodeIdx].low = glm::min(bvh[leftIdx].low, bvh[rightIdx].low);
-        bvh[curNodeIdx].high = glm::max(bvh[leftIdx].high, bvh[rightIdx].high);
-        return std::max(depthL, depthR);
+        return split;
+    }
+
+    std::pair<int, int> doSplit(int cur) {
+        int leftIdx = bvh.size();
+        bvh.push_back({});
+        int rightIdx = bvh.size();
+        bvh.push_back({});
+        bvh[cur].left = leftIdx;
+        bvh[cur].right = rightIdx;
+        return {leftIdx, rightIdx};
+    }
+
+    void setLeaf(int curNodeIdx, int triIdx) {
+        bvh[curNodeIdx].left = -triIdx;
+        bvh[curNodeIdx].low = cachedMin[triIdx];
+        bvh[curNodeIdx].high = cachedMax[triIdx];
+    }
+
+    int computeBVH_AABB(int cur) {
+        int left = bvh[cur].left;
+        int right = bvh[cur].right;
+        if (left <= 0) return 0;
+
+        int depthL = computeBVH_AABB(left);
+        int depthR = computeBVH_AABB(right);
+        bvh[cur].low = glm::min(bvh[left].low, bvh[right].low);
+        bvh[cur].high = glm::max(bvh[left].high, bvh[right].high);
+        return std::max(depthL, depthR) + 1;
     }
 
   public:
@@ -315,7 +390,7 @@ class BVH {
                         return indexArray[idx];
                     }
 
-                    assert(false);
+                    throw std::runtime_error("Invalid component type");
                 };
 
 
