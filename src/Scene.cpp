@@ -164,8 +164,12 @@ Scene::Scene(VulkanDevice *device, Swapchain *swapchain, std::string filename) {
     }
 }
 
+bool Scene::useButterflies() {
+    return butterflies.size() > 0 && butterflyVolumeMesh >= 0;
+}
+
 void Scene::recordCommandBufferCompute(VkCommandBuffer commandBuffer, glm::vec3 cameraPosition) {
-    if (butterflies.size() > 0 && butterflyVolumeMesh >= 0) {
+    if (useButterflies()) {
         // update butterflies
         vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, updateButterfliesPipeline->pipeline);
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, updateButterfliesPipeline->layout,
@@ -353,7 +357,7 @@ void Scene::setupDescriptorSets(VkDescriptorPool descriptorPool) {
     compressLoDsDescriptorSets = VulkanHelper::createDescriptorSetsFromLayout(
             *device, descriptorPool, lodCompressDescriptorSetLayout, getNumLods());
 
-    if (butterflies.size() > 0 && butterflyVolumeMesh >= 0) {
+    if (useButterflies()) {
         setupButterfliesDescriptorSets(descriptorPool);
     }
 
@@ -783,7 +787,7 @@ void Scene::setupStorageBuffers() {
     std::vector<LightData> allLights;
 
 
-    if (butterflies.size() > 0 && butterflyVolumeMesh >= 0) {
+    if (useButterflies()) {
         for (auto& [butterflyType, butterflyIdx] : butterflies) {
             size_t count = getButterflyCount(butterflyType).second;
             for (size_t i = 0; i < count; i++) {
@@ -816,7 +820,7 @@ void Scene::setupStorageBuffers() {
 }
 
 Scene::PointLightCount Scene::getPointLights() {
-    return {buffers[lightsBuffer].buffer, numButterflies, lights.size()};
+    return {buffers[lightsBuffer].buffer, useButterflies() ? numButterflies : 0, lights.size()};
 }
 
 void Scene::destroyBuffers() {

@@ -431,8 +431,10 @@ void DeferredLighting::setupBarriers(const RenderTarget& gBuffer) {
 
 void DeferredLighting::updateDescriptors(const RenderTarget& gBuffer, Scene *scene) {
     auto [pointLights, butterflyNum, pointLightsNum] = scene->getPointLights();
+    // We lie that we have at least 1 butterfly even if we won't use it because otherwise vulkan complains
+    // that we cannot have a range of 0
     auto pointLightsBuffer =
-        vkutil::createDescriptorBufferInfo(pointLights, 0, butterflyNum * sizeof(LightData));
+        vkutil::createDescriptorBufferInfo(pointLights, 0, std::max(1, (int)butterflyNum) * sizeof(LightData));
 
     ComputeParamsBuffer computeParams;
     computeParams.nPointLights = butterflyNum;

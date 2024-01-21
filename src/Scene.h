@@ -250,6 +250,7 @@ public:
     void setupButterfliesDescriptorSets(VkDescriptorPool descriptorPool);
 
     std::pair<unsigned long, unsigned long> getButterflyCount(int butterflyType);
+    bool useButterflies();
 };
 
 
