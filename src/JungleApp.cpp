@@ -136,7 +136,7 @@ void JungleApp::drawImGUI() {
             ImGui::DragFloat3("Camera PoI", &cameraFinalLookAt.x, 0.01f);
             ImGui::DragFloat3("Camera PoV", &cameraFinalPosition.x, 0.01f);
             ImGui::DragFloat3("Camera Up", &cameraUpVector.x, 0.01f);
-            ImGui::SliderFloat("Camera Teleport Speed", &cameraMovementSpeed, 0.0f, 5.0f);
+            ImGui::SliderFloat("Camera Teleport Speed", &cameraMovementSpeed, 0.0f, 50.0f);
             ImGui::Checkbox("Invert mouse motion", &invertMouse);
             scene.cameraButtons(cameraFinalLookAt, cameraFinalPosition, cameraUpVector, cameraFOVY, nearPlane, farPlane);
         }
