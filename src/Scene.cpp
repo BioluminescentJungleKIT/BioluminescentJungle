@@ -49,6 +49,10 @@ static bool materialUsesSSR(const tinygltf::Material& material) {
     return material.name.find("SSR") != material.name.npos;
 }
 
+static bool materialIsWater(const tinygltf::Material& material) {
+    return material.name.find("Water") != material.name.npos;
+}
+
 static bool materialUsesBaseTexture(const tinygltf::Material& material) {
     return material.values.count(BASE_COLOR_TEXTURE);
 }
@@ -78,6 +82,10 @@ PipelineDescription Scene::getPipelineDescriptionForPrimitive(const tinygltf::Pr
 
         if (materialUsesSSR(material)) {
             descr.useSSR = true;
+        }
+
+        if (materialIsWater(material)) {
+            descr.isWater = true;
         }
     } else if (attributes.count(FIXED_COLOR)) {
         descr.vertexFixedColorAccessor = attributes.at(FIXED_COLOR);
@@ -1163,6 +1171,13 @@ static ShaderList selectShaders(const PipelineDescription &descr) {
         return ShaderList {
                 {VK_SHADER_STAGE_VERTEX_BIT,   "shaders/simple-texture-wind.vert"},
                 {VK_SHADER_STAGE_FRAGMENT_BIT, "shaders/simple-texture.frag"},
+        };
+    }
+
+    if (descr.isWater) {
+        return ShaderList {
+                {VK_SHADER_STAGE_VERTEX_BIT,   "shaders/water.vert"},
+                {VK_SHADER_STAGE_FRAGMENT_BIT, "shaders/displacement.frag"},
         };
     }
 

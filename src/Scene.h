@@ -96,6 +96,7 @@ struct PipelineDescription {
     }
 
     bool isButterfly{false};
+    bool isWater{false};
 };
 
 struct MaterialSettings {
