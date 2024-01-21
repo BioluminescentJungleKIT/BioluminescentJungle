@@ -285,7 +285,8 @@ class BVH {
 
                 auto& indexAccessor = model.accessors[primitive.indices];
                 auto& indexBView = model.bufferViews[indexAccessor.bufferView];
-                if (indexAccessor.componentType != TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT)
+                if (indexAccessor.componentType != TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT &&
+                    indexAccessor.componentType != TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT)
                 {
                     std::cout << "Unsupported GLTF component type in index buffer!" << std::endl;
                     continue;
@@ -302,16 +303,29 @@ class BVH {
                     continue;
                 }
 
-                auto indexArray = reinterpret_cast<const uint16_t*>(
-                    &model.buffers[indexBView.buffer].data[indexBView.byteOffset]);
+                const auto& getIndexArray = [&] (int idx) -> int {
+                    if (indexAccessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT) {
+                        auto indexArray = reinterpret_cast<const uint16_t*>(
+                            &model.buffers[indexBView.buffer].data[indexBView.byteOffset]);
+                        return indexArray[idx];
+                    }
+                    if (indexAccessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT) {
+                        auto indexArray = reinterpret_cast<const uint32_t*>(
+                            &model.buffers[indexBView.buffer].data[indexBView.byteOffset]);
+                        return indexArray[idx];
+                    }
+
+                    assert(false);
+                };
+
 
                 auto vertexArray = reinterpret_cast<const float*>(
                     &model.buffers[posBView.buffer].data[posBView.byteOffset]);
 
                 for (int _idx = 0; _idx < indexAccessor.count; _idx += 3) {
-                    int idx0 = indexArray[_idx + 0];
-                    int idx1 = indexArray[_idx + 1];
-                    int idx2 = indexArray[_idx + 2];
+                    int idx0 = getIndexArray(_idx + 0);
+                    int idx1 = getIndexArray(_idx + 1);
+                    int idx2 = getIndexArray(_idx + 2);
 
                     TriangleType tri;
                     tri.x = glm::vec3(vertexArray[3 * idx0], vertexArray[3 * idx0 + 1], vertexArray[3 * idx0 + 2]);
