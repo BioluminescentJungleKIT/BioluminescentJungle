@@ -248,7 +248,7 @@ Reservoir fillReservoir(ivec2 pos, SurfacePoint point, float depth, inout uint r
             p = 1.0 / totalNum;
         }
 
-        if (r.pHat[i] * p >= 0.0001 && testShadowAABB(point, r.position[i])) {
+        if (testShadowAABB(point, r.position[i])) {
             // Lies in shadow => ignore
             r.selected[i] = 0;
             r.pHat[i] = 0;
