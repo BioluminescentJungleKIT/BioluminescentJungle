@@ -109,6 +109,7 @@ void JungleApp::drawImGUI() {
             ImGui::SliderFloat("ReSTIR Temporal Factor", &lighting->restirTemporalFactor, 0.0f, 50.0f);
             ImGui::SliderInt("ReSTIR Spatial Radius", &lighting->restirSpatialRadius, 0, 50);
             ImGui::SliderInt("ReSTIR Spatial Neighbors", &lighting->restirSpatialNeighbors, 0, 20);
+            ImGui::SliderInt("ReSTIR Fresh Samples per Pixel", &lighting->restirInitialSamples, 1, 1024);
 
             ImGui::Checkbox("Show Light BBoxes", (bool *) &lighting->debug.showLightBoxes);
             ImGui::SliderFloat("Light bbox log size", &lighting->lightRadiusLog, -5.f, 5.f);
@@ -121,7 +122,7 @@ void JungleApp::drawImGUI() {
                          "Off\0Min-Max\0Moment-Based\0\0");
 
             ImGui::SliderInt("Denoiser iterations",
-                &lighting->getDenoiser()->iterationCount, 0, 5);
+                &lighting->getDenoiser()->iterationCount, 0, 20);
             ImGui::SliderFloat("Denoiser Albedo Sigma",
                 &lighting->getDenoiser()->ubo.albedoSigma, 0.001, 5.0);
             ImGui::SliderFloat("Denoiser Normal Sigma",
@@ -136,7 +137,7 @@ void JungleApp::drawImGUI() {
             ImGui::DragFloat3("Camera PoI", &cameraFinalLookAt.x, 0.01f);
             ImGui::DragFloat3("Camera PoV", &cameraFinalPosition.x, 0.01f);
             ImGui::DragFloat3("Camera Up", &cameraUpVector.x, 0.01f);
-            ImGui::SliderFloat("Camera Teleport Speed", &cameraMovementSpeed, 0.0f, 5.0f);
+            ImGui::SliderFloat("Camera Teleport Speed", &cameraMovementSpeed, 0.0f, 50.0f);
             ImGui::Checkbox("Invert mouse motion", &invertMouse);
             scene.cameraButtons(cameraFinalLookAt, cameraFinalPosition, cameraUpVector, cameraFOVY, nearPlane, farPlane);
         }

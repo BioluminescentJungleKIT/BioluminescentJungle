@@ -1,6 +1,7 @@
 #version 450
 
 #include "restir.glsl"
+#include "geometry.glsl"
 
 layout(set = 0, binding = 0) uniform sampler2D albedo;
 layout(set = 0, binding = 1) uniform sampler2D depth;
@@ -21,16 +22,27 @@ layout(std140, set = 1, binding = 3) uniform Params {
     int nTriangles;
 };
 
-layout(std430, set = 1, binding = 7) readonly buffer ReservoirsTmp {
+layout(std140, set = 1, binding = 5) readonly buffer EmissiveTrianglesIn {
+    EmissiveTriangle emissiveTris[];
+};
+
+layout(std430, set = 1, binding = 8) readonly buffer ReservoirsTmp {
     Reservoir reservoirsTmp[];
 };
 
-layout(std430, set = 1, binding = 8) writeonly buffer ReservoirsOut {
+layout(std430, set = 1, binding = 9) writeonly buffer ReservoirsOut {
     Reservoir reservoirsOut[];
 };
 
-
 layout (local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+
+PointLightParams getPointLight(int idx) {
+    return computeLightParams(pointLights[idx]);
+}
+
+void getEmissiveTriangle(int idx, out float intensity, out vec3 N, out float area) {
+    getEmissiveTriangleParams(emissiveTris[idx], intensity, N, area);
+}
 
 Reservoir spatialReuse(ivec2 pos, int rIdx, SurfacePoint point, float ourD) {
     uint rndState = getRandSeed(uvec3(pos, slInfo.randomSeed));
@@ -49,21 +61,11 @@ Reservoir spatialReuse(ivec2 pos, int rIdx, SurfacePoint point, float ourD) {
 
         if (shouldReuse) {
             Reservoir otherR = reservoirsTmp[reservoirIdx(reuse, slInfo.viewportWidth)];
-
-            float pHats[NUM_SAMPLES_PER_RESERVOIR];
-            for (int i = 0; i < NUM_SAMPLES_PER_RESERVOIR; i++) {
-                pHats[i] = 0;
-                if (otherR.selected[i] >= 0) {
-                    pHats[i] = evalPointLightStrength(point,
-                            computeLightParams(pointLights[otherR.selected[i]]));
-                }
-            }
-
-            mergeReservoir(rndState, r, otherR, pHats, otherR.totalNumSamples);
+            tryMergeReservoir(rndState, r, otherR,
+                    otherR.totalNumSamples, point);
         }
     }
 
-    // TODO: Spatial reuse
     reservoirsOut[rIdx] = r;
     return r;
 }
@@ -88,17 +90,24 @@ void main() {
 
     int rIdx = reservoirIdx(pos, slInfo.viewportWidth);
     Reservoir r = spatialReuse(pos, rIdx, point, depth);
+
     for (int i = 0; i < NUM_SAMPLES_PER_RESERVOIR; i++) {
         int sel = r.selected[i];
-        if (sel >= 0) {
-            PointLightParams light = computeLightParams(pointLights[sel]);
+        if (sel != 0) {
+            float f = evalFogAbsorption(point, slInfo);
 
-            float f = evalPointLightStrength(point, light);
-            f *= evalFogAbsorption(point, slInfo);
+            vec3 color;
+            if (sel > 0) {
+                color = computeLightParams(pointLights[sel-1]).color;
+            } else {
+                color = emissiveTris[-sel-1].emission.rgb;
+            }
 
-            // Equation (6) from the ReSTIR paper
-            float W = 1.0 / (r.pHat[i] * r.totalNumSamples) * r.sumW[i];
-            finalColor += W * f * light.intensity;
+            // Equation (6) from the ReSTIR paper:
+            // L_ris = f / pHat * (1/M) * sum w[i]
+            // Here, pHat = f, so they cancel out
+            float W = 1.0 / (r.totalNumSamples) * r.sumW[i];
+            finalColor += W * f * color;
         }
     }
 

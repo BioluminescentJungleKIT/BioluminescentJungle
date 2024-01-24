@@ -22,11 +22,13 @@ struct LightingBuffer {
     glm::float32 restirTemporalFactor;
     glm::int32 restirSpatialRadius;
     glm::int32 restirSpatialNeighbors;
+    glm::int32 restirInitialSamples;
 };
 
 struct ComputeParamsBuffer {
     glm::int32_t nPointLights;
     glm::int32_t nTriangles;
+    glm::int32_t nEmissiveTriangles;
 };
 
 DeferredLighting::DeferredLighting(VulkanDevice* device, Swapchain* swapChain) : denoiser(device, swapChain) {
@@ -38,6 +40,7 @@ DeferredLighting::~DeferredLighting() {
     debugUBO.destroy(device);
     lightUBO.destroy(device);
     computeParamsUBO.destroy(device);
+    emissiveTriangles.destroy(device);
 
     for (int i = 0; i < reservoirs.size(); i++) {
         reservoirs[i].destroy(device);
@@ -186,6 +189,8 @@ void DeferredLighting::createRenderPass() {
 
 void DeferredLighting::setup(bool recompileShaders, Scene *scene, VkDescriptorSetLayout mvpLayout) {
     this->bvh = std::make_unique<BVH>(device, scene);
+    this->emissiveTriangles.uploadData(device, BVH::extractTriangles<BVH::EmissiveTriangle>(scene),
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
     denoiser.setupRenderStage(recompileShaders);
 
     createRenderPass();
@@ -364,11 +369,16 @@ void DeferredLighting::createDescriptorSetLayout() {
         vkutil::createSetLayoutBinding(1, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT),
         vkutil::createSetLayoutBinding(2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT),
         vkutil::createSetLayoutBinding(3, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT),
+
+        // Triangles, Emissive Triangles, BVH nodes
         vkutil::createSetLayoutBinding(4, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT),
         vkutil::createSetLayoutBinding(5, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT),
         vkutil::createSetLayoutBinding(6, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT),
+
+        // Reservoirs
         vkutil::createSetLayoutBinding(7, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT),
         vkutil::createSetLayoutBinding(8, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT),
+        vkutil::createSetLayoutBinding(9, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT),
     });
 
     debugLayout = device->createDescriptorSetLayout({
@@ -420,19 +430,25 @@ void DeferredLighting::setupBarriers(const RenderTarget& gBuffer) {
 }
 
 void DeferredLighting::updateDescriptors(const RenderTarget& gBuffer, Scene *scene) {
-    auto [pointLights, pointLightsNum] = scene->getPointLights();
+    auto [pointLights, butterflyNum, pointLightsNum] = scene->getPointLights();
+    // We lie that we have at least 1 butterfly even if we won't use it because otherwise vulkan complains
+    // that we cannot have a range of 0
     auto pointLightsBuffer =
-        vkutil::createDescriptorBufferInfo(pointLights, 0, pointLightsNum * sizeof(LightData));
+        vkutil::createDescriptorBufferInfo(pointLights, 0, std::max(1, (int)butterflyNum) * sizeof(LightData));
 
     ComputeParamsBuffer computeParams;
-    computeParams.nPointLights = pointLightsNum;
+    computeParams.nPointLights = butterflyNum;
     computeParams.nTriangles = bvh->getNTriangles();
+    computeParams.nEmissiveTriangles = emissiveTriangles.size / sizeof(BVH::Triangle);
+    std::cout << "Got " << computeParams.nEmissiveTriangles << " triangles " << std::endl;
+
     computeParamsUBO.update(&computeParams, sizeof(computeParams), 0);
     auto computeParamsBuffer =
         vkutil::createDescriptorBufferInfo(computeParamsUBO.buffers[0], 0, sizeof(computeParams));
 
     auto triBuffer = bvh->getTriangleInfo();
     auto bvhBuffer = bvh->getBVHInfo();
+    auto emiBuffer = emissiveTriangles.getDescriptor();
 
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
         std::vector<VkWriteDescriptorSet> descriptorWrites;
@@ -457,11 +473,12 @@ void DeferredLighting::updateDescriptors(const RenderTarget& gBuffer, Scene *sce
         descriptorWrites.push_back(vkutil::createDescriptorWriteSBO(pointLightsBuffer, computeSets[i], 2));
         descriptorWrites.push_back(vkutil::createDescriptorWriteUBO(computeParamsBuffer, computeSets[i], 3));
         descriptorWrites.push_back(vkutil::createDescriptorWriteSBO(triBuffer, computeSets[i], 4));
-        descriptorWrites.push_back(vkutil::createDescriptorWriteSBO(bvhBuffer, computeSets[i], 5));
+        descriptorWrites.push_back(vkutil::createDescriptorWriteSBO(emiBuffer, computeSets[i], 5));
+        descriptorWrites.push_back(vkutil::createDescriptorWriteSBO(bvhBuffer, computeSets[i], 6));
 
-        descriptorWrites.push_back(vkutil::createDescriptorWriteSBO(tmpReservoirs[lastFrame(i)].getDescriptor(), computeSets[i], 6));
-        descriptorWrites.push_back(vkutil::createDescriptorWriteSBO(tmpReservoirs[i].getDescriptor(), computeSets[i], 7));
-        descriptorWrites.push_back(vkutil::createDescriptorWriteSBO(reservoirs[i].getDescriptor(), computeSets[i], 8));
+        descriptorWrites.push_back(vkutil::createDescriptorWriteSBO(tmpReservoirs[lastFrame(i)].getDescriptor(), computeSets[i], 7));
+        descriptorWrites.push_back(vkutil::createDescriptorWriteSBO(tmpReservoirs[i].getDescriptor(), computeSets[i], 8));
+        descriptorWrites.push_back(vkutil::createDescriptorWriteSBO(reservoirs[i].getDescriptor(), computeSets[i], 9));
 
         auto reservoirInfo = vkutil::createDescriptorBufferInfo(reservoirs[i].buffer, 0, reservoirs[i].size);
 
@@ -508,6 +525,7 @@ void DeferredLighting::updateBuffers(glm::mat4 vp, glm::vec3 cameraPos, glm::vec
     buffer.restirTemporalFactor = restirTemporalFactor;
     buffer.restirSpatialRadius = restirSpatialRadius;
     buffer.restirSpatialNeighbors = restirSpatialNeighbors;
+    buffer.restirInitialSamples = restirInitialSamples;
     lightUBO.update(&buffer, sizeof(buffer), swapchain->currentFrame);
     denoiser.updateBuffers();
 }
@@ -551,10 +569,11 @@ void DeferredLighting::setupRenderTarget() {
 
 void DeferredLighting::updateReservoirs() {
     struct Reservoir {
-        glm::int32 selected[NUM_SAMPLES_PER_RESERVOIR];
-        glm::float32 sumW[NUM_SAMPLES_PER_RESERVOIR];
-        glm::float32 pHat[NUM_SAMPLES_PER_RESERVOIR];
-        glm::int32 totalNumSamples;
+        alignas(16) glm::int32 selected[NUM_SAMPLES_PER_RESERVOIR];
+        alignas(16) glm::vec4 positions[NUM_SAMPLES_PER_RESERVOIR];
+        alignas(16) glm::float32 sumW[NUM_SAMPLES_PER_RESERVOIR];
+        alignas(16) glm::float32 pHat[NUM_SAMPLES_PER_RESERVOIR];
+        alignas(16) glm::int32 totalNumSamples;
     };
 
     size_t numReservoirs = swapchain->renderSize().width * swapchain->renderSize().height;

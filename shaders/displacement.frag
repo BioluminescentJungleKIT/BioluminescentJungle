@@ -94,12 +94,6 @@ void main() {
     float lastHeightAbove = 0.0;
 
     for (int i = 0; i < mapping.raymarchSteps; i++) {
-        if (currentPos.s < 0 || currentPos.t < 0 || currentPos.s > 1 || currentPos.t > 1) {
-            // We left the object
-            // TODO: optimize the check: we can compute maximal number of samples
-            discard;
-        }
-
         float depth;
         if (mapping.useInvertedFormat > 0) {
             depth = (1.0 - pow(texture(heightMap, currentPos.st).r, 1.0/2.2)) * mapping.heightScale;

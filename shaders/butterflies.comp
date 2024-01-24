@@ -1,10 +1,6 @@
 #version 450
 #include "noise3D.glsl"
-
-struct Butterfly {
-    vec3 position;
-    vec3 velocity;
-};
+#include "util.glsl"
 
 layout(binding = 0) uniform UniformBufferObject {
     vec3 cameraPosition;
@@ -15,7 +11,7 @@ layout(binding = 0) uniform UniformBufferObject {
 
 layout(binding = 1) buffer Bufferflies
 {
-    Butterfly utterflies[];
+    PointLight utterflies[];
 } b;
 
 layout(std430, binding = 2) buffer BufferflyVolumeVertices
@@ -102,10 +98,10 @@ float calculateSignedSquaredDistanceOfNthTriangle(int n, vec3 position) {
 
 void main() {
     uint index = gl_GlobalInvocationID.x;
-    vec3 random = noise3D(b.utterflies[index].position * 3, index * 10, ubo.time);
-    vec3 cameraVector = ubo.cameraPosition - b.utterflies[index].position;
+    vec3 random = noise3D(b.utterflies[index].position.xyz * 3, index * 10, ubo.time);
+    vec3 cameraVector = ubo.cameraPosition - b.utterflies[index].position.xyz;
     // initialize random position
-    b.utterflies[index].position += (random * 15 + ubo.cameraPosition) * int(dot(cameraVector, cameraVector) > 10000 || b.utterflies[index].position == vec3(0,0,0));
+    b.utterflies[index].position.xyz += (random * 15 + ubo.cameraPosition) * int(dot(cameraVector, cameraVector) > 10000 || b.utterflies[index].position.xyz == vec3(0,0,0));
 
     // This is probably suboptimal, but it might work for near-convex meshes. Maybe we could only consider
     // the 2 or 3 nearest triangles or something like that, but there would always be an egde case of some
@@ -114,9 +110,9 @@ void main() {
     // expensive.
     vec3 volumeForce = vec3(0);
     for (int i = 0; i < ubo.bufferflyVolumeTriangleCount; i++) {
-        vec3 diff = b.utterflies[index].position -
+        vec3 diff = b.utterflies[index].position.xyz -
         closestPointTriangle(
-        b.utterflies[index].position,
+        b.utterflies[index].position.xyz,
         bvv.vertices[i * 3 + 0],
         bvv.vertices[i * 3 + 1],
         bvv.vertices[i * 3 + 2]
@@ -128,12 +124,12 @@ void main() {
     // move towards camera if far away, no LoD needed ;)
     vec3 cameraForce = cameraVector * smoothstep(30, 100, dot(cameraVector, cameraVector)) * 0.1;
 
-    b.utterflies[index].velocity += (random * vec3(1,1,0.1) + cameraForce + volumeForce) * ubo.timeDelta;
+    b.utterflies[index].velocity.xyz += (random * vec3(1,1,0.1) + cameraForce + volumeForce) * ubo.timeDelta;
 
-    b.utterflies[index].velocity = clamp(b.utterflies[index].velocity, vec3(-1, -1, -1), vec3(1, 1, 1));
+    b.utterflies[index].velocity.xyz = clamp(b.utterflies[index].velocity.xyz, vec3(-1, -1, -1), vec3(1, 1, 1));
     float speed = length(b.utterflies[index].velocity);
-    b.utterflies[index].velocity = clamp(b.utterflies[index].velocity, vec3(-1, -1, speed * -0.2), vec3(1, 1, speed * 0.2));
+    b.utterflies[index].velocity.xyz = clamp(b.utterflies[index].velocity.xyz, vec3(-1, -1, speed * -0.2), vec3(1, 1, speed * 0.2));
 
-    b.utterflies[index].position += b.utterflies[index].velocity * ubo.timeDelta;
+    b.utterflies[index].position.xyz += b.utterflies[index].velocity.xyz * ubo.timeDelta;
     //b.utterflies[index].position = vec3(0,0,0);
 }

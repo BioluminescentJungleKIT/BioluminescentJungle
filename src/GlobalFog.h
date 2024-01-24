@@ -46,10 +46,10 @@ public:
 
     void enable() override;
 
-    glm::vec3 color{0.2, 0.03, 0.1};
+    glm::vec3 color{0.38, 0.06, 0.40};
     glm::float32 ambientFactor{1};
-    glm::float32 brightness{0.05};
-    glm::float32 absorption{0.2};
+    glm::float32 brightness{0.02};
+    glm::float32 absorption{0.15};
     bool enabled{true};
 
     glm::float32 ssrStrength{1.0};

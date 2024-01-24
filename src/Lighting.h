@@ -81,7 +81,7 @@ class DeferredLighting {
     void setupBuffers();
     void updateBuffers(glm::mat4 VP, glm::vec3 cameraPos, glm::vec3 cameraUp);
 
-    float lightRadiusLog = 0.5;
+    float lightRadiusLog = 0;
     DebugOptions debug;
 
     RequiredDescriptors getNumDescriptors();
@@ -94,6 +94,7 @@ class DeferredLighting {
     float restirSpatialFactor = 1;
     int restirSpatialRadius = 4;
     int restirSpatialNeighbors = 4;
+    int restirInitialSamples = 32;
 
     bool useRaytracingPipeline() {
         return debug.compositionMode == 0;
@@ -129,6 +130,7 @@ class DeferredLighting {
     UniformBuffer debugUBO;
     UniformBuffer lightUBO;
     UniformBuffer computeParamsUBO;
+    DataBuffer emissiveTriangles;
     Denoiser denoiser;
 
     // *2 for temporary reservoirs while using temporal and spatial reuse

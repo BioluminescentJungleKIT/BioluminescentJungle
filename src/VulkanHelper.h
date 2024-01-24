@@ -79,21 +79,60 @@ static void writeFile(const std::string &filename, const std::vector<char> &buff
 }
 
 #include <chrono>
+#include <filesystem>
+#include <set>
+
+extern std::map<std::string, std::filesystem::file_time_type> lastRecompileTimestamp;
+extern std::map<std::string, std::set<std::string>> recompileDependencies;
+
+static bool shouldRecompileFile(const std::string& filename, const std::string spvFilename,
+    bool recompileOnLoad) {
+
+    if (!fileExists(spvFilename)) {
+        // We have to recompile since the shader has never been compiled!
+        return true;
+    }
+
+    if (!recompileOnLoad) {
+        // We don't want to force-recompile, so just ignore.
+        return false;
+    }
+
+    if (!fileExists(filename)) {
+        throw std::runtime_error("Non-existent shader file: " + filename);
+    }
+
+    auto lastModifyTS = std::filesystem::last_write_time(filename);
+    for (auto& dep : recompileDependencies[filename]) {
+        lastModifyTS = std::max(lastModifyTS,
+            std::filesystem::last_write_time(dep));
+    }
+
+    if (!lastRecompileTimestamp.contains(filename) ||
+        lastRecompileTimestamp[filename] < lastModifyTS)
+    {
+        lastRecompileTimestamp[filename] = lastModifyTS;
+        return true;
+    }
+
+    return false;
+}
 
 static std::tuple<std::vector<char>, std::string> getShaderCode(const std::string &filename, shaderc_shader_kind kind, bool recompile) {
-    auto startTS = std::chrono::system_clock::now();
-    std::cout << "Compiling source file " << filename << std::endl;
-
     std::string message;
     auto sourceName = filename.substr(filename.find_last_of("/\\") + 1, filename.find_last_of('.'));
     auto spvFilename = filename + ".spv";
-    if (recompile || !fileExists(spvFilename)) {
+
+    if (shouldRecompileFile(filename, spvFilename, recompile)) {
+        auto startTS = std::chrono::system_clock::now();
+        std::cout << "Compiling source file " << filename << std::endl;
+
         shaderc::Compiler compiler;
         shaderc::CompileOptions options;
 #ifndef NDEBUG
         options.SetGenerateDebugInfo();
 #endif
-        options.SetIncluder(std::make_unique<GlslIncluder>());
+        options.SetIncluder(std::make_unique<GlslIncluder>(&recompileDependencies[filename]));
         options.SetTargetEnvironment(shaderc_target_env_vulkan, shaderc_env_version_vulkan_1_3);
 
         auto file_content = readFile(filename);
@@ -111,11 +150,11 @@ static std::tuple<std::vector<char>, std::string> getShaderCode(const std::strin
 
             writeFile(spvFilename, spirv);
         }
-    }
 
-    auto endTS = std::chrono::system_clock::now();
-    std::cout << "Compilation of " << filename << " took " <<
-        std::chrono::duration_cast<std::chrono::milliseconds>(endTS-startTS).count() << "ms" << std::endl;
+        auto endTS = std::chrono::system_clock::now();
+        std::cout << "Compilation of " << filename << " took " <<
+            std::chrono::duration_cast<std::chrono::milliseconds>(endTS-startTS).count() << "ms" << std::endl;
+    }
 
     return {readFile(spvFilename), message};
 }
