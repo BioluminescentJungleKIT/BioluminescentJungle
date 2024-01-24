@@ -189,8 +189,14 @@ void DeferredLighting::createRenderPass() {
 
 void DeferredLighting::setup(bool recompileShaders, Scene *scene, VkDescriptorSetLayout mvpLayout) {
     this->bvh = std::make_unique<BVH>(device, scene);
-    this->emissiveTriangles.uploadData(device, BVH::extractTriangles<BVH::EmissiveTriangle>(scene),
-        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+
+    auto emTris = BVH::extractTriangles<BVH::EmissiveTriangle>(scene);
+    std::random_device rd{};
+    std::mt19937 mt{rd()};
+    std::shuffle(emTris.begin(), emTris.end(), mt);
+    emTris.resize(emTris.size());
+    this->emissiveTriangles.uploadData(device, emTris, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+
     denoiser.setupRenderStage(recompileShaders);
 
     createRenderPass();
