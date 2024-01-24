@@ -59,12 +59,12 @@ void main() {
     // TODO [optimization] outsource uniform multiplications to the CPU
     mat4 model = computeModel(b.utterflies[gl_InstanceIndex], 0);
     gl_Position = ubo.proj * ubo.view * ubo.modl * model * vec4(inPosition, 1.0);
-    gl_Position += gl_Position.w * vec4(ubo.jitt.x, ubo.jitt.y, 0, 0);
+    gl_Position += gl_Position.w * vec4(ubo.jitt, 0, 0);
     currpos = gl_Position;
 
     lastpos = lastubo.proj * lastubo.view * lastubo.modl
               * computeModel(b.utterflies[gl_InstanceIndex], lastubo.time - ubo.time)  * vec4(inPosition, 1.0);
-    lastpos += lastpos.w * vec4(lastubo.jitt, 0, 0);
+    lastpos += lastpos.w * vec4(ubo.jitt, 0, 0);
 
     uv = inUV;
     normal = (transpose(inverse(ubo.modl * model)) * vec4(inNormal, 0.0)).xyz;

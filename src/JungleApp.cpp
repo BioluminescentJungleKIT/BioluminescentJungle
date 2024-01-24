@@ -141,6 +141,7 @@ void JungleApp::drawImGUI() {
             scene.cameraButtons(cameraFinalLookAt, cameraFinalPosition, cameraUpVector, cameraFOVY, nearPlane, farPlane);
         }
         if (ImGui::CollapsingHeader("Scene Settings")) {
+            ImGui::Checkbox("Time", &doMotion);
             ImGui::Checkbox("Spin", &spinScene);
             ImGui::SliderFloat("Fixed spin", &fixedRotation, 0.0f, 360.0f);
             ImGui::SliderFloat("SSR strength", &postprocessing->getFogPointer()->ssrStrength, 0, 1);
@@ -462,6 +463,12 @@ void JungleApp::updateUniformBuffers(uint32_t currentImage) {
 
     auto currentTime = std::chrono::high_resolution_clock::now();
     float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
+    if (!doMotion) {
+        startTime += duration_cast<std::chrono::high_resolution_clock::duration>(
+                std::chrono::duration<float, std::chrono::seconds::period>(time - lastTime)
+        );
+        time = lastTime;
+    }
     float rotation = spinScene ? time * glm::radians(90.0f) : glm::radians(fixedRotation);
 
     UniformBufferObject ubo{};

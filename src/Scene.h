@@ -96,6 +96,7 @@ struct PipelineDescription {
     }
 
     bool isButterfly{false};
+    bool isWater{false};
 };
 
 struct MaterialSettings {
@@ -232,8 +233,6 @@ public:
     MaterialSettings materialSettings;
 
     UniformBuffer materialBuffer;
-
-    UniformBuffer constantsBuffers;
     void addLoD(int meshIndex);
 
     std::unique_ptr<ComputePipeline> updateLoDsPipeline;
