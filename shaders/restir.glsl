@@ -80,7 +80,7 @@ void mergeReservoir(inout uint randState, inout Reservoir dest, Reservoir src, f
     // Correction factor to make sure that the old samples don't outweigh the new ones too much.
     const float f = min(maxSamplesTake, src.totalNumSamples) * (1.0 / src.totalNumSamples);
     for (int i = 0; i < NUM_SAMPLES_PER_RESERVOIR; i++) {
-        if (src.selected[i] != 0 && correctedPHats[i] > 0) {
+        if (src.selected[i] != 0 && src.pHat[i] > 0) {
             float w = correctedPHats[i] / src.pHat[i] * src.sumW[i] * f;
             updateReservoirIdx(dest, randState, src.selected[i], w, correctedPHats[i], src.position[i], i);
         }
