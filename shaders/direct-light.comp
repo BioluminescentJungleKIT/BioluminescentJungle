@@ -86,6 +86,14 @@ bool doesIntersectAABB(int node, vec2 tmimaxInit, Ray lightRay) {
     return isec.x <= isec.y;
 }
 
+int leftChild(BVHNode node) {
+    return floatBitsToInt(node.low.w);
+}
+
+int rightChild(BVHNode node) {
+    return floatBitsToInt(node.high.w);
+}
+
 bool testShadowAABB(SurfacePoint point, vec3 lightPos) {
     float rayLen;
     Ray lightRay = getLightRay(point, lightPos, rayLen);
@@ -105,8 +113,8 @@ bool testShadowAABB(SurfacePoint point, vec3 lightPos) {
         cur -= 1;
 
         // Leaf node
-        if (bvh[node].left <= 0) {
-            float f = intersectTriangle(tris[-bvh[node].left], lightRay);
+        if (leftChild(bvh[node]) <= 0) {
+            float f = intersectTriangle(tris[-leftChild(bvh[node])], lightRay);
             if (tmimaxInit.x <= f && f < tmimaxInit.y) {
                 return true;
             }
@@ -114,13 +122,13 @@ bool testShadowAABB(SurfacePoint point, vec3 lightPos) {
             continue;
         }
 
-        if (doesIntersectAABB(bvh[node].left, tmimaxInit, lightRay)) {
-            stack[cur + 1] = bvh[node].left;
+        if (doesIntersectAABB(leftChild(bvh[node]), tmimaxInit, lightRay)) {
+            stack[cur + 1] = leftChild(bvh[node]);
             cur++;
         }
 
-        if (doesIntersectAABB(bvh[node].right, tmimaxInit, lightRay)) {
-            stack[cur + 1] = bvh[node].right;
+        if (doesIntersectAABB(rightChild(bvh[node]), tmimaxInit, lightRay)) {
+            stack[cur + 1] = rightChild(bvh[node]);
             cur++;
         }
     }
