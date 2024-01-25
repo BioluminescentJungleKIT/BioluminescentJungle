@@ -9,20 +9,20 @@
 #include <random>
 
 struct LightingBuffer {
-    glm::mat4 inverseMVP;
+    alignas(16) glm::mat4 inverseMVP;
     alignas(16) glm::vec3 cameraPos;
     alignas(16) glm::vec3 cameraUp;
-    glm::int32 viewportWidth;
-    glm::int32 viewportHeight;
-    glm::float32 fogAbsorption;
-    glm::float32 scatterStrength;
-    glm::float32 lightBleed;
-    glm::int32 lightAlgo;
-    glm::int32 randomSeed;
-    glm::float32 restirTemporalFactor;
-    glm::int32 restirSpatialRadius;
-    glm::int32 restirSpatialNeighbors;
-    glm::int32 restirInitialSamples;
+    alignas(16) glm::int32 viewportWidth;
+    alignas(16) glm::int32 viewportHeight;
+    alignas(16) glm::float32 fogAbsorption;
+    alignas(16) glm::float32 scatterStrength;
+    alignas(16) glm::float32 lightBleed;
+    alignas(16) glm::int32 lightAlgo;
+    alignas(16) glm::int32 randomSeed;
+    alignas(16) glm::float32 restirTemporalFactor;
+    alignas(16) glm::int32 restirSpatialRadius;
+    alignas(16) glm::int32 restirSpatialNeighbors;
+    alignas(16) glm::int32 restirInitialSamples;
 };
 
 struct ComputeParamsBuffer {
