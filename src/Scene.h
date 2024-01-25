@@ -93,6 +93,8 @@ struct PipelineDescription {
 
     bool isButterfly{false};
     bool isWater{false};
+    bool useEmissiveTexture{false};
+    bool useEmissiveColor{false};
 };
 
 struct MaterialSettings {
@@ -189,6 +191,7 @@ public:
     VkDescriptorSetLayout materialsSettingsLayout{VK_NULL_HANDLE};
 
     VkDescriptorSetLayout albedoDSLayout{VK_NULL_HANDLE};
+    VkDescriptorSetLayout emissiveTextureDSLayout{VK_NULL_HANDLE};
     VkDescriptorSetLayout albedoDisplacementDSLayout{VK_NULL_HANDLE};
 
     VkDescriptorSetLayout lodUpdateDescriptorSetLayout{VK_NULL_HANDLE};

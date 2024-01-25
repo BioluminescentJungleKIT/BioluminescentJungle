@@ -9,6 +9,7 @@ layout(location = 4) in vec4 fsOldPosClipSpace;
 layout(location = 0) out vec4 outColor;
 layout(location = 1) out vec4 outNormal;
 layout(location = 2) out vec2 outMotion;
+layout(location = 3) out vec4 outEmission;
 
 layout(set = 0, binding = 0) uniform UniformBufferObject {
     mat4 modl;  // global
@@ -64,6 +65,7 @@ void readConvertNormal(vec3 T, vec3 B, vec3 N, vec2 uv, vec3 displacementView) {
 
 void main() {
     outMotion = (fsOldPosClipSpace/fsOldPosClipSpace.w - fsPosClipSpace/fsPosClipSpace.w).xy;
+    outEmission = vec4(0);
     vec3 N = normalize(normal);
 
     vec3 T, B;

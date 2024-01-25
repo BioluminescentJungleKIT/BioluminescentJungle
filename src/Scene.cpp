@@ -33,12 +33,24 @@ struct DisplacementPushConstants {
     glm::float32_t materialReflectivity alignas(4);
 };
 
+struct EmissiveColor {
+    glm::vec4 RGBS;
+};
+
 static bool string_contains(std::string a, std::string b) {
     return a.find(b) != a.npos;
 }
 
 static bool materialUsesDisplacedTexture(const tinygltf::Material& material) {
     return material.occlusionTexture.index >= 0;
+}
+
+static bool materialUsesEmissiveTexture(tinygltf::Material &material) {
+    return material.emissiveTexture.index >= 0;
+}
+
+static bool materialUsesEmissiveColor(tinygltf::Material &material) {
+    return !material.emissiveFactor.empty();
 }
 
 static bool materialUsesNormalTexture(const tinygltf::Material& material) {
@@ -87,8 +99,14 @@ PipelineDescription Scene::getPipelineDescriptionForPrimitive(const tinygltf::Pr
         if (materialIsWater(material)) {
             descr.isWater = true;
         }
+
+        if (materialUsesEmissiveTexture(material)) {
+            descr.useEmissiveTexture = true;
+        }
     } else if (attributes.count(FIXED_COLOR)) {
         descr.vertexFixedColorAccessor = attributes.at(FIXED_COLOR);
+    } else if (materialUsesEmissiveColor(material)) {
+        descr.useEmissiveColor = true;
     }
 
     if (has_texcoords && materialUsesNormalTexture(material)) {
@@ -158,12 +176,6 @@ Scene::Scene(VulkanDevice *device, Swapchain *swapchain, std::string filename) {
 
                 if (basename.starts_with("BUTTERFLY_")) {
                     descr.isButterfly = true;
-                }
-
-                if (!descr.vertexTexcoordsAccessor.has_value() && !descr.vertexFixedColorAccessor.has_value()) {
-                    std::cout << "Unsupported primitive meshId=" << lod.mesh << " primitiveId=" << j
-                              << ": no texture or vertex color specified." << std::endl;
-                    continue;
                 }
 
                 meshPrimitivesWithPipeline[descr][lod].emplace_back(j);
@@ -307,6 +319,22 @@ void Scene::renderPrimitiveInstances(int meshId, int primitiveId, VkCommandBuffe
             VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(DisplacementPushConstants), &pc);
     }
 
+    if (descr.useEmissiveColor) {
+        auto emissiveFactor = model.materials[primitive.material].emissiveFactor;
+        EmissiveColor col;
+        col.RGBS.r = emissiveFactor[0];
+        col.RGBS.g = emissiveFactor[1];
+        col.RGBS.b = emissiveFactor[2];
+        col.RGBS.a = 1 / 255.f;
+        if (model.materials[primitive.material].extensions.contains("KHR_materials_emissive_strength")) {
+            col.RGBS.a = model.materials[primitive.material]
+                    .extensions["KHR_materials_emissive_strength"]
+                    .Get("emissiveStrength").GetNumberAsDouble() / 255.f;
+        }
+        vkCmdPushConstants(commandBuffer, pipelineLayout,
+                           VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(EmissiveColor), &col);
+    }
+
     std::vector<VkBuffer> vertexBuffers;
     std::vector<VkDeviceSize> offsets;
     const auto &addBufferOffset = [&](const char *attribute) {
@@ -354,6 +382,7 @@ void Scene::drawPointLights(VkCommandBuffer commandBuffer) {
         vkCmdDraw(commandBuffer, lights.size(), 1, 0, 0);
     }
 }
+
 
 void Scene::setupDescriptorSets(VkDescriptorPool descriptorPool) {
     meshTransformsDescriptorSets = VulkanHelper::createDescriptorSetsFromLayout(
@@ -504,6 +533,12 @@ void Scene::setupDescriptorSets(VkDescriptorPool descriptorPool) {
             auto& albedo = findTexture(model.materials[i].values.find(BASE_COLOR_TEXTURE)->second.TextureIndex());
             boundTextures.push_back(vkutil::createDescriptorImageInfo(albedo.imageView, albedo.sampler));
 
+            if (materialUsesEmissiveTexture(model.materials[i])) {
+                desiredLayout = emissiveTextureDSLayout;
+                auto& emissive = findTexture(model.materials[i].emissiveTexture.index);
+                boundTextures.push_back(vkutil::createDescriptorImageInfo(emissive.imageView, emissive.sampler));
+            }
+
             if (materialUsesNormalTexture(model.materials[i])) {
                 desiredLayout = albedoDisplacementDSLayout;
                 auto& normal = findTexture(model.materials[i].normalTexture.index);
@@ -538,7 +573,6 @@ void Scene::setupDescriptorSets(VkDescriptorPool descriptorPool) {
         }
     }
 }
-
 
 void Scene::setupButterfliesDescriptorSets(VkDescriptorPool descriptorPool) {
     updateButterfliesDescriptorSet = VulkanHelper::createDescriptorSetsFromLayout(
@@ -945,6 +979,13 @@ void Scene::ensureDescriptorSetLayouts() {
         });
     }
 
+    if (emissiveTextureDSLayout == VK_NULL_HANDLE) {
+        emissiveTextureDSLayout = device->createDescriptorSetLayout({
+            vkutil::createSetLayoutBinding(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT),
+            vkutil::createSetLayoutBinding(1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT),
+        });
+    }
+
     if (albedoDisplacementDSLayout == VK_NULL_HANDLE) {
         albedoDisplacementDSLayout = device->createDescriptorSetLayout({
             vkutil::createSetLayoutBinding(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT),
@@ -1172,7 +1213,7 @@ static ShaderList selectShaders(const PipelineDescription &descr) {
     if (descr.isButterfly) {
         return ShaderList {
                 {VK_SHADER_STAGE_VERTEX_BIT,   "shaders/butterflies.vert"},
-                {VK_SHADER_STAGE_FRAGMENT_BIT, "shaders/simple-texture.frag"},
+                {VK_SHADER_STAGE_FRAGMENT_BIT, "shaders/emissive-texture.frag"},
         };
     }
 
@@ -1183,10 +1224,24 @@ static ShaderList selectShaders(const PipelineDescription &descr) {
         };
     }
 
+    if (!descr.isOpaque && descr.useEmissiveTexture) {
+        return ShaderList {
+                {VK_SHADER_STAGE_VERTEX_BIT,   "shaders/simple-texture-wind.vert"},
+                {VK_SHADER_STAGE_FRAGMENT_BIT, "shaders/emissive-texture.frag"},
+        };
+    }
+
     if (!descr.isOpaque) {
         return ShaderList {
                 {VK_SHADER_STAGE_VERTEX_BIT,   "shaders/simple-texture-wind.vert"},
                 {VK_SHADER_STAGE_FRAGMENT_BIT, "shaders/simple-texture.frag"},
+        };
+    }
+
+    if (descr.useEmissiveTexture) {
+        return ShaderList {
+                {VK_SHADER_STAGE_VERTEX_BIT,   "shaders/simple-texture.vert"},
+                {VK_SHADER_STAGE_FRAGMENT_BIT, "shaders/emissive-texture.frag"},
         };
     }
 
@@ -1211,9 +1266,16 @@ static ShaderList selectShaders(const PipelineDescription &descr) {
         };
     }
 
+    if (descr.vertexTexcoordsAccessor.has_value()) {
+        return ShaderList{
+                {VK_SHADER_STAGE_VERTEX_BIT,   "shaders/simple-texture.vert"},
+                {VK_SHADER_STAGE_FRAGMENT_BIT, "shaders/simple-texture.frag"},
+        };
+    }
+
     return ShaderList {
-        {VK_SHADER_STAGE_VERTEX_BIT,   "shaders/simple-texture.vert"},
-        {VK_SHADER_STAGE_FRAGMENT_BIT, "shaders/simple-texture.frag"},
+            {VK_SHADER_STAGE_VERTEX_BIT,   "shaders/material-color.vert"},
+            {VK_SHADER_STAGE_FRAGMENT_BIT, "shaders/material-color.frag"},
     };
 }
 
@@ -1256,7 +1318,10 @@ void Scene::createPipelinesWithDescription(PipelineDescription descr, VkRenderPa
     } else if (descr.vertexTexcoordsAccessor.has_value()) {
         addAttributeAndBinding(1, 1, *descr.vertexTexcoordsAccessor);
 
-        if (descr.useNormalMap) {
+        if (descr.useEmissiveTexture) {
+            dsLayouts.push_back(emissiveTextureDSLayout);
+        }
+        else if (descr.useNormalMap) {
             dsLayouts.push_back(albedoDisplacementDSLayout);
             dsLayouts.push_back(materialsSettingsLayout);
             params.pushConstants.push_back(VkPushConstantRange{
@@ -1267,6 +1332,12 @@ void Scene::createPipelinesWithDescription(PipelineDescription descr, VkRenderPa
         } else {
             dsLayouts.push_back(albedoDSLayout);
         }
+    } else if (descr.useEmissiveColor) {
+        params.pushConstants.push_back({
+            .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
+            .offset = 0,
+            .size = sizeof(EmissiveColor)
+        });
     } else {
         throw std::runtime_error("Mesh primitive without color or texcoords is not supported by shaders!");
     }

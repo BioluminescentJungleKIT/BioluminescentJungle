@@ -29,6 +29,7 @@ layout(set = 0, binding = 2) uniform sampler2D albedo;
 layout(set = 0, binding = 3) uniform sampler2D depth;
 layout(set = 0, binding = 4) uniform sampler2D normal;
 layout(set = 0, binding = 5) uniform sampler2D motion;
+layout(set = 0, binding = 6) uniform sampler2D emission;
 
 vec3 getNDC(float depth) {
     return vec3((gl_FragCoord.x / fog.viewportWidth - 0.5) * 2.0,
@@ -105,6 +106,8 @@ void traceReflection(vec3 N, float d, float ssrStrength, inout vec4 color) {
             vec3 acc = sampleNdc(accColor, cur.xy).rgb;
             vec3 albedo = sampleNdc(albedo, cur.xy).rgb;
             acc += fogAmbientTerm(getWorldDepth(curDepth)) * albedo.rgb;
+            vec4 emission = sampleNdc(emission, cur.xy);
+            acc += emission.rgb * (emission.a * 255) * fogAbsorption(curDepth);
 
             float pathLength = length(calculateWorldPosition(vec3(cur.xy, curDepth)) - worldPos);
             color += vec4(acc * fogAbsorption(pathLength) * fadeFactor, 0.0) * ssrStrength;
@@ -119,9 +122,11 @@ void main() {
     float d = texelFetch(depth, ivec2(gl_FragCoord), 0).x;
     vec4 color = texelFetch(accColor, ivec2(gl_FragCoord), 0);
     vec4 albedo = texelFetch(albedo, ivec2(gl_FragCoord), 0);
+    vec4 emission = texelFetch(emission, ivec2(gl_FragCoord), 0);
 
     float worldDepth = getWorldDepth(d);
     color.rgb += albedo.rgb * fogAmbientTerm(worldDepth);
+    color.rgb += emission.rgb * (emission.a * 255) * fogAbsorption(worldDepth);
 
     vec3 fogLight = fog.brightness * fog.color;
     // depth illumination: integral from 0 to depth: color * exp(-absorption*x) dx
