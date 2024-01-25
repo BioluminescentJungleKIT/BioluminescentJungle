@@ -443,13 +443,15 @@ void DeferredLighting::setupBarriers(const RenderTarget& gBuffer) {
 
 void DeferredLighting::updateDescriptors(const RenderTarget& gBuffer, Scene *scene) {
     auto [pointLights, butterflyNum, pointLightsNum] = scene->getPointLights();
+    int numUsedPointLights = lightGrid->emissiveTriangles.size > 0 ? butterflyNum : pointLightsNum;
+
     // We lie that we have at least 1 butterfly even if we won't use it because otherwise vulkan complains
     // that we cannot have a range of 0
     auto pointLightsBuffer =
-        vkutil::createDescriptorBufferInfo(pointLights, 0, std::max(1, (int)butterflyNum) * sizeof(LightData));
+        vkutil::createDescriptorBufferInfo(pointLights, 0, std::max(1, numUsedPointLights) * sizeof(LightData));
 
     ComputeParamsBuffer computeParams;
-    computeParams.nPointLights = butterflyNum;
+    computeParams.nPointLights = numUsedPointLights;
     computeParams.nTriangles = bvh->getNTriangles();
     computeParams.nEmissiveTriangles = lightGrid->emissiveTriangles.size / sizeof(BVH::Triangle);
 

@@ -30,6 +30,10 @@ class LightGrid {
         gridSizeX = quantize(max.x, cellSizeX) + 1 + offX;
         gridSizeY = quantize(max.y, cellSizeY) + 1 + offY;
 
+        if (emTris.empty()) {
+            gridSizeX = gridSizeY = 1;
+        }
+
         std::vector<std::vector<std::vector<glm::int32>>> trianglesInCell(gridSizeX,
             std::vector<std::vector<glm::int32>>(gridSizeY));
         for (size_t i = 0; i < emTris.size(); i++) {
