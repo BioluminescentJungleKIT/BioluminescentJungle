@@ -280,8 +280,8 @@ Reservoir fillReservoir(ivec2 pos, SurfacePoint point, float depth, inout uint r
             addSample(r, rndState, lightIdx+1, w, pHat, params.pos);
         } else {
             float p;
-            int triIdx = sampleEmissiveTriangleUniform(rndState, p);
-            //int triIdx = sampleEmissiveTriangleLightGrid(rndState, point, p);
+            //int triIdx = sampleEmissiveTriangleUniform(rndState, p);
+            int triIdx = sampleEmissiveTriangleLightGrid(rndState, point, p);
 
             vec3 emitterN;
             float area, intensity;
