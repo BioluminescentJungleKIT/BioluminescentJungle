@@ -10,6 +10,7 @@ layout(set = 1, binding = 0) uniform sampler2D albedo;
 layout(set = 1, binding = 1) uniform sampler2D depth;
 layout(set = 1, binding = 2) uniform sampler2D normal;
 layout(set = 1, binding = 3) uniform sampler2D motion;
+layout(set = 1, binding = 4) uniform sampler2D emission;
 
 #include "util.glsl"
 
@@ -42,7 +43,7 @@ void main() {
     float depth = texelFetch(depth, ivec2(gl_FragCoord), 0).r;
     vec3 fragmentWorldPos = calculatePosition(depth, gl_FragCoord.xy, info);
 
-    if (debug.compositionMode == 7 || debug.compositionMode == 0) {
+    if (debug.compositionMode == 8 || debug.compositionMode == 0) {
         SurfacePoint point;
         point.worldPos = fragmentWorldPos;
         point.albedo = texelFetch(albedo, ivec2(gl_FragCoord), 0).rgb;
@@ -54,7 +55,7 @@ void main() {
         light.intensity = 1.0; // intensity already multiplied in color
         light.r = debug.radius;
 
-        if (debug.compositionMode == 7) { // legacy rendering, point lights only
+        if (debug.compositionMode == 8) { // legacy rendering, point lights only
             outColor = vec4(evalPointLight(point, light, info), 1.0);
         } else { // direct illumination done by compute shader, we only add fog effect
             outColor = vec4(evalFog(point, light, info).rgb, 1.0);
@@ -70,11 +71,13 @@ void main() {
     } else if (debug.compositionMode == 5) {
         outColor = vec4(texelFetch(motion, ivec2(gl_FragCoord), 0).rg, 0.0, 1.0) * 100;
     } else if (debug.compositionMode == 6) {
-        vec4 normal = texelFetch(normal, ivec2(gl_FragCoord), 0);
-        if (normal.a > 0) {
+        vec4 albedo = texelFetch(albedo, ivec2(gl_FragCoord), 0);
+        if (albedo.a > 0) {
             outColor = vec4(1.0);
         } else {
             outColor = vec4(0.0);
         }
+    } else if (debug.compositionMode == 7) {
+        outColor = vec4(texelFetch(emission, ivec2(gl_FragCoord), 0).rgb, 1.0);
     }
 }

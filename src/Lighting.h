@@ -101,7 +101,7 @@ class DeferredLighting {
     }
 
     bool useRasterPipeline() {
-        return debug.compositionMode == 7;
+        return debug.compositionMode == 8;
     }
 
     bool useDebugPipeline() {

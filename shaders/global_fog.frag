@@ -23,6 +23,8 @@ layout(set = 0, binding = 1) uniform GlobalFogUBO {
     float ssrHitThreshold;
     float ssrEdgeSmoothing;
     int ssrRaySteps;
+
+    bool renderEmission;
 } fog;
 
 layout(set = 0, binding = 2) uniform sampler2D albedo;
@@ -126,7 +128,8 @@ void main() {
 
     float worldDepth = getWorldDepth(d);
     color.rgb += albedo.rgb * fogAmbientTerm(worldDepth);
-    color.rgb += emission.rgb * (emission.a * 255) * fogAbsorption(worldDepth);
+    if (fog.renderEmission)
+        color.rgb += emission.rgb * (emission.a * 255) * fogAbsorption(worldDepth);
 
     vec3 fogLight = fog.brightness * fog.color;
     // depth illumination: integral from 0 to depth: color * exp(-absorption*x) dx

@@ -103,7 +103,7 @@ void JungleApp::drawImGUI() {
         }
         if (ImGui::CollapsingHeader("Debug Settings")) {
             ImGui::Combo("G-Buffer Visualization", &lighting->debug.compositionMode,
-                         "None\0Albedo\0Depth\0Position\0Normal\0Motion\0SSR Region\0Point Lights\0\0");
+                         "None\0Albedo\0Depth\0Position\0Normal\0Motion\0SSR Region\0Emissive Color\0Point Lights\0\0");
             ImGui::Combo("Lighting mode", &lighting->computeLightAlgo,
                          "ReSTIR\0Bruteforce\0BVH only\0\0");
             ImGui::SliderFloat("ReSTIR Temporal Factor", &lighting->restirTemporalFactor, 0.0f, 50.0f);
