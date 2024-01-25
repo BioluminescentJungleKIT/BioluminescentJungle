@@ -283,7 +283,7 @@ void Scene::recordCommandBufferDraw(VkCommandBuffer commandBuffer, VkDescriptorS
             // bind transformations for each mesh
             bindingDescriptorSets.clear();
             bindingDescriptorSets.push_back(mvpSet);
-            if (pipeline->isButterfly) {
+            if (programDescr.isButterfly) {
                 bindingDescriptorSets.push_back(renderButterfliesDescriptorSet);
             } else {
                 bindingDescriptorSets.push_back(meshTransformsDescriptorSets[descriptorSetsMap[lod]]);

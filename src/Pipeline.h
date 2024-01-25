@@ -53,8 +53,6 @@ class GraphicsPipeline {
     VkPipeline pipeline;
     VkPipelineLayout layout;
 
-    bool isButterfly;
-
   private:
     VulkanDevice *device;
 };
