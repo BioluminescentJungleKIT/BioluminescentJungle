@@ -67,7 +67,7 @@ layout(set = 2, binding = 3) uniform sampler2D prevMotion;
 
 Ray getLightRay(SurfacePoint point, vec3 lightPos, out float len) {
     Ray lightRay;
-    lightRay.origin = point.worldPos + point.N * (-point.dispAlongN + 0.002);
+    lightRay.origin = point.worldPos;
     lightRay.dir = lightPos - lightRay.origin;
 
     len = length(lightRay.dir);
@@ -117,7 +117,7 @@ bool testShadowAABB(SurfacePoint point, vec3 lightPos) {
     stack[0] = 0;
     int cur = 0;
 
-    const vec2 tmimaxInit = vec2(0.1, rayLen - 0.03);
+    const vec2 tmimaxInit = vec2(0.001, rayLen - 0.03);
     if (!doesIntersectAABB(0, tmimaxInit, lightRay)) {
         return false;
     }
@@ -383,7 +383,6 @@ void main()
 
     vec4 N = texelFetch(normal, pos, 0);
     point.N = N.xyz;
-    point.dispAlongN = N.w;
 
     vec3 color = vec3(1, 0, 0);
     if (slInfo.lightAlgo == 0) {
