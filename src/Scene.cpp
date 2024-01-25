@@ -332,7 +332,7 @@ void Scene::renderPrimitiveInstances(int meshId, int primitiveId, VkCommandBuffe
                     .Get("emissiveStrength").GetNumberAsDouble() / 255.f;
         }
         vkCmdPushConstants(commandBuffer, pipelineLayout,
-                           VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(EmissiveColor), &col);
+                           VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(EmissiveColor), &col);
     }
 
     std::vector<VkBuffer> vertexBuffers;
