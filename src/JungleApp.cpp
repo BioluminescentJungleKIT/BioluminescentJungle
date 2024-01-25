@@ -29,6 +29,8 @@ void JungleApp::initVulkan(const std::string &sceneName, bool recompileShaders) 
     lighting = std::make_unique<DeferredLighting>(&device, swapchain.get());
     lighting->setup(recompileShaders, &scene, mvpSetLayout);
 
+    this->groundBVH = std::make_unique<BVH>(&device, &scene, "Ground");
+
     postprocessing = std::make_unique<PostProcessing>(&device, swapchain.get());
     lighting->fogAbsorption = &postprocessing->getFogPointer()->absorption;
     postprocessing->setupRenderStages(recompileShaders);
@@ -137,6 +139,8 @@ void JungleApp::drawImGUI() {
             ImGui::DragFloat3("Camera PoI", &cameraFinalLookAt.x, 0.01f);
             ImGui::DragFloat3("Camera PoV", &cameraFinalPosition.x, 0.01f);
             ImGui::DragFloat3("Camera Up", &cameraUpVector.x, 0.01f);
+            ImGui::Checkbox("Force constant camera height", &cameraFixedHeight);
+            ImGui::SliderFloat("Height above ground", &cameraHeightAboveGround, 0.0f, 50.0f);
             ImGui::SliderFloat("Camera Teleport Speed", &cameraMovementSpeed, 0.0f, 50.0f);
             ImGui::Checkbox("Invert mouse motion", &invertMouse);
             scene.cameraButtons(cameraFinalLookAt, cameraFinalPosition, cameraUpVector, cameraFOVY, nearPlane, farPlane);
@@ -185,6 +189,9 @@ void JungleApp::drawImGUI() {
 
 void JungleApp::drawFrame() {
     handleMotion();
+
+    handleHeight();
+
     auto imageIndex = swapchain->acquireNextImage(sceneRPass);
     if (!imageIndex.has_value()) {
         return;
@@ -751,4 +758,18 @@ float JungleApp::halton(uint32_t b, uint32_t n) {
 
 glm::vec2 JungleApp::halton23norm(uint32_t n) {
     return glm::vec2(halton(2, n), halton(3, n)) * 2.f - 1.f;
+}
+
+void JungleApp::handleHeight() {
+    if (cameraFixedHeight) {
+        glm::vec3 above{cameraFinalPosition};
+        above.z = 200;
+        glm::vec3 dir{0, 0, -1};
+        auto t = this->groundBVH->intersectRay(above, dir);
+        if (t.has_value()) {
+            float cameraZDelta = above.z - t.value() * glm::length(dir) + cameraHeightAboveGround - cameraFinalPosition.z;
+            cameraFinalPosition.z += cameraZDelta;
+            cameraFinalLookAt.z += cameraZDelta;
+        }
+    }
 }

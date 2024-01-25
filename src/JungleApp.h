@@ -6,6 +6,7 @@
 #define VULKANBASICS_PLANETAPP_H
 
 #include <memory>
+#include "BVH.hpp"
 #include <shaderc/shaderc.hpp>
 #include "Lighting.h"
 #include "Scene.h"
@@ -117,21 +118,24 @@ private:
     glm::vec3 cameraLookAt = glm::vec3(0.0f, 0.0f, 0.0f);
     glm::vec3 cameraPosition = glm::vec3(5.0f, 5.0f, 5.0f);
     glm::vec3 cameraUpVector = glm::vec3(0.0f, 0.0f, 1.0f);
+    bool cameraFixedHeight{false};
+    float cameraHeightAboveGround{0.8};
     float cameraMovementSpeed = 2.0;
-    double lastMoveTime = -1.0;
 
+    double lastMoveTime = -1.0;
     // The *Final* members indicate what is the current target for the camera (while the animation is running)
     glm::vec3 cameraFinalPosition = glm::vec3(5.0f, 5.0f, 5.0f);
-    glm::vec3 cameraFinalLookAt = glm::vec3(5.0f, 5.0f, 5.0f);
 
+    glm::vec3 cameraFinalLookAt = glm::vec3(5.0f, 5.0f, 5.0f);
     // Parameters while computing the animation for the camera
     glm::vec3 cameraAnimStartPos = cameraFinalPosition;
+
     glm::vec3 cameraAnimEndPos = cameraFinalPosition;
-
     std::optional<double> lastCameraChange;
-    void cameraMotion();
 
+    void cameraMotion();
     bool spinScene = false;
+
     float fixedRotation = 0.0;
 
     void recompileShaders();
@@ -146,6 +150,10 @@ private:
     uint32_t jitterSequence = 0;
     bool doJitter = true;
     bool doMotion = true;
+
+    std::unique_ptr<BVH> groundBVH;
+
+    void handleHeight();
 };
 
 
