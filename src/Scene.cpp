@@ -401,6 +401,9 @@ void Scene::setupDescriptorSets(VkDescriptorPool descriptorPool) {
     int transformsDescriptorIndex = 0;
     int lodComputeDescriptorIndex = 0;
     for (auto [meshName, lodList]: lods) {
+        if (meshTransforms[meshNameMap[meshName]].size() <= 0) {
+            continue;  // Special meshes without transforms (e.g. butterflies) can not be LoDed
+        }
         for (int lodIndex = 0; lodIndex < lodList.size(); lodIndex++) {
             const std::pair<int, int> &lodIdentifier = std::pair(meshNameMap[meshName], lodIndex);
             auto meshTransformsBufferIndex = lodTransformsBuffersMap[lodIdentifier];
