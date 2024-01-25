@@ -231,7 +231,7 @@ int sampleEmissiveTriangleUniform(inout uint rndState, out float p) {
     return int(floor(nextRand(rndState) * nEmissiveTriangles));
 }
 
-int sampleEmissiveTriangleLightGrid(inout uint rndState, SurfacePoint point, out float p) {
+int sampleEmissiveTriangleLightGrid(inout uint rndState, SurfacePoint point, inout float p) {
     const int posX = int(floor(point.worldPos.x / lightGridCellSizeX)) + lightGridOffX;
     const int posY = int(floor(point.worldPos.y / lightGridCellSizeY)) + lightGridOffY;
 
@@ -248,7 +248,7 @@ int sampleEmissiveTriangleLightGrid(inout uint rndState, SurfacePoint point, out
     uint bits = nextRand16bit(rndState);
     const uint chooseX = startX + (bits >> 8) % subgridWidth;
     const uint chooseY = startY + (bits & 0xff) % subgridHeight;
-    p = 1.0 / (subgridWidth * subgridHeight);
+    p *= 1.0 / (subgridWidth * subgridHeight);
 
     // Choose light from inside light grid cell
     const uint idx = chooseX * lightGridSizeY + chooseY;
@@ -262,6 +262,16 @@ int sampleEmissiveTriangleLightGrid(inout uint rndState, SurfacePoint point, out
     return lightGrid[rangeStart + bits % rangeLen];
 }
 
+bool binaryChoice(inout uint rndState, float w, out float p) {
+    if (nextRand(rndState) < w) {
+        p = w;
+        return true;
+    }
+
+    p = (1.0 - w);
+    return false;
+}
+
 // Restir Step 1: fill reservoirs for each pixel
 Reservoir fillReservoir(ivec2 pos, SurfacePoint point, float depth, inout uint rndState) {
 //    uint rndState = getRandSeed(uvec3(pos, 0));
@@ -270,16 +280,17 @@ Reservoir fillReservoir(ivec2 pos, SurfacePoint point, float depth, inout uint r
         return r;
     }
 
-    int totalNum = nEmissiveTriangles + nPointLights;
+    int totalNum = nPointLights + nEmissiveTriangles;
     for (int i = 0; i < slInfo.restirInitialSamples; i++) {
-        int lightIdx = int(floor(nextRand(rndState) * totalNum));
-        if (lightIdx < nPointLights) {
+        float p;
+        if (binaryChoice(rndState, 0.1, p)) {
+            int lightIdx = int(floor(nextRand(rndState) * nPointLights));
             PointLightParams params = computeLightParams(pointLights[lightIdx]);
             float pHat = evalPointLightStrength(point, params);
-            float w = pHat * totalNum; // (pHat / p)
+            p *= 1.0 / nPointLights;
+            float w = pHat / p;
             addSample(r, rndState, lightIdx+1, w, pHat, params.pos);
         } else {
-            float p;
             //int triIdx = sampleEmissiveTriangleUniform(rndState, p);
             int triIdx = sampleEmissiveTriangleLightGrid(rndState, point, p);
 
