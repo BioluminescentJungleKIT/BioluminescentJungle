@@ -112,6 +112,7 @@ void JungleApp::drawImGUI() {
             ImGui::SliderInt("ReSTIR Spatial Radius", &lighting->restirSpatialRadius, 0, 50);
             ImGui::SliderInt("ReSTIR Spatial Neighbors", &lighting->restirSpatialNeighbors, 0, 20);
             ImGui::SliderInt("ReSTIR Fresh Samples per Pixel", &lighting->restirInitialSamples, 1, 1024);
+            ImGui::SliderInt("ReSTIR Light Grid Search Radius", &lighting->restirLightGridRadius, 0, 128);
 
             ImGui::Checkbox("Show Light BBoxes", (bool *) &lighting->debug.showLightBoxes);
             ImGui::SliderFloat("Light bbox log size", &lighting->lightRadiusLog, -5.f, 5.f);
@@ -557,6 +558,10 @@ void JungleApp::createDescriptorPool() {
         poolSizes[1].descriptorCount += req.requireSamplers;
         poolSizes[2].descriptorCount += req.requireSSBOs;
     }
+
+    poolSizes[0].descriptorCount += 100;
+    poolSizes[1].descriptorCount += 100;
+    poolSizes[2].descriptorCount += 100;
 
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;

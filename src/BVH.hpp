@@ -190,14 +190,15 @@ class BVH {
         triangleBuffer.destroy(device);
     }
 
+    template<class TriangleType>
+    static inline float midpoint(const TriangleType& tri, int component) {
+        return (tri.x[component] + tri.y[component] + tri.z[component]) / 3.0f;
+    }
+
   private:
     VulkanDevice *device;
     DataBuffer bvhBuffer;
     DataBuffer triangleBuffer;
-
-    static inline float midpoint(const Triangle& tri, int component) {
-        return (tri.x[component] + tri.y[component] + tri.z[component]) / 3.0f;
-    }
 
     // TODO: currently, this BVH construction is extremely simple.
     // We simply split triangles equally on both sides, and sort them by their center points.

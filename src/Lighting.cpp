@@ -6,6 +6,7 @@
 #include <cmath>
 #include <vulkan/vulkan_core.h>
 #include "BVH.hpp"
+#include "LightGrid.hpp"
 #include <random>
 
 struct LightingBuffer {
@@ -23,12 +24,20 @@ struct LightingBuffer {
     glm::int32 restirSpatialRadius;
     glm::int32 restirSpatialNeighbors;
     glm::int32 restirInitialSamples;
+    glm::int32 restirLightGridRadius;
 };
 
 struct ComputeParamsBuffer {
     glm::int32_t nPointLights;
     glm::int32_t nTriangles;
     glm::int32_t nEmissiveTriangles;
+
+    glm::int32 lightGridSizeX;
+    glm::int32 lightGridSizeY;
+    glm::int32 lightGridOffX;
+    glm::int32 lightGridOffY;
+    glm::float32 lightGridCellSizeX;
+    glm::float32 lightGridCellSizeY;
 };
 
 DeferredLighting::DeferredLighting(VulkanDevice* device, Swapchain* swapChain) : denoiser(device, swapChain) {
@@ -40,7 +49,6 @@ DeferredLighting::~DeferredLighting() {
     debugUBO.destroy(device);
     lightUBO.destroy(device);
     computeParamsUBO.destroy(device);
-    emissiveTriangles.destroy(device);
 
     for (int i = 0; i < reservoirs.size(); i++) {
         reservoirs[i].destroy(device);
@@ -188,14 +196,8 @@ void DeferredLighting::createRenderPass() {
 }
 
 void DeferredLighting::setup(bool recompileShaders, Scene *scene, VkDescriptorSetLayout mvpLayout) {
+    this->lightGrid = std::make_unique<LightGrid>(device, scene, 1, 1);
     this->bvh = std::make_unique<BVH>(device, scene);
-
-    auto emTris = BVH::extractTriangles<BVH::EmissiveTriangle>(scene);
-    std::random_device rd{};
-    std::mt19937 mt{rd()};
-    std::shuffle(emTris.begin(), emTris.end(), mt);
-    emTris.resize(emTris.size());
-    this->emissiveTriangles.uploadData(device, emTris, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
 
     denoiser.setupRenderStage(recompileShaders);
 
@@ -385,6 +387,10 @@ void DeferredLighting::createDescriptorSetLayout() {
         vkutil::createSetLayoutBinding(7, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT),
         vkutil::createSetLayoutBinding(8, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT),
         vkutil::createSetLayoutBinding(9, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT),
+
+        // Light Grid Structure
+        vkutil::createSetLayoutBinding(10, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT),
+        vkutil::createSetLayoutBinding(11, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT),
     });
 
     debugLayout = device->createDescriptorSetLayout({
@@ -445,8 +451,14 @@ void DeferredLighting::updateDescriptors(const RenderTarget& gBuffer, Scene *sce
     ComputeParamsBuffer computeParams;
     computeParams.nPointLights = butterflyNum;
     computeParams.nTriangles = bvh->getNTriangles();
-    computeParams.nEmissiveTriangles = emissiveTriangles.size / sizeof(BVH::Triangle);
-    std::cout << "Got " << computeParams.nEmissiveTriangles << " triangles " << std::endl;
+    computeParams.nEmissiveTriangles = lightGrid->emissiveTriangles.size / sizeof(BVH::Triangle);
+
+    computeParams.lightGridCellSizeX = lightGrid->cellSizeX;
+    computeParams.lightGridCellSizeY = lightGrid->cellSizeY;
+    computeParams.lightGridSizeX = lightGrid->gridSizeX;
+    computeParams.lightGridSizeY = lightGrid->gridSizeY;
+    computeParams.lightGridOffX = lightGrid->offX;
+    computeParams.lightGridOffY = lightGrid->offY;
 
     computeParamsUBO.update(&computeParams, sizeof(computeParams), 0);
     auto computeParamsBuffer =
@@ -454,7 +466,7 @@ void DeferredLighting::updateDescriptors(const RenderTarget& gBuffer, Scene *sce
 
     auto triBuffer = bvh->getTriangleInfo();
     auto bvhBuffer = bvh->getBVHInfo();
-    auto emiBuffer = emissiveTriangles.getDescriptor();
+    auto emiBuffer = lightGrid->emissiveTriangles.getDescriptor();
 
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
         std::vector<VkWriteDescriptorSet> descriptorWrites;
@@ -485,6 +497,9 @@ void DeferredLighting::updateDescriptors(const RenderTarget& gBuffer, Scene *sce
         descriptorWrites.push_back(vkutil::createDescriptorWriteSBO(tmpReservoirs[lastFrame(i)].getDescriptor(), computeSets[i], 7));
         descriptorWrites.push_back(vkutil::createDescriptorWriteSBO(tmpReservoirs[i].getDescriptor(), computeSets[i], 8));
         descriptorWrites.push_back(vkutil::createDescriptorWriteSBO(reservoirs[i].getDescriptor(), computeSets[i], 9));
+
+        descriptorWrites.push_back(vkutil::createDescriptorWriteSBO(lightGrid->gridCellContents.getDescriptor(), computeSets[i], 10));
+        descriptorWrites.push_back(vkutil::createDescriptorWriteSBO(lightGrid->gridCellOffsets.getDescriptor(), computeSets[i], 11));
 
         auto reservoirInfo = vkutil::createDescriptorBufferInfo(reservoirs[i].buffer, 0, reservoirs[i].size);
 
@@ -532,6 +547,7 @@ void DeferredLighting::updateBuffers(glm::mat4 vp, glm::vec3 cameraPos, glm::vec
     buffer.restirSpatialRadius = restirSpatialRadius;
     buffer.restirSpatialNeighbors = restirSpatialNeighbors;
     buffer.restirInitialSamples = restirInitialSamples;
+    buffer.restirLightGridRadius = restirLightGridRadius;
     lightUBO.update(&buffer, sizeof(buffer), swapchain->currentFrame);
     denoiser.updateBuffers();
 }
