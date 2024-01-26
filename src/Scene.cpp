@@ -1328,7 +1328,7 @@ void Scene::drawImGUIMaterialSettings() {
         ImGui::Checkbox("Enable Inverse Displacement Mapping", (bool*)&materialSettings.enableInverseDisplacement);
         ImGui::Checkbox("Enable Linear Approximation", (bool*)&materialSettings.enableLinearApprox);
         ImGui::SliderInt("Raymarching Steps", &materialSettings.raymarchSteps, 1, 1000);
-        ImGui::SliderFloat("Height Scale", &materialSettings.heightScale, 1e-6, 0.1);
+        ImGui::SliderFloat("Height Scale", &materialSettings.heightScale, 1e-6, 0.2);
         ImGui::Checkbox("Use gamma-corrected inverted depth", (bool*)&materialSettings.useInvertedFormat);
     }
 }
