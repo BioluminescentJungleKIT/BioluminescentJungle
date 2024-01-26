@@ -140,7 +140,7 @@ void JungleApp::drawImGUI() {
             ImGui::DragFloat3("Camera PoV", &cameraFinalPosition.x, 0.01f);
             ImGui::DragFloat3("Camera Up", &cameraUpVector.x, 0.01f);
             ImGui::Checkbox("Force constant camera height", &cameraFixedHeight);
-            ImGui::SliderFloat("Height above ground", &cameraHeightAboveGround, 0.0f, 50.0f);
+            ImGui::SliderFloat("Height above ground", &cameraHeightAboveGround, 0.0f, 10.0f);
             ImGui::SliderFloat("Camera Teleport Speed", &cameraMovementSpeed, 0.0f, 50.0f);
             ImGui::Checkbox("Invert mouse motion", &invertMouse);
             scene.cameraButtons(cameraFinalLookAt, cameraFinalPosition, cameraUpVector, cameraFOVY, nearPlane, farPlane);
