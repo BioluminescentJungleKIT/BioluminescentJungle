@@ -13,7 +13,10 @@ struct SceneLightInfo {
     int restirSpatialRadius;
     int restirSpatialNeighbors;
     int restirInitialSamples;
-    int restirLightGridRadius;
+    float restirLightGridRadius;
+    float restirLightGridSearchAlpha;
+    int restirSamplingMode;
+    float restirPointLightImportance;
 };
 
 vec3 calculatePositionFromUV(float depth, vec2 uv, mat4 inverseVP) {

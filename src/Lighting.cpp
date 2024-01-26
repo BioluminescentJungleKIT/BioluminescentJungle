@@ -24,20 +24,19 @@ struct LightingBuffer {
     glm::int32 restirSpatialRadius;
     glm::int32 restirSpatialNeighbors;
     glm::int32 restirInitialSamples;
-    glm::int32 restirLightGridRadius;
+    glm::float32 restirLightGridRadius;
+    glm::float32 restirLightGridSearchAlpha;
+    glm::int32 restirSamplingMode;
+    glm::float32 restirPointLightImportance;
 };
 
 struct ComputeParamsBuffer {
+    glm::ivec2 lightGridSize;
+    glm::ivec2 lightGridOffset;
+    glm::vec2 lightGridCellSize;
     glm::int32_t nPointLights;
     glm::int32_t nTriangles;
     glm::int32_t nEmissiveTriangles;
-
-    glm::int32 lightGridSizeX;
-    glm::int32 lightGridSizeY;
-    glm::int32 lightGridOffX;
-    glm::int32 lightGridOffY;
-    glm::float32 lightGridCellSizeX;
-    glm::float32 lightGridCellSizeY;
 };
 
 DeferredLighting::DeferredLighting(VulkanDevice* device, Swapchain* swapChain) : denoiser(device, swapChain) {
@@ -455,12 +454,9 @@ void DeferredLighting::updateDescriptors(const RenderTarget& gBuffer, Scene *sce
     computeParams.nTriangles = bvh->getNTriangles();
     computeParams.nEmissiveTriangles = lightGrid->emissiveTriangles.size / sizeof(BVH::Triangle);
 
-    computeParams.lightGridCellSizeX = lightGrid->cellSizeX;
-    computeParams.lightGridCellSizeY = lightGrid->cellSizeY;
-    computeParams.lightGridSizeX = lightGrid->gridSizeX;
-    computeParams.lightGridSizeY = lightGrid->gridSizeY;
-    computeParams.lightGridOffX = lightGrid->offX;
-    computeParams.lightGridOffY = lightGrid->offY;
+    computeParams.lightGridCellSize = {lightGrid->cellSizeX, lightGrid->cellSizeY};
+    computeParams.lightGridOffset = {lightGrid->offX, lightGrid->offY};
+    computeParams.lightGridSize = {lightGrid->gridSizeX, lightGrid->gridSizeY};
 
     computeParamsUBO.update(&computeParams, sizeof(computeParams), 0);
     auto computeParamsBuffer =
@@ -550,6 +546,10 @@ void DeferredLighting::updateBuffers(glm::mat4 vp, glm::vec3 cameraPos, glm::vec
     buffer.restirSpatialNeighbors = restirSpatialNeighbors;
     buffer.restirInitialSamples = restirInitialSamples;
     buffer.restirLightGridRadius = restirLightGridRadius;
+    buffer.restirLightGridSearchAlpha = restirLightGridSearchAlpha;
+    buffer.restirSamplingMode = restirSamplingMode;
+    buffer.restirSamplingMode = restirSamplingMode;
+    buffer.restirPointLightImportance = restirPointLightImportance;
     lightUBO.update(&buffer, sizeof(buffer), swapchain->currentFrame);
     denoiser.updateBuffers();
 }

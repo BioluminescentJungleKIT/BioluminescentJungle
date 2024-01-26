@@ -129,9 +129,7 @@ static std::tuple<std::vector<char>, std::string> getShaderCode(const std::strin
 
         shaderc::Compiler compiler;
         shaderc::CompileOptions options;
-#ifndef NDEBUG
         options.SetGenerateDebugInfo();
-#endif
         options.SetIncluder(std::make_unique<GlslIncluder>(&recompileDependencies[filename]));
         options.SetTargetEnvironment(shaderc_target_env_vulkan, shaderc_env_version_vulkan_1_3);
 

@@ -18,16 +18,12 @@ layout(std140, set = 1, binding = 2) readonly buffer PointLightIn {
 };
 
 layout(std140, set = 1, binding = 3) uniform Params {
+    ivec2 lightGridSize;
+    ivec2 lightGridOffset;
+    vec2 lightGridCellSize;
     int nPointLights;
     int nTriangles;
     int nEmissiveTriangles;
-
-    int lightGridSizeX;
-    int lightGridSizeY;
-    int lightGridOffX;
-    int lightGridOffY;
-    float lightGridCellSizeX;
-    float lightGridCellSizeY;
 };
 
 layout(std140, set = 1, binding = 4) readonly buffer TrianglesIn {
@@ -117,7 +113,7 @@ bool testShadowAABB(SurfacePoint point, vec3 lightPos) {
     stack[0] = 0;
     int cur = 0;
 
-    const vec2 tmimaxInit = vec2(0.001, rayLen - 0.03);
+    const vec2 tmimaxInit = vec2(0.01, rayLen - 0.03);
     if (!doesIntersectAABB(0, tmimaxInit, lightRay)) {
         return false;
     }
@@ -231,35 +227,87 @@ int sampleEmissiveTriangleUniform(inout uint rndState, out float p) {
     return int(floor(nextRand(rndState) * nEmissiveTriangles));
 }
 
-int sampleEmissiveTriangleLightGrid(inout uint rndState, SurfacePoint point, inout float p) {
-    const int posX = int(floor(point.worldPos.x / lightGridCellSizeX)) + lightGridOffX;
-    const int posY = int(floor(point.worldPos.y / lightGridCellSizeY)) + lightGridOffY;
-
-
-    const int startX = max(0, posX - slInfo.restirLightGridRadius);
-    const int endX = min(lightGridSizeX - 1, posX + slInfo.restirLightGridRadius);
-    const int startY = max(0, posY - slInfo.restirLightGridRadius);
-    const int endY = min(lightGridSizeY - 1, posY + slInfo.restirLightGridRadius);
-
-    const int subgridWidth = endX - startX + 1;
-    const int subgridHeight = endY - startY + 1;
-
-    // Choose light grid to sample from
-    uint bits = nextRand16bit(rndState);
-    const uint chooseX = startX + (bits >> 8) % subgridWidth;
-    const uint chooseY = startY + (bits & 0xff) % subgridHeight;
-    p *= 1.0 / (subgridWidth * subgridHeight);
-
-    // Choose light from inside light grid cell
-    const uint idx = chooseX * lightGridSizeY + chooseY;
+int sampleFromGridCell(inout uint rndState, int gX, int gY, inout float p) {
+    const uint idx = gX * lightGridSize.y + gY;
 
     const int rangeStart = lightGridStartOffset[idx];
     const int rangeEnd = lightGridStartOffset[idx+1];
     const int rangeLen = max(1, rangeEnd - rangeStart);
 
-    bits = nextRand16bit(rndState);
+    const uint bits = nextRand16bit(rndState);
     p *= 1.0 / rangeLen;
     return lightGrid[rangeStart + bits % rangeLen];
+}
+
+float lightGridCDF(float a, float mid, float b, float x) {
+    const float mPoint = (mid - a) / (b - a);
+    if (x < mid) {
+        return mPoint * pow((x - a) / (mid - a), 1.0 / slInfo.restirLightGridSearchAlpha);
+    } else {
+        return (1.0 - mPoint) * (1 - pow((x - b) / (mid - b), 1.0 / slInfo.restirLightGridSearchAlpha)) + mPoint;
+    }
+}
+
+float lightGridCDF(float a, float mid, float b, float x, float y) {
+    const float v1 = lightGridCDF(a, mid, b, x);
+    const float v2 = lightGridCDF(a, mid, b, y);
+    return (v1 - v2);
+}
+
+float lightGridInvCDF(float a, float mid, float b, float x) {
+    const float mPoint = (mid - a) / (b - a);
+    if (x < mPoint) {
+        return pow(x/mPoint, slInfo.restirLightGridSearchAlpha) * (mid - a) + a;
+    } else {
+        return pow(1.0 - (x-mPoint)/(1-mPoint), slInfo.restirLightGridSearchAlpha) * (mid - b) + b;
+    }
+}
+
+float lightGridUCDF(float a, float mid, float b, float x, float y) {
+    return (y - x) / (b - a);
+}
+
+float lightGridInvUCDF(float a, float mid, float b, float x) {
+    return a + x * (b - a);
+}
+
+int sampleEmissiveTriangleLightGrid(inout uint rndState, SurfacePoint point, inout float p) {
+
+    const vec2 gridPos = clamp(point.worldPos.xy / lightGridCellSize + lightGridOffset, vec2(0), lightGridSize);
+    const vec2 startSample = max(gridPos - slInfo.restirLightGridRadius, vec2(0));
+    const vec2 endSample = min(gridPos + slInfo.restirLightGridRadius, lightGridSize);
+
+    const vec2 ksi = nextRandV2(rndState);
+
+    vec2 chosenPoint;
+    if (slInfo.restirSamplingMode == 0) {
+        chosenPoint = vec2(
+                lightGridInvCDF(startSample.x, gridPos.x, endSample.x, ksi.x),
+                lightGridInvCDF(startSample.y, gridPos.y, endSample.y, ksi.y));
+    } else {
+        chosenPoint = vec2(
+                lightGridInvUCDF(startSample.x, gridPos.x, endSample.x, ksi.x),
+                lightGridInvUCDF(startSample.y, gridPos.y, endSample.y, ksi.y));
+    }
+
+    // Calculate the probability that we chose that cell.
+    // Each cell has an interval of points for which it is chosen (after int(floor(point)))).
+    // So we can calculate the interval that this point belongs to, intersect it with the full
+    // interval and thus know its probability.
+    const vec2 chosenIntervalStart = max(floor(chosenPoint), startSample);
+    const vec2 chosenIntervalEnd = min(ceil(chosenPoint), endSample);
+    const ivec2 chosenCell = min(ivec2(floor(chosenPoint)), lightGridSize - 1);
+
+    if (slInfo.restirSamplingMode == 0) {
+        p *= lightGridCDF(startSample.x, gridPos.x, endSample.x, chosenIntervalStart.x, chosenIntervalEnd.x);
+        p *= lightGridCDF(startSample.y, gridPos.y, endSample.y, chosenIntervalStart.y, chosenIntervalEnd.y);
+    } else {
+        p *= lightGridUCDF(startSample.x, gridPos.x, endSample.x, chosenIntervalStart.x, chosenIntervalEnd.x);
+        p *= lightGridUCDF(startSample.y, gridPos.y, endSample.y, chosenIntervalStart.y, chosenIntervalEnd.y);
+    }
+
+    // Choose light from inside light grid cell
+    return sampleFromGridCell(rndState, chosenCell.x, chosenCell.y, p);
 }
 
 bool binaryChoice(inout uint rndState, float w, out float p) {
@@ -270,6 +318,14 @@ bool binaryChoice(inout uint rndState, float w, out float p) {
 
     p = (1.0 - w);
     return false;
+}
+
+float fixFireflies(float p, float pHat) {
+    if (p > 1e-4) {
+        return pHat / p;
+    }
+
+    return clamp(pHat/p, 0, 10);
 }
 
 // Restir Step 1: fill reservoirs for each pixel
@@ -283,16 +339,25 @@ Reservoir fillReservoir(ivec2 pos, SurfacePoint point, float depth, inout uint r
     int totalNum = nPointLights + nEmissiveTriangles;
     for (int i = 0; i < slInfo.restirInitialSamples; i++) {
         float p;
-        if (binaryChoice(rndState, 0.1, p)) {
+        if (binaryChoice(rndState, slInfo.restirPointLightImportance, p)) {
             int lightIdx = int(floor(nextRand(rndState) * nPointLights));
             PointLightParams params = computeLightParams(pointLights[lightIdx]);
             float pHat = evalPointLightStrength(point, params);
             p *= 1.0 / nPointLights;
-            float w = pHat / p;
+            float w = fixFireflies(p, pHat);
             addSample(r, rndState, lightIdx+1, w, pHat, params.pos);
         } else {
-            //int triIdx = sampleEmissiveTriangleUniform(rndState, p);
-            int triIdx = sampleEmissiveTriangleLightGrid(rndState, point, p);
+            int triIdx;
+            if (slInfo.restirSamplingMode == 2) {
+                triIdx = sampleEmissiveTriangleUniform(rndState, p);
+            } else {
+                triIdx = sampleEmissiveTriangleLightGrid(rndState, point, p);
+            }
+
+            if (p <= 0 || isnan(p)) {
+                // Bad samples can happen because of numerical issues.
+                continue;
+            }
 
             vec3 emitterN;
             float area, intensity;
@@ -302,7 +367,7 @@ Reservoir fillReservoir(ivec2 pos, SurfacePoint point, float depth, inout uint r
 
             float pHat = evalEmittingPoint(point, emitterPoint, emitterN) * intensity;
             p *= 1.0 / area;
-            float w = pHat / p;
+            float w = fixFireflies(p, pHat);
             addSample(r, rndState, -triIdx-1, w, pHat, emitterPoint);
         }
     }

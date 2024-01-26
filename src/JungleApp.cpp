@@ -112,7 +112,11 @@ void JungleApp::drawImGUI() {
             ImGui::SliderInt("ReSTIR Spatial Radius", &lighting->restirSpatialRadius, 0, 50);
             ImGui::SliderInt("ReSTIR Spatial Neighbors", &lighting->restirSpatialNeighbors, 0, 20);
             ImGui::SliderInt("ReSTIR Fresh Samples per Pixel", &lighting->restirInitialSamples, 1, 1024);
-            ImGui::SliderInt("ReSTIR Light Grid Search Radius", &lighting->restirLightGridRadius, 0, 128);
+            ImGui::SliderFloat("ReSTIR Light Grid Search Radius", &lighting->restirLightGridRadius, 0.1, 20);
+            ImGui::SliderFloat("ReSTIR Light Grid Search Alpha", &lighting->restirLightGridSearchAlpha, 0.01, 4.0);
+            ImGui::Combo("ReSTIR Sampling Mode", &lighting->restirSamplingMode,
+                         "Weighted Light Grid\0Uniform Light Grid\0Uniform\0\0");
+            ImGui::SliderFloat("ReSTIR Point Light Relative Importance", &lighting->restirPointLightImportance, 0.0, 1.0);
 
             ImGui::Checkbox("Show Light BBoxes", (bool *) &lighting->debug.showLightBoxes);
             ImGui::SliderFloat("Light bbox log size", &lighting->lightRadiusLog, -5.f, 5.f);

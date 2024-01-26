@@ -29,6 +29,10 @@ float nextRand(inout uint randState) {
     return nextRand16bit(randState) / 65535.0f;
 }
 
+vec2 nextRandV2(inout uint randState) {
+    return vec2(nextRand(randState), nextRand(randState));
+}
+
 struct Reservoir {
     // 0 => invalid, > 0: point light number+1, < 0: negated (emissive triangle id+1)
     int selected[NUM_SAMPLES_PER_RESERVOIR];
