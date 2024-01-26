@@ -115,6 +115,7 @@ void JungleApp::drawImGUI() {
             ImGui::SliderFloat("Light bbox log size", &lighting->lightRadiusLog, -5.f, 5.f);
         }
         if (ImGui::CollapsingHeader("Video Settings")) {
+            switchFullscreen = ImGui::Checkbox("Fullscreen", &fullscreen);
             forceRecreateSwapchain = ImGui::Checkbox("VSync", &swapchain->enableVSync);
             ImGui::Checkbox("Enable TAA Jitter", &doJitter);
             ImGui::SliderFloat("TAA alpha", &postprocessing->getTAAPointer()->alpha, 0.f, 1.f);
@@ -220,6 +221,19 @@ void JungleApp::drawFrame() {
 
     VK_CHECK_RESULT(vkEndCommandBuffer(commandBuffer))
 
+
+    if (switchFullscreen) {
+        if (fullscreen) {
+            auto monitor = glfwGetPrimaryMonitor();
+            auto mode = glfwGetVideoMode(monitor);
+            glfwSetWindowMonitor(window, glfwGetPrimaryMonitor(), 0, 0, mode->width, mode->height, mode->refreshRate);
+        } else {
+            glfwSetWindowMonitor(window, NULL, 0, 0, WIDTH, HEIGHT, GLFW_DONT_CARE);
+        }
+        switchFullscreen = false;
+        framebufferResized = true;
+    }
+
     auto result = swapchain->queuePresent(commandBuffers[swapchain->currentFrame], *imageIndex);
     if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || framebufferResized ||
         forceRecreateSwapchain) {
@@ -241,7 +255,13 @@ void JungleApp::initWindow() {
     glfwInit();
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
     glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
-    window = glfwCreateWindow(WIDTH, HEIGHT, "Bioluminescent Jungle", nullptr, nullptr);
+    if (fullscreen) {
+        auto monitor = glfwGetPrimaryMonitor();
+        auto mode = glfwGetVideoMode(monitor);
+        window = glfwCreateWindow(mode->width, mode->height, "Bioluminescent Jungle", monitor, nullptr);
+    } else {
+        window = glfwCreateWindow(WIDTH, HEIGHT, "Bioluminescent Jungle", nullptr, nullptr);
+    }
     glfwSetWindowUserPointer(window, this);
     glfwSetFramebufferSizeCallback(window, handleGLFWResize);
     glfwSetCursorPosCallback(window, handleGLFWMouse);
