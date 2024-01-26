@@ -83,6 +83,7 @@ private:
     static void handleGLFWResize(GLFWwindow* window, int width, int height);
     void handleMotion();
     static void handleGLFWMouse(GLFWwindow *window, double x, double y);
+    static void handleGLFWScrolling(GLFWwindow *window, double xoffset, double yoffset);
 
     void createMVPSetLayout();
 

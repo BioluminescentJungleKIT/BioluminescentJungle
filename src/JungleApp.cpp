@@ -252,6 +252,7 @@ void JungleApp::initWindow() {
     glfwSetWindowUserPointer(window, this);
     glfwSetFramebufferSizeCallback(window, handleGLFWResize);
     glfwSetCursorPosCallback(window, handleGLFWMouse);
+    glfwSetScrollCallback(window, handleGLFWScrolling);
 }
 
 void JungleApp::initImGui() {
@@ -650,6 +651,26 @@ void JungleApp::handleMotion() {
     cameraUpVector = glm::vec3(0, 0, 1);
     lastMoveTime = curTime;
 }
+
+void JungleApp::handleGLFWScrolling(GLFWwindow* window, double xoffset, double yoffset) {
+    if (ImGui::GetIO().WantCaptureMouse) {
+        // ImGui is using the mouse at the moment
+        return;
+    }
+
+    auto app = reinterpret_cast<JungleApp*>(glfwGetWindowUserPointer(window));
+
+    app->cameraMovementSpeed *= pow(2, yoffset/4);
+
+    if (app->cameraMovementSpeed > 102.4) {
+        app->cameraMovementSpeed = 102.4;
+    }
+
+    if (app->cameraMovementSpeed < 0.05) {
+        app->cameraMovementSpeed = 0.05;
+    }
+}
+
 
 void JungleApp::handleGLFWMouse(GLFWwindow *window, double x, double y) {
     if (ImGui::GetIO().WantCaptureMouse) {
