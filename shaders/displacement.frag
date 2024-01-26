@@ -98,7 +98,7 @@ void main() {
         if (mapping.useInvertedFormat > 0) {
             depth = (1.0 - pow(texture(heightMap, currentPos.st).r, 1.0/2.2)) * mapping.heightScale;
         } else {
-            depth = pow(texture(heightMap, currentPos.st).r, 1.0/2.2) * mapping.heightScale;
+            depth = pow(texture(heightMap, currentPos.st).r, 2.2) * mapping.heightScale;
         }
 
         const float heightAbove = currentPos.z - depth;
