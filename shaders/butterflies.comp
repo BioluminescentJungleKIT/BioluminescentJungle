@@ -101,7 +101,8 @@ void main() {
     vec3 random = noise3D(b.utterflies[index].position.xyz * 3, index * 10, ubo.time);
     vec3 cameraVector = ubo.cameraPosition - b.utterflies[index].position.xyz;
     // initialize random position
-    b.utterflies[index].position.xyz += (random * 15 + ubo.cameraPosition) * int(dot(cameraVector, cameraVector) > 10000 || b.utterflies[index].position.xyz == vec3(0,0,0));
+    bool reset = dot(cameraVector, cameraVector) > 1000 || b.utterflies[index].position.xyz == vec3(0,0,0);
+    b.utterflies[index].position.xyz = (random * 15 + ubo.cameraPosition) * int(reset) + b.utterflies[index].position.xyz * (1 - int(reset));
 
     // This is probably suboptimal, but it might work for near-convex meshes. Maybe we could only consider
     // the 2 or 3 nearest triangles or something like that, but there would always be an egde case of some
@@ -122,7 +123,7 @@ void main() {
     //volumeForce = clamp(volumeForce, -0.1, 0.1);
 
     // move towards camera if far away, no LoD needed ;)
-    vec3 cameraForce = cameraVector * smoothstep(30, 100, dot(cameraVector, cameraVector)) * 0.1;
+    vec3 cameraForce = cameraVector * smoothstep(10, 100, dot(cameraVector, cameraVector)) * 0.1;
 
     b.utterflies[index].velocity.xyz += (random * vec3(1,1,0.1) + cameraForce + volumeForce) * ubo.timeDelta;
 
