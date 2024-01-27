@@ -124,7 +124,7 @@ void JungleApp::drawImGUI() {
                     lighting->restirTemporalFactor = 5.0;
                     lighting->restirInitialSamples = 512;
                     lighting->restirSpatialNeighbors = 8;
-                    lighting->restirPointLightImportance = 0.75;
+                    lighting->restirPointLightImportance = 1.0 - (32.0 / 512.0);
                     lighting->pointLightIntensityMultiplier = 10000;
                 } else {
                     lighting->restirTemporalFactor = 50.0;
