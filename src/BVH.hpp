@@ -70,6 +70,9 @@ class BVH {
         auto startTS = std::chrono::system_clock::now();
 
         this->triangles = extractTriangles<Triangle>(scene, meshFilter);
+        if (triangles.empty()) {
+            return;
+        }
 
         cachePrecompute();
         int bvhDepth = constructBVH();
@@ -101,6 +104,10 @@ class BVH {
 
     // returns t, if there is an intersection at origin + t * direction.
     std::optional<float> intersectRay(glm::vec3 origin, glm::vec3 direction, int currentNode = 0) {
+        if (triangles.empty()) {
+            return {};
+        }
+
         auto node = bvh[currentNode];
         if (node.left > 0) {
             std::optional<float> intersectLeft{};
