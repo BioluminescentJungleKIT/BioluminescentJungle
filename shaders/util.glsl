@@ -113,7 +113,7 @@ vec4 evalFog(in SurfacePoint point, in PointLightParams light, in SceneLightInfo
     float lightdist = distance(light.pos, info.cameraPos);
     float h = length(cross(lightray, (point.worldPos - light.pos)))/d;
     if (h*h < light.r*light.r) {
-        contribution.rgb = smoothstep(lightdist - info.bleed, lightdist + info.bleed, d) * exp(-info.fogAbsorption*lightdist) *
+        contribution.rgb = smoothstep(lightdist - info.bleed * h * h * 100, lightdist + info.bleed * h * h * 100, d) * exp(-info.fogAbsorption*lightdist) *
                 max(min(1.0 - pow(h / (light.r * sqrt(b)),1), 1), 0) * (atan(d/h)/h) * light.color * light.intensity * info.scatterStrength;
     }
 
