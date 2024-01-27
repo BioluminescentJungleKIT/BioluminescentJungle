@@ -51,7 +51,7 @@ public:
     // tmpTargetSets[i][j] has the GBuffer attachments from GBuffer[i] and accColor equal to tmpTarget[j]
     std::array<std::array<VkDescriptorSet, NR_TMP_BUFFERS>, MAX_FRAMES_IN_FLIGHT> tmpTargetSets;
 
-    int32_t iterationCount = 2;
+    int32_t iterationCount = 4;
     bool enabled = true;
     bool ignoreAlbedo = false;
 

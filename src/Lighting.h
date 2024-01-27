@@ -92,12 +92,11 @@ class DeferredLighting {
     float lightBleed{0.1};
     float scatterStrength{0.05};
     int computeLightAlgo = 0;
-    float restirTemporalFactor = 5;
-    float restirSpatialFactor = 1;
+    float restirTemporalFactor = 50;
     int restirSpatialRadius = 4;
-    int restirSpatialNeighbors = 4;
+    int restirSpatialNeighbors = 20;
     int restirInitialSamples = 32;
-    float restirLightGridRadius = 1.5;
+    float restirLightGridRadius = 2.0;
     float restirLightGridSearchAlpha = 0.25;
     int restirSamplingMode = 0;
     float restirPointLightImportance = 0.1;

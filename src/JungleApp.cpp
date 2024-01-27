@@ -108,9 +108,9 @@ void JungleApp::drawImGUI() {
                          "None\0Albedo\0Depth\0Position\0Normal\0Motion\0SSR Region\0Emissive Color\0Point Lights\0\0");
             ImGui::Combo("Lighting mode", &lighting->computeLightAlgo,
                          "ReSTIR\0Bruteforce\0BVH only\0\0");
-            ImGui::SliderFloat("ReSTIR Temporal Factor", &lighting->restirTemporalFactor, 0.0f, 50.0f);
+            ImGui::SliderFloat("ReSTIR Temporal Factor", &lighting->restirTemporalFactor, 0.0f, 500.0f);
             ImGui::SliderInt("ReSTIR Spatial Radius", &lighting->restirSpatialRadius, 0, 50);
-            ImGui::SliderInt("ReSTIR Spatial Neighbors", &lighting->restirSpatialNeighbors, 0, 20);
+            ImGui::SliderInt("ReSTIR Spatial Neighbors", &lighting->restirSpatialNeighbors, 0, 100);
             ImGui::SliderInt("ReSTIR Fresh Samples per Pixel", &lighting->restirInitialSamples, 1, 1024);
             ImGui::SliderFloat("ReSTIR Light Grid Search Radius", &lighting->restirLightGridRadius, 0.1, 20);
             ImGui::SliderFloat("ReSTIR Light Grid Search Alpha", &lighting->restirLightGridSearchAlpha, 0.01, 4.0);
