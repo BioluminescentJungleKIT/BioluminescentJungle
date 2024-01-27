@@ -1,6 +1,6 @@
 #version 450
 
-layout(location = 0) in vec3 fragColor;
+layout(location = 0) in vec4 fragColor;
 layout(location = 1) in vec3 normal;
 layout(location = 2) in vec4 currpos;
 layout(location = 3) in vec4 lastpos;
@@ -11,8 +11,8 @@ layout(location = 2) out vec2 outMotion;
 layout(location = 3) out vec4 outEmission;
 
 void main() {
-    outColor = vec4(fragColor, 0.0);
+    outColor = vec4(fragColor.rgb, 0);
+    outEmission = fragColor;
     outNormal = vec4(normalize(normal), 0.0);
     outMotion = (lastpos/lastpos.w - currpos/currpos.w).xy;
-    outEmission = vec4(0);
 }

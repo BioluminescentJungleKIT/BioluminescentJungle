@@ -262,6 +262,11 @@ void VulkanDevice::createLogicalDevice(VkSurfaceKHR surface) {
         createInfo.enabledLayerCount = 0;
     }
 
+    VkPhysicalDeviceVulkan13Features deviceFeaturesVk13{};
+    deviceFeaturesVk13.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
+    deviceFeaturesVk13.maintenance4 = VK_TRUE;
+    createInfo.pNext = &deviceFeaturesVk13;
+
     VK_CHECK_RESULT(vkCreateDevice(physicalDevice, &createInfo, nullptr, &device))
 
     vkGetDeviceQueue(device, chosenQueues.graphicsFamily.value(), 0, &graphicsQueue);

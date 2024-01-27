@@ -14,12 +14,14 @@ enum GBufferTarget {
     Depth = 1,
     Normal = 2,
     Motion = 3,
-    NumAttachments = 4,
+    Emission = 4,  //RGB, strength (factor 0..255)
+    NumAttachments = 5,
 };
 
 inline VkFormat getGBufferAttachmentFormat(Swapchain *swapChain, GBufferTarget target) {
     switch (target) {
         case Albedo:
+        case Emission:
             return VK_FORMAT_R8G8B8A8_SRGB;
         case Normal:
             return VK_FORMAT_R8G8B8A8_SNORM;

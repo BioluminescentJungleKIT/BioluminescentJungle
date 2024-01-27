@@ -63,13 +63,16 @@ class BVH {
     }
 
   public:
-    BVH(VulkanDevice *device, Scene *scene) {
+    BVH(VulkanDevice *device, Scene *scene, std::optional<std::string> meshFilter = {}) {
         this->device = device;
 
         std::cout << "Starting building BVH" << std::endl;
         auto startTS = std::chrono::system_clock::now();
 
-        this->triangles = extractTriangles<Triangle>(scene);
+        this->triangles = extractTriangles<Triangle>(scene, meshFilter);
+        if (triangles.empty()) {
+            return;
+        }
 
         cachePrecompute();
         int bvhDepth = constructBVH();
@@ -97,6 +100,91 @@ class BVH {
 
     size_t getNTriangles() {
         return triangleBuffer.size / sizeof(Triangle);
+    }
+
+    // returns t, if there is an intersection at origin + t * direction.
+    std::optional<float> intersectRay(glm::vec3 origin, glm::vec3 direction, int currentNode = 0) {
+        if (triangles.empty()) {
+            return {};
+        }
+
+        auto node = bvh[currentNode];
+        if (node.left > 0) {
+            std::optional<float> intersectLeft{};
+            std::optional<float> intersectLeftAABB{};
+            std::optional<float> intersectRight{};
+            std::optional<float> intersectRightAABB{};
+
+            intersectLeftAABB = intersectAABB(origin, direction, node.left);
+            if (intersectLeftAABB.has_value()) {
+                intersectLeft = intersectRay(origin, direction, node.left);
+            }
+            intersectRightAABB = intersectAABB(origin, direction, node.right);
+            if (intersectRightAABB.has_value() &&
+            (!intersectLeft.has_value() || intersectRightAABB.value() < intersectLeft.value())) {
+                intersectRight = intersectRay(origin, direction, node.right);
+            }
+
+            if (intersectLeft.has_value() && intersectRight.has_value()) {
+                return std::min(intersectLeft.value(), intersectRight.value());
+            } else if (intersectLeft.has_value()) {
+                return intersectLeft;
+            } else {
+                return intersectRight;
+            }
+        } else {
+            return intersectTriangle(origin, direction, -node.left);
+        }
+    }
+
+    // returns t, if there is an intersection at origin + t * direction.
+    std::optional<float> intersectAABB(glm::vec3 origin, glm::vec3 direction, int index) {
+        auto aabb = bvh[index];
+        float tmin = 0;
+        float tmax = INFINITY;
+
+        for (int a = 0; a < 3; ++a) {
+            float invD = 1.0f / direction[a];
+            float t0 = (aabb.low[a] - origin[a]) * invD;
+            float t1 = (aabb.high[a] - origin[a]) * invD;
+            if (invD < 0.0f) {
+                float temp = t1;
+                t1 = t0;
+                t0 = temp;
+            }
+
+            tmin = t0 > tmin ? t0 : tmin;
+            tmax = t1 < tmax ? t1 : tmax;
+
+            if (tmax <= tmin)
+                return {};
+        }
+
+        return tmin;
+    }
+
+    // returns t, if there is an intersection at origin + t * direction.
+    std::optional<float> intersectTriangle(glm::vec3 origin, glm::vec3 direction, int index) {
+        auto triangle = triangles[index];
+
+        glm::vec3 e0 = triangle.y - triangle.x;
+        glm::vec3 e1 = triangle.x - triangle.z;
+        glm::vec3 triangleNormal = glm::cross(e1, e0);
+
+        glm::vec3 e2 = (1.f / dot(triangleNormal, direction)) * (triangle.x - origin);
+        glm::vec3 i  = cross(direction, e2);
+
+        glm::vec3 barycentricCoord;
+        barycentricCoord.y = dot( i, e1 );
+        barycentricCoord.z = dot( i, e0 );
+        barycentricCoord.x = 1.0 - (barycentricCoord.z + barycentricCoord.y);
+        float hit = dot( triangleNormal, e2 );
+
+        if ((hit > 0.001) && all(greaterThanEqual(barycentricCoord, glm::vec3(0)))) {
+            return hit;
+        } else {
+            return {};
+        }
     }
 
     ~BVH() {
@@ -317,11 +405,15 @@ class BVH {
   public:
     // Compute a list of all triangles in the model.
     template<class TriangleType>
-    static std::vector<TriangleType> extractTriangles(Scene *scene) {
+    static std::vector<TriangleType> extractTriangles(Scene *scene, std::optional<std::string> meshFilter = {}) {
         auto& model = scene->model;
 
         std::vector<TriangleType> result;
         for (size_t meshId = 0; meshId < model.meshes.size(); meshId++) {
+            if (meshFilter.has_value() && model.meshes[meshId].name != meshFilter.value()) {
+                continue;
+            }
+
             if (!scene->meshTransforms.count(meshId)) {
                 continue;
             }

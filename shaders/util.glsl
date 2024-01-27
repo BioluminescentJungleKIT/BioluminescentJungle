@@ -125,5 +125,5 @@ vec3 evalPointLight(in SurfacePoint point, in PointLightParams light, in SceneLi
 
     float b = max3(light.color) * light.intensity;
     float cutoff = max(min(1.0 - pow(dist / (light.r * sqrt(b)), 4), 1), 0);
-    return f * fog.w * light.color * light.intensity * point.albedo + fog.rgb;
+    return f * fog.w * cutoff * light.color * light.intensity * point.albedo + fog.rgb;
 }

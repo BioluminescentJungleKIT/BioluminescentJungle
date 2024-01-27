@@ -28,6 +28,8 @@ struct GlobalFogUBO {
     glm::float32 ssrHitThreshold;
     glm::float32 ssrEdgeSmoothing;
     glm::int32 ssrRaySteps;
+
+    glm::int32 renderEmission;
 };
 
 /**

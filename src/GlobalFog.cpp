@@ -23,6 +23,7 @@ void GlobalFog::updateUBOContent() {
     ubo.ssrEdgeSmoothing = ssrEdgeSmoothing;
     ubo.ssrHitThreshold = ssrHitThreshold;
     ubo.ssrRaySteps = ssrRaySteps;
+    ubo.renderEmission = enabled;
 }
 
 void GlobalFog::updateCamera(glm::mat4 view, glm::mat4 projection, float near, float far) {
