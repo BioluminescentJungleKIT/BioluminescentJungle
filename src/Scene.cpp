@@ -1248,14 +1248,14 @@ static ShaderList selectShaders(const PipelineDescription &descr) {
         };
     }
 
-    if (descr.isWater) {
-        return ShaderList {
+    if (descr.useNormalMap) {
+        if (descr.isWater) {
+            return ShaderList {
                 {VK_SHADER_STAGE_VERTEX_BIT,   "shaders/water.vert"},
                 {VK_SHADER_STAGE_FRAGMENT_BIT, "shaders/displacement.frag"},
-        };
-    }
+            };
+        }
 
-    if (descr.useNormalMap) {
         return ShaderList {
             {VK_SHADER_STAGE_VERTEX_BIT,   "shaders/displacement.vert"},
             {VK_SHADER_STAGE_FRAGMENT_BIT, "shaders/displacement.frag"},

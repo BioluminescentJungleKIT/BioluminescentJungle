@@ -8,6 +8,7 @@ layout(location = 3) in vec4 lastpos;
 layout(location = 0) out vec4 outColor;
 layout(location = 1) out vec4 outNormal;
 layout(location = 2) out vec2 outMotion;
+layout(location = 3) out vec4 outEmission;
 
 layout(set = 2, binding = 0) uniform sampler2D texSampler;
 
@@ -19,4 +20,5 @@ void main() {
     // alpha channel == displacement wrt normal
     outNormal = vec4(normalize(normal), 0.0);
     outMotion = (lastpos/lastpos.w - currpos/currpos.w).xy;
+    outEmission = vec4(0);
 }
