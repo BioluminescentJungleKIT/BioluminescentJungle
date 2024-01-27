@@ -98,8 +98,8 @@ struct PipelineDescription {
 };
 
 struct MaterialSettings {
-    glm::float32_t heightScale = 0.002;
-    glm::int32_t raymarchSteps = 100;
+    glm::float32_t heightScale = 0.05;
+    glm::int32_t raymarchSteps = 200;
     glm::int32_t enableInverseDisplacement = 1;
     glm::int32_t enableLinearApprox = 1;
     glm::int32_t useInvertedFormat = 0;

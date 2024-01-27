@@ -28,6 +28,10 @@ int main(int argc, char **argv) {
         if (!strcmp(argv[i], "--ratelimit")) {
             Swapchain::rateLimit = std::atoi(argv[i+1]);
         }
+
+        if (!strcmp(argv[i], "--fullscreen")) {
+            app.fullscreen = true;
+        }
     }
 
     try {

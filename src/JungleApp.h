@@ -38,6 +38,8 @@ public:
         mplayer.terminate();
     }
 
+    bool fullscreen = false;
+
 private:
     void initWindow();
 
@@ -110,6 +112,7 @@ private:
 
     bool showMetricsWindow;
     bool forceRecreateSwapchain;
+    bool switchFullscreen;
     bool forceReloadShaders;
     bool showDemoWindow;
     bool invertMouse = true;
