@@ -45,11 +45,11 @@ static bool materialUsesDisplacedTexture(const tinygltf::Material& material) {
     return material.occlusionTexture.index >= 0;
 }
 
-static bool materialUsesEmissiveTexture(tinygltf::Material &material) {
+static bool materialUsesEmissiveTexture(const tinygltf::Material &material) {
     return material.emissiveTexture.index >= 0;
 }
 
-static bool materialUsesEmissiveColor(tinygltf::Material &material) {
+static bool materialUsesEmissiveColor(const tinygltf::Material &material) {
     return !material.emissiveFactor.empty();
 }
 
@@ -1157,6 +1157,10 @@ void Scene::setupTextures() {
 
         if (materialUsesDisplacedTexture(material)) {
             loadTexture(material.occlusionTexture.index);
+        }
+
+        if (materialUsesEmissiveTexture(material)) {
+            loadTexture(material.emissiveTexture.index);
         }
     }
 }
