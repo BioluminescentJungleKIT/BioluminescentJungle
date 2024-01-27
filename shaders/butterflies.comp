@@ -103,6 +103,7 @@ void main() {
     // initialize random position
     bool reset = dot(cameraVector, cameraVector) > 1000 || b.utterflies[index].position.xyz == vec3(0,0,0);
     b.utterflies[index].position.xyz = (random * 15 + ubo.cameraPosition) * int(reset) + b.utterflies[index].position.xyz * (1 - int(reset));
+    b.utterflies[index].velocity.xyz = random * int(reset) + b.utterflies[index].velocity.xyz * (1 - int(reset));
 
     // This is probably suboptimal, but it might work for near-convex meshes. Maybe we could only consider
     // the 2 or 3 nearest triangles or something like that, but there would always be an egde case of some
@@ -123,9 +124,9 @@ void main() {
     //volumeForce = clamp(volumeForce, -0.1, 0.1);
 
     // move towards camera if far away, no LoD needed ;)
-    vec3 cameraForce = cameraVector * smoothstep(10, 100, dot(cameraVector, cameraVector)) * 0.1;
+    vec3 cameraForce = cameraVector * smoothstep(30, 100, dot(cameraVector, cameraVector)) * 0.1;
 
-    b.utterflies[index].velocity.xyz += (random * vec3(1,1,0.1) + cameraForce + volumeForce) * ubo.timeDelta;
+    b.utterflies[index].velocity.xyz += (random * 2 * vec3(1,1,0.1) + cameraForce /*+ volumeForce*/) * ubo.timeDelta;
 
     b.utterflies[index].velocity.xyz = clamp(b.utterflies[index].velocity.xyz, vec3(-1, -1, -1), vec3(1, 1, 1));
     float speed = length(b.utterflies[index].velocity);
