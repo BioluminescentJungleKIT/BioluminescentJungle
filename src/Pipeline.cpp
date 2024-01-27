@@ -159,7 +159,7 @@ GraphicsPipeline::GraphicsPipeline(VulkanDevice* device, VkRenderPass renderPass
     VkPipelineDepthStencilStateCreateInfo depthStencil{};
     depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
     depthStencil.depthTestEnable = params.useDepthTest ? VK_TRUE : VK_FALSE;
-    depthStencil.depthWriteEnable = params.useDepthTest ? VK_TRUE : VK_FALSE;
+    depthStencil.depthWriteEnable = (params.useDepthTest && params.writeDepth) ? VK_TRUE : VK_FALSE;
     depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
     depthStencil.depthBoundsTestEnable = VK_FALSE;
     depthStencil.stencilTestEnable = VK_FALSE;
