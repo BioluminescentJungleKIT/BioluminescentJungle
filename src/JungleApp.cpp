@@ -118,6 +118,23 @@ void JungleApp::drawImGUI() {
                          "Weighted Light Grid\0Uniform Light Grid\0Uniform\0\0");
             ImGui::SliderFloat("ReSTIR Point Light Relative Importance", &lighting->restirPointLightImportance, 0.0, 1.0);
 
+            ImGui::SliderFloat("Butterfly Luminance", &lighting->pointLightIntensityMultiplier, 0.0, 10000.0);
+            if (ImGui::Checkbox("Strong Butterfly Illumination", &illuminationViaButterflies)) {
+                if (illuminationViaButterflies) {
+                    lighting->restirTemporalFactor = 5.0;
+                    lighting->restirInitialSamples = 512;
+                    lighting->restirSpatialNeighbors = 8;
+                    lighting->restirPointLightImportance = 0.75;
+                    lighting->pointLightIntensityMultiplier = 10000;
+                } else {
+                    lighting->restirTemporalFactor = 50.0;
+                    lighting->restirInitialSamples = 32;
+                    lighting->restirSpatialNeighbors = 20;
+                    lighting->restirPointLightImportance = 0.1;
+                    lighting->pointLightIntensityMultiplier = 1;
+                }
+            }
+
             ImGui::Checkbox("Show Light BBoxes", (bool *) &lighting->debug.showLightBoxes);
             ImGui::SliderFloat("Light bbox log size", &lighting->lightRadiusLog, -5.f, 5.f);
         }
@@ -154,7 +171,6 @@ void JungleApp::drawImGUI() {
         if (ImGui::CollapsingHeader("Scene Settings")) {
             ImGui::Checkbox("Time", &doMotion);
             ImGui::Checkbox("Spin", &spinScene);
-            ImGui::SliderFloat("Butterfly Luminance", &lighting->pointLightIntensityMultiplier, 0.0, 20.0);
             ImGui::SliderFloat("Fixed spin", &fixedRotation, 0.0f, 360.0f);
             ImGui::SliderFloat("SSR strength", &postprocessing->getFogPointer()->ssrStrength, 0, 1);
             ImGui::SliderFloat("SSR Edge Smoothing", &postprocessing->getFogPointer()->ssrEdgeSmoothing, 0, 4);
