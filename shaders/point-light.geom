@@ -37,7 +37,6 @@ void main() {
     mat4 VP = ubo.proj * ubo.view;
     vec4 light_pos_screen = VP * vec4(position[0], 1.0);
     light_pos_screen /= light_pos_screen.w;
-    light_pos_screen.w = 1;
     vec2 pp = (light_pos_screen.xy * 0.5 + 0.5) * vec2(info.viewportWidth, info.viewportHeight);
 
     vec3 up = normalize(transpose(ubo.view)[1].xyz);

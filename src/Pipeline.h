@@ -41,7 +41,6 @@ struct PipelineParameters {
     std::vector<VkPushConstantRange> pushConstants;
     bool backFaceCulling = true;
     bool isButterfly;
-    bool writeDepth = true;
 };
 
 class GraphicsPipeline {

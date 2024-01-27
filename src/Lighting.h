@@ -65,8 +65,7 @@ class DeferredLighting {
 
     VkSampler linearSampler;
 
-    void setup(bool recompileshaders, Scene *scene, VkDescriptorSetLayout mvpLayout,
-               const RenderTarget &gBuffer);
+    void setup(bool recompileshaders, Scene *scene, VkDescriptorSetLayout mvpLayout);
 
     void recordCommandBuffer(VkCommandBuffer commandBuffer, VkDescriptorSet mvpSet, Scene* scene);
 
@@ -78,7 +77,7 @@ class DeferredLighting {
     RenderTarget finalLight;
 
     void handleResize(const RenderTarget& gBuffer, VkDescriptorSetLayout mvpSetLayout, Scene *scene);
-    void setupRenderTarget(const RenderTarget &gBuffer);
+    void setupRenderTarget();
     void updateDescriptors(const RenderTarget& gBuffer, Scene *scene);
 
     void setupBuffers();

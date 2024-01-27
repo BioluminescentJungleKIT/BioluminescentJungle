@@ -93,8 +93,8 @@ void DeferredLighting::createPipeline(bool recompileShaders, VkDescriptorSetLayo
         .dstBlend = VK_BLEND_FACTOR_ONE,
     }};
 
-    params.useDepthTest = true;
-    params.writeDepth = false;
+    // TODO: depth testing, we ought to enable it
+    params.useDepthTest = false;
     params.descriptorSetLayouts = {mvpLayout, samplersLayout, debugLayout};
     this->restirFogPipeline = std::make_unique<GraphicsPipeline>(device, restirFogRenderPass, 0, params);
     this->pointLightsPipeline = std::make_unique<GraphicsPipeline>(device, debugRenderPass, 0, params);
@@ -116,6 +116,7 @@ void DeferredLighting::createPipeline(bool recompileShaders, VkDescriptorSetLayo
     // One color attachment, no blending enabled for it
     params.blending = {{}};
 
+    // TODO: depth testing, we ought to enable it
     params.useDepthTest = false;
     params.descriptorSetLayouts = {mvpLayout, samplersLayout, debugLayout};
     this->visualizationPipeline = std::make_unique<GraphicsPipeline>(device, debugRenderPass, 0, params);
@@ -134,8 +135,6 @@ void DeferredLighting::createPipeline(bool recompileShaders, VkDescriptorSetLayo
 }
 
 VkRenderPass DeferredLighting::createRenderPass(bool clearCompositedLight) {
-    std::vector<VkAttachmentDescription> attachments;
-
     VkAttachmentDescription colorAttachment{};
     colorAttachment.format = LIGHT_ACCUMULATION_FORMAT;
     colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
@@ -144,33 +143,17 @@ VkRenderPass DeferredLighting::createRenderPass(bool clearCompositedLight) {
     colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
     colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
     colorAttachment.initialLayout =
-            clearCompositedLight ? VK_IMAGE_LAYOUT_UNDEFINED : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        clearCompositedLight ? VK_IMAGE_LAYOUT_UNDEFINED : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     colorAttachment.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    attachments.push_back(colorAttachment);
-
-    VkAttachmentDescription depthAttachment{};
-    depthAttachment.format = getGBufferAttachmentFormat(swapchain, GBufferTarget::Depth);
-    depthAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
-    depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
-    depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-    depthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    depthAttachment.initialLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    depthAttachment.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    attachments.push_back(depthAttachment);
 
     VkAttachmentReference colorAttachmentRef{};
     colorAttachmentRef.attachment = 0;
     colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-    VkAttachmentReference depthAttachmentRef{};
-    depthAttachmentRef.attachment = 1;
-    depthAttachmentRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
     VkSubpassDescription subpass{};
     subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
     subpass.colorAttachmentCount = 1;
     subpass.pColorAttachments = &colorAttachmentRef;
-    subpass.pDepthStencilAttachment = &depthAttachmentRef;
 
     // We need to first transition the attachments to ATTACHMENT_WRITE, then transition back to READ for the
     // next stages
@@ -195,8 +178,8 @@ VkRenderPass DeferredLighting::createRenderPass(bool clearCompositedLight) {
 
     VkRenderPassCreateInfo renderPassInfo{};
     renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-    renderPassInfo.attachmentCount = attachments.size();
-    renderPassInfo.pAttachments = attachments.data();
+    renderPassInfo.attachmentCount = 1;
+    renderPassInfo.pAttachments = &colorAttachment;
     renderPassInfo.subpassCount = 1;
     renderPassInfo.pSubpasses = &subpass;
     renderPassInfo.dependencyCount = dependencies.size();
@@ -212,8 +195,7 @@ void DeferredLighting::createRenderPass() {
     restirFogRenderPass = createRenderPass(false);
 }
 
-void DeferredLighting::setup(bool recompileShaders, Scene *scene, VkDescriptorSetLayout mvpLayout,
-                             const RenderTarget &gBuffer) {
+void DeferredLighting::setup(bool recompileShaders, Scene *scene, VkDescriptorSetLayout mvpLayout) {
     this->lightGrid = std::make_unique<LightGrid>(device, scene, 1, 1);
     this->bvh = std::make_unique<BVH>(device, scene);
 
@@ -223,7 +205,7 @@ void DeferredLighting::setup(bool recompileShaders, Scene *scene, VkDescriptorSe
     linearSampler = VulkanHelper::createSampler(device, true);
     createDescriptorSetLayout();
     createPipeline(recompileShaders, mvpLayout, scene);
-    setupRenderTarget(gBuffer);
+    setupRenderTarget();
 }
 
 size_t roundUpDiv(size_t a, size_t b) {
@@ -586,7 +568,7 @@ void DeferredLighting::handleResize(const RenderTarget& gBuffer, VkDescriptorSet
     compositedLight.destroyAll();
     finalLight.destroyAll();
 
-    setupRenderTarget(gBuffer);
+    setupRenderTarget();
     createPipeline(false, mvpSetLayout, scene);
     updateReservoirs();
     updateDescriptors(gBuffer, scene);
@@ -595,7 +577,7 @@ void DeferredLighting::handleResize(const RenderTarget& gBuffer, VkDescriptorSet
     denoiser.handleResize(compositedLight, gBuffer);
 }
 
-void DeferredLighting::setupRenderTarget(const RenderTarget &gBuffer) {
+void DeferredLighting::setupRenderTarget() {
     compositedLight.init(device, MAX_FRAMES_IN_FLIGHT);
     compositedLight.addAttachment(swapchain->renderSize(), LIGHT_ACCUMULATION_FORMAT,
         VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
@@ -603,11 +585,6 @@ void DeferredLighting::setupRenderTarget(const RenderTarget &gBuffer) {
     finalLight.init(device, MAX_FRAMES_IN_FLIGHT);
     finalLight.addAttachment(swapchain->renderSize(), LIGHT_ACCUMULATION_FORMAT,
         VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
-    std::vector<VkImage> depthImages{};
-    for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-        depthImages.push_back(gBuffer.images[i][GBufferTarget::Depth]);
-    }
-    finalLight.addAttachment(depthImages, swapchain->chooseDepthFormat(), VK_IMAGE_ASPECT_DEPTH_BIT);
 
     finalLight.createFramebuffers(debugRenderPass, swapchain->renderSize());
     finalLight.createFramebuffers(restirFogRenderPass, swapchain->renderSize());

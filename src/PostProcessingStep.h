@@ -82,8 +82,6 @@ public:
     }
 
     virtual void createRenderPass() {
-        std::vector<VkAttachmentDescription> attachments;
-
         VkAttachmentDescription colorAttachment{};
         colorAttachment.format = (flags & PPSTEP_RENDER_LAST) ? swapchain->swapChainImageFormat : POST_PROCESSING_FORMAT;
         colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
@@ -94,31 +92,15 @@ public:
         colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
         colorAttachment.finalLayout = (flags & PPSTEP_RENDER_LAST) ? VK_IMAGE_LAYOUT_PRESENT_SRC_KHR
                                                   : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        attachments.push_back(colorAttachment);
-
-        VkAttachmentDescription depthAttachment{};
-        depthAttachment.format = getGBufferAttachmentFormat(swapchain, GBufferTarget::Depth);
-        depthAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
-        depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
-        depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-        depthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-        depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-        depthAttachment.initialLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        depthAttachment.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        attachments.push_back(depthAttachment);
 
         VkAttachmentReference colorAttachmentRef{};
         colorAttachmentRef.attachment = 0;
         colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-        VkAttachmentReference depthAttachmentRef{};
-        depthAttachmentRef.attachment = 1;
-        depthAttachmentRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
         VkSubpassDescription subpass{};
         subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
         subpass.colorAttachmentCount = 1;
         subpass.pColorAttachments = &colorAttachmentRef;
-        subpass.pDepthStencilAttachment = &depthAttachmentRef;
 
         std::array<VkSubpassDependency, 2> dependencies;
         dependencies[0].srcSubpass = VK_SUBPASS_EXTERNAL;
@@ -139,8 +121,8 @@ public:
 
         VkRenderPassCreateInfo renderPassInfo{};
         renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-        renderPassInfo.attachmentCount = attachments.size();
-        renderPassInfo.pAttachments = attachments.data();
+        renderPassInfo.attachmentCount = 1;
+        renderPassInfo.pAttachments = &colorAttachment;
         renderPassInfo.subpassCount = 1;
         renderPassInfo.pSubpasses = &subpass;
         renderPassInfo.dependencyCount = dependencies.size();

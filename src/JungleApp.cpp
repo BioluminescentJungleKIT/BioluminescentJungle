@@ -27,7 +27,7 @@ void JungleApp::initVulkan(const std::string &sceneName, bool recompileShaders) 
     setupRenderStageScene(sceneName, recompileShaders);
 
     lighting = std::make_unique<DeferredLighting>(&device, swapchain.get());
-    lighting->setup(recompileShaders, &scene, mvpSetLayout, gBuffer);
+    lighting->setup(recompileShaders, &scene, mvpSetLayout);
 
     this->groundBVH = std::make_unique<BVH>(&device, &scene, "Ground");
 
