@@ -30,6 +30,9 @@ vec3 rndColor(vec3 pos) {
 }
 
 void main() {
+    float depth = texelFetch(depth, ivec2(gl_FragCoord), 0).r;
+    if (gl_FragCoord.z > depth) {discard;}
+
     if (debug.showLightBoxes > 0) {
         outColor = vec4(rndColor(fPosition) * 0.2, 1.0);
         if (length(gl_FragCoord.xy - projPosition) < 7) {
@@ -40,7 +43,6 @@ void main() {
         return;
     }
 
-    float depth = texelFetch(depth, ivec2(gl_FragCoord), 0).r;
     vec3 fragmentWorldPos = calculatePosition(depth, gl_FragCoord.xy, info);
 
     if (debug.compositionMode == 8 || debug.compositionMode == 0) {
