@@ -52,15 +52,14 @@ void computeTangentSpace(vec3 N, out vec3 T, out vec3 B) {
     B *= invmax;
 }
 
-void readConvertNormal(vec3 T, vec3 B, vec3 N, vec2 uv, vec3 displacementView) {
+void readConvertNormal(vec3 T, vec3 B, vec3 N, vec2 uv) {
     float gamma = 1.0/2.2;
     vec3 normal = pow(texture(normalMap, uv).rgb, vec3(gamma)) * 2 - 1;
     normal = normalize(transpose(inverse(mat3(T, B, N))) * normal);
-    float displacementAlongNormal = dot(normal, displacementView);
 
     // Convert normal to world space, because our lighting uses it
     normal = (transpose(ubo.view) * vec4(normal, 0.0)).xyz;
-    outNormal = vec4(normal, displacementAlongNormal);
+    outNormal = vec4(normal, 0);
 }
 
 void main() {
@@ -73,8 +72,8 @@ void main() {
     if (normalMapOnly > 0 || mapping.enableInverseDisplacement == 0) {
         outColor = vec4(texture(albedo, uv).rgb, materialReflectivity);
         // Convert normal to world space, because our lighting uses it
-        readConvertNormal(T, B, N, uv, vec3(0));
-        gl_FragDepth = fsPosClipSpace.z / fsPosClipSpace.w;
+        readConvertNormal(T, B, N, uv);
+        //gl_FragDepth = fsPosClipSpace.z / fsPosClipSpace.w;
         return;
     }
 
@@ -111,14 +110,14 @@ void main() {
             }
 
             // Adjust depth based on how far along the view ray we have travelled
-            const float factor = length(currentPos.xyz - vec3(uv, mapping.heightScale)) / length(viewRay);
+            //const float factor = length(currentPos.xyz - vec3(uv, mapping.heightScale)) / length(viewRay);
 
-            vec3 finalViewPos = fsPos * (1.0 + factor);
-            vec4 finalNdcPos = ubo.proj * vec4(finalViewPos, 1.0);
-            gl_FragDepth = finalNdcPos.z / finalNdcPos.w;
+            //vec3 finalViewPos = fsPos * (1.0 + factor);
+            //vec4 finalNdcPos = ubo.proj * vec4(finalViewPos, 1.0);
+            //gl_FragDepth = finalNdcPos.z / finalNdcPos.w;
 
             outColor = vec4(texture(albedo, currentPos.st).rgb, materialReflectivity);
-            readConvertNormal(T, B, N, currentPos.st, finalViewPos - fsPos);
+            readConvertNormal(T, B, N, currentPos.st);
             return;
         } else {
             currentPos += step;

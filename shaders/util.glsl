@@ -13,6 +13,11 @@ struct SceneLightInfo {
     int restirSpatialRadius;
     int restirSpatialNeighbors;
     int restirInitialSamples;
+    float restirLightGridRadius;
+    float restirLightGridSearchAlpha;
+    int restirSamplingMode;
+    float restirPointLightImportance;
+    float pointLightIntensityMultiplier;
 };
 
 vec3 calculatePositionFromUV(float depth, vec2 uv, mat4 inverseVP) {
@@ -32,7 +37,6 @@ struct SurfacePoint {
     vec3 worldPos;
     vec3 albedo;
     vec3 N;
-    float dispAlongN;
 };
 
 struct PointLight {

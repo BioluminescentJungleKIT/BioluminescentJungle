@@ -11,10 +11,8 @@ struct Ray {
 };
 
 struct BVHNode {
-    vec4 low; // just xyz
-    vec4 high; // just xyz
-    int left;
-    int right;
+    vec4 low; // just xyz, w is reinterpret_cast<float>(leftIdx)
+    vec4 high; // just xyz, w is reinterpret_cast<float>(rightIdx)
 };
 
 // Thanks Stackoverflow

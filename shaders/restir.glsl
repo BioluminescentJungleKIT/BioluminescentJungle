@@ -19,10 +19,18 @@ uint getRandSeed(uvec3 state) {
     return hash(state.x) ^ hash(state.y * 23999 + state.z);
 }
 
-float nextRand(inout uint randState) {
+uint nextRand16bit(inout uint randState) {
     // Random prime numbers
     randState = randState * 1100003563 + 132233;
-	return (randState >> 16) / 65535.0f;
+	return randState >> 16;
+}
+
+float nextRand(inout uint randState) {
+    return nextRand16bit(randState) / 65535.0f;
+}
+
+vec2 nextRandV2(inout uint randState) {
+    return vec2(nextRand(randState), nextRand(randState));
 }
 
 struct Reservoir {

@@ -39,12 +39,10 @@ class BVH {
     };
 
     struct BVHNode {
-        glm::vec3 low alignas(16);
-        glm::vec3 high alignas(16);
-
-        // If negative, indicates a leaf triangle node
-        glm::int32_t left alignas(16);
-        glm::int32_t right;
+        glm::vec3 low;
+        glm::int32 left;
+        glm::vec3 high;
+        glm::int32 right;
     };
 
     static glm::vec3 transformVec(const glm::vec3& vec, const glm::mat4& mat) {
@@ -192,14 +190,15 @@ class BVH {
         triangleBuffer.destroy(device);
     }
 
+    template<class TriangleType>
+    static inline float midpoint(const TriangleType& tri, int component) {
+        return (tri.x[component] + tri.y[component] + tri.z[component]) / 3.0f;
+    }
+
   private:
     VulkanDevice *device;
     DataBuffer bvhBuffer;
     DataBuffer triangleBuffer;
-
-    static inline float midpoint(const Triangle& tri, int component) {
-        return (tri.x[component] + tri.y[component] + tri.z[component]) / 3.0f;
-    }
 
     // TODO: currently, this BVH construction is extremely simple.
     // We simply split triangles equally on both sides, and sort them by their center points.

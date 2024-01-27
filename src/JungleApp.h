@@ -133,6 +133,7 @@ private:
     glm::vec3 cameraFinalLookAt = glm::vec3(5.0f, 5.0f, 5.0f);
     // Parameters while computing the animation for the camera
     glm::vec3 cameraAnimStartPos = cameraFinalPosition;
+    bool illuminationViaButterflies = false;
 
     glm::vec3 cameraAnimEndPos = cameraFinalPosition;
     std::optional<double> lastCameraChange;

@@ -27,6 +27,7 @@ struct DebugOptions {
 };
 
 class BVH;
+class LightGrid;
 
 /**
  * A class which encapsulates state related to accumulation of light on a framebuffer.
@@ -47,6 +48,7 @@ class DeferredLighting {
     std::unique_ptr<ComputePipeline> raytracingPipeline;
     std::unique_ptr<ComputePipeline> restirEvalPipeline;
     std::unique_ptr<BVH> bvh;
+    std::unique_ptr<LightGrid> lightGrid;
 
     VkRenderPass createRenderPass(bool clearCompositedLight);
 
@@ -90,11 +92,15 @@ class DeferredLighting {
     float lightBleed{0.1};
     float scatterStrength{0.05};
     int computeLightAlgo = 0;
-    float restirTemporalFactor = 5;
-    float restirSpatialFactor = 1;
+    float restirTemporalFactor = 50;
     int restirSpatialRadius = 4;
-    int restirSpatialNeighbors = 4;
+    int restirSpatialNeighbors = 20;
     int restirInitialSamples = 32;
+    float restirLightGridRadius = 2.0;
+    float restirLightGridSearchAlpha = 0.25;
+    int restirSamplingMode = 0;
+    float restirPointLightImportance = 0.1;
+    float pointLightIntensityMultiplier = 1.0;
 
     bool useRaytracingPipeline() {
         return debug.compositionMode == 0;
@@ -130,7 +136,6 @@ class DeferredLighting {
     UniformBuffer debugUBO;
     UniformBuffer lightUBO;
     UniformBuffer computeParamsUBO;
-    DataBuffer emissiveTriangles;
     Denoiser denoiser;
 
     // *2 for temporary reservoirs while using temporal and spatial reuse
