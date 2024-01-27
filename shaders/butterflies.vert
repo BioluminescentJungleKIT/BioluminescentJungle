@@ -1,6 +1,7 @@
 #version 450
 
 #include "util.glsl"
+#include "noise3D.glsl"
 
 layout(set = 0, binding = 0) uniform UniformBufferObject {
     mat4 modl;  // global
@@ -52,15 +53,21 @@ mat4 computeModel(PointLight butterfly, float timeDelta) {
     return model;
 }
 
+vec3 flap(vec3 inpos, float time) {
+    inpos.z *= sin(ubo.time * 10 + (snoise(vec3(ubo.time * 0.6 + 100 * gl_InstanceIndex))+1) * 2);
+    return inpos;
+}
+
 void main() {
-    // TODO [optimization] outsource uniform multiplications to the CPU
     mat4 model = computeModel(b.utterflies[gl_InstanceIndex], 0);
-    gl_Position = ubo.proj * ubo.view * ubo.modl * model * vec4(inPosition, 1.0);
+    // TODO [optimization] outsource uniform multiplications to the CPU
+    gl_Position = ubo.proj * ubo.view * ubo.modl * model * vec4(flap(inPosition, ubo.time), 1.0);
     gl_Position += gl_Position.w * vec4(ubo.jitt, 0, 0);
     currpos = gl_Position;
 
     lastpos = lastubo.proj * lastubo.view * lastubo.modl
-              * computeModel(b.utterflies[gl_InstanceIndex], lastubo.time - ubo.time)  * vec4(inPosition, 1.0);
+              * computeModel(b.utterflies[gl_InstanceIndex], lastubo.time - ubo.time)
+              * vec4(flap(inPosition, lastubo.time), 1.0);
     lastpos += lastpos.w * vec4(ubo.jitt, 0, 0);
 
     uv = inUV;
