@@ -100,6 +100,7 @@ class DeferredLighting {
     float restirLightGridSearchAlpha = 0.25;
     int restirSamplingMode = 0;
     float restirPointLightImportance = 0.1;
+    float pointLightIntensityMultiplier = 1.0;
 
     bool useRaytracingPipeline() {
         return debug.compositionMode == 0;

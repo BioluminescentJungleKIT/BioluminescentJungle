@@ -14,8 +14,8 @@ pkg_check_modules(ShaderC REQUIRED shaderc)
 
 find_package(OpenMP)
 
-add_compile_options(-fsanitize=address)
-add_link_options(-fsanitize=address)
+#add_compile_options(-fsanitize=address)
+#add_link_options(-fsanitize=address)
 
 add_executable(Jungle src/main.cpp
         src/JungleApp.cpp

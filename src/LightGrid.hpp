@@ -1,9 +1,5 @@
 #include "BVH.hpp"
 
-//#include <iostream>
-#define _ << " " <<
-#define debug(x) #x << " = " << x
-
 // A LightGrid partitions the emissive triangles of a scene into fixed-size cells.
 // At runtime, we select the nearest cells to the camera and use only light sources from those cells in the
 // ReSTIR computation.

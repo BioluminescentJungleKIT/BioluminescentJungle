@@ -171,7 +171,7 @@ vec3 naiveLighting(SurfacePoint point, float depth) {
     for (int i = 0; i < nPointLights; i++) {
         PointLightParams light = computeLightParams(pointLights[i]);
         if (depth < 0.999 && !testShadowBruteforce(point, light.pos)) {
-            float f = evalPointLightStrength(point, light);
+            float f = evalPointLightStrength(point, light) * slInfo.pointLightIntensityMultiplier;
             f *= evalFogAbsorption(point, slInfo);
             finalColor += f * light.color;
         }
@@ -186,7 +186,7 @@ vec3 naiveLightingBVH(ivec2 pos, SurfacePoint point, float depth) {
     for (int i = 0; i < nPointLights; i++) {
         PointLightParams light = computeLightParams(pointLights[i]);
         if (depth < 0.999 && !testShadowAABB(point, light.pos)) {
-            float f = evalPointLightStrength(point, light);
+            float f = evalPointLightStrength(point, light) * slInfo.pointLightIntensityMultiplier;
             f *= evalFogAbsorption(point, slInfo);
             finalColor += f * light.color;
         }
@@ -342,7 +342,7 @@ Reservoir fillReservoir(ivec2 pos, SurfacePoint point, float depth, inout uint r
         if (binaryChoice(rndState, slInfo.restirPointLightImportance, p)) {
             int lightIdx = int(floor(nextRand(rndState) * nPointLights));
             PointLightParams params = computeLightParams(pointLights[lightIdx]);
-            float pHat = evalPointLightStrength(point, params);
+            float pHat = evalPointLightStrength(point, params) * slInfo.pointLightIntensityMultiplier;
             p *= 1.0 / nPointLights;
             float w = fixFireflies(p, pHat);
             addSample(r, rndState, lightIdx+1, w, pHat, params.pos);

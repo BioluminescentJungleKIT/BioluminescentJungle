@@ -28,6 +28,7 @@ struct LightingBuffer {
     glm::float32 restirLightGridSearchAlpha;
     glm::int32 restirSamplingMode;
     glm::float32 restirPointLightImportance;
+    glm::float32 pointLightIntensityMultiplier;
 };
 
 struct ComputeParamsBuffer {
@@ -550,6 +551,7 @@ void DeferredLighting::updateBuffers(glm::mat4 vp, glm::vec3 cameraPos, glm::vec
     buffer.restirSamplingMode = restirSamplingMode;
     buffer.restirSamplingMode = restirSamplingMode;
     buffer.restirPointLightImportance = restirPointLightImportance;
+    buffer.pointLightIntensityMultiplier = pointLightIntensityMultiplier;
     lightUBO.update(&buffer, sizeof(buffer), swapchain->currentFrame);
     denoiser.updateBuffers();
 }

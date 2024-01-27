@@ -154,6 +154,7 @@ void JungleApp::drawImGUI() {
         if (ImGui::CollapsingHeader("Scene Settings")) {
             ImGui::Checkbox("Time", &doMotion);
             ImGui::Checkbox("Spin", &spinScene);
+            ImGui::SliderFloat("Butterfly Luminance", &lighting->pointLightIntensityMultiplier, 0.0, 20.0);
             ImGui::SliderFloat("Fixed spin", &fixedRotation, 0.0f, 360.0f);
             ImGui::SliderFloat("SSR strength", &postprocessing->getFogPointer()->ssrStrength, 0, 1);
             ImGui::SliderFloat("SSR Edge Smoothing", &postprocessing->getFogPointer()->ssrEdgeSmoothing, 0, 4);
