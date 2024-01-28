@@ -313,7 +313,7 @@ int sampleEmissiveTriangleLightGrid(inout uint rndState, SurfacePoint point, Lig
 }
 
 bool binaryChoice(inout uint rndState, float w, out float p) {
-    if (nextRand(rndState) < w) {
+    if (nextRand(rndState) <= w) {
         p = w;
         return true;
     }

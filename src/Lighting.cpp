@@ -443,7 +443,14 @@ void DeferredLighting::setupBarriers(const RenderTarget& gBuffer) {
 
 void DeferredLighting::updateDescriptors(const RenderTarget& gBuffer, Scene *scene) {
     auto [pointLights, butterflyNum, pointLightsNum] = scene->getPointLights();
-    int numUsedPointLights = lightGrid->emissiveTriangles.size > 0 ? butterflyNum : pointLightsNum;
+
+    int numUsedPointLights = 0;
+    if (lightGrid->noEmissiveTriangles) {
+        numUsedPointLights = pointLightsNum;
+        restirPointLightImportance = 1.0;
+    } else {
+        numUsedPointLights = butterflyNum;
+    }
 
     // We lie that we have at least 1 butterfly even if we won't use it because otherwise vulkan complains
     // that we cannot have a range of 0

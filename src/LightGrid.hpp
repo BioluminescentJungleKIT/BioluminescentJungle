@@ -15,6 +15,15 @@ class LightGrid {
         this->cellSizeY = cellSizeY;
 
         auto emTris = BVH::extractTriangles<BVH::EmissiveTriangle>(scene);
+        if (emTris.empty()) {
+            // Fix validation error when there are no area lights at all
+            emTris.push_back({
+                glm::vec3(0), glm::vec3(0), glm::vec3(0), glm::vec4(0),
+            });
+
+            noEmissiveTriangles = true;
+        }
+
         glm::vec3 min(1e9, 1e9, 1e9), max(-1e9, -1e9, -1e9);
         for (auto& tri : emTris) {
             min = glm::min(glm::min(tri.x, tri.y), glm::min(min, tri.z));
@@ -25,10 +34,6 @@ class LightGrid {
         this->offY = -quantize(min.y, cellSizeY);
         gridSizeX = quantize(max.x, cellSizeX) + 1 + offX;
         gridSizeY = quantize(max.y, cellSizeY) + 1 + offY;
-
-        if (emTris.empty()) {
-            gridSizeX = gridSizeY = 1;
-        }
 
         std::vector<std::vector<std::vector<glm::int32>>> trianglesInCell(gridSizeX,
             std::vector<std::vector<glm::int32>>(gridSizeY));
@@ -77,6 +82,7 @@ class LightGrid {
     glm::int32 offX;
     glm::int32 offY;
 
+    bool noEmissiveTriangles = false;
   private:
     VulkanDevice *device;
 };
