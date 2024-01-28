@@ -7,6 +7,7 @@
 #include <vulkan/vulkan_core.h>
 #include "BVH.hpp"
 #include "LightGrid.hpp"
+#include "Raytracing.hpp"
 #include <random>
 
 struct LightingBuffer {
@@ -197,7 +198,12 @@ void DeferredLighting::createRenderPass() {
 
 void DeferredLighting::setup(bool recompileShaders, Scene *scene, VkDescriptorSetLayout mvpLayout) {
     this->lightGrid = std::make_unique<LightGrid>(device, scene, 1, 1);
-    this->bvh = std::make_unique<BVH>(device, scene);
+
+    if (useHWRaytracing) {
+        this->raytracingAccelerator = std::make_unique<RaytracingAccelerator>(device, scene);
+    } else {
+        this->bvh = std::make_unique<BVH>(device, scene);
+    }
 
     denoiser.setupRenderStage(recompileShaders);
 
@@ -372,16 +378,15 @@ void DeferredLighting::createDescriptorSetLayout() {
     }
 
     samplersLayout = device->createDescriptorSetLayout(samplers);
-    computeLayout = device->createDescriptorSetLayout({
+
+    std::vector<VkDescriptorSetLayoutBinding> computeBindings = {
         vkutil::createSetLayoutBinding(0, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_COMPUTE_BIT),
         vkutil::createSetLayoutBinding(1, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT),
         vkutil::createSetLayoutBinding(2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT),
         vkutil::createSetLayoutBinding(3, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT),
 
-        // Triangles, Emissive Triangles, BVH nodes
-        vkutil::createSetLayoutBinding(4, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT),
+        // Emissive Triangles
         vkutil::createSetLayoutBinding(5, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT),
-        vkutil::createSetLayoutBinding(6, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT),
 
         // Reservoirs
         vkutil::createSetLayoutBinding(7, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT),
@@ -391,8 +396,19 @@ void DeferredLighting::createDescriptorSetLayout() {
         // Light Grid Structure
         vkutil::createSetLayoutBinding(10, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT),
         vkutil::createSetLayoutBinding(11, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT),
-    });
+    };
 
+    if (useHWRaytracing) {
+        computeBindings.push_back(
+            vkutil::createSetLayoutBinding(12, VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, VK_SHADER_STAGE_COMPUTE_BIT));
+    } else {
+        computeBindings.push_back(
+            vkutil::createSetLayoutBinding(4, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT));
+        computeBindings.push_back(
+            vkutil::createSetLayoutBinding(6, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT));
+    }
+
+    computeLayout = device->createDescriptorSetLayout(computeBindings);
     debugLayout = device->createDescriptorSetLayout({
         vkutil::createSetLayoutBinding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_GEOMETRY_BIT | VK_SHADER_STAGE_FRAGMENT_BIT),
         vkutil::createSetLayoutBinding(1, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_GEOMETRY_BIT | VK_SHADER_STAGE_FRAGMENT_BIT),
@@ -459,7 +475,7 @@ void DeferredLighting::updateDescriptors(const RenderTarget& gBuffer, Scene *sce
 
     ComputeParamsBuffer computeParams;
     computeParams.nPointLights = numUsedPointLights;
-    computeParams.nTriangles = bvh->getNTriangles();
+    computeParams.nTriangles = (useHWRaytracing ? raytracingAccelerator->nTriangles : bvh->getNTriangles());
     computeParams.nEmissiveTriangles = lightGrid->emissiveTriangles.size / sizeof(BVH::Triangle);
 
     computeParams.lightGridCellSize = {lightGrid->cellSizeX, lightGrid->cellSizeY};
@@ -470,9 +486,8 @@ void DeferredLighting::updateDescriptors(const RenderTarget& gBuffer, Scene *sce
     auto computeParamsBuffer =
         vkutil::createDescriptorBufferInfo(computeParamsUBO.buffers[0], 0, sizeof(computeParams));
 
-    auto triBuffer = bvh->getTriangleInfo();
-    auto bvhBuffer = bvh->getBVHInfo();
     auto emiBuffer = lightGrid->emissiveTriangles.getDescriptor();
+    VkWriteDescriptorSetAccelerationStructureKHR descriptorAccelerationStructureInfo{};
 
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
         std::vector<VkWriteDescriptorSet> descriptorWrites;
@@ -496,9 +511,16 @@ void DeferredLighting::updateDescriptors(const RenderTarget& gBuffer, Scene *sce
         descriptorWrites.push_back(vkutil::createDescriptorWriteUBO(lightInfo, computeSets[i], 1));
         descriptorWrites.push_back(vkutil::createDescriptorWriteSBO(pointLightsBuffer, computeSets[i], 2));
         descriptorWrites.push_back(vkutil::createDescriptorWriteUBO(computeParamsBuffer, computeSets[i], 3));
-        descriptorWrites.push_back(vkutil::createDescriptorWriteSBO(triBuffer, computeSets[i], 4));
+
+        if (!useHWRaytracing) {
+            descriptorWrites.push_back(vkutil::createDescriptorWriteSBO(bvh->getTriangleInfo(), computeSets[i], 4));
+        }
+
         descriptorWrites.push_back(vkutil::createDescriptorWriteSBO(emiBuffer, computeSets[i], 5));
-        descriptorWrites.push_back(vkutil::createDescriptorWriteSBO(bvhBuffer, computeSets[i], 6));
+
+        if (!useHWRaytracing) {
+            descriptorWrites.push_back(vkutil::createDescriptorWriteSBO(bvh->getBVHInfo(), computeSets[i], 6));
+        }
 
         descriptorWrites.push_back(vkutil::createDescriptorWriteSBO(tmpReservoirs[lastFrame(i)].getDescriptor(), computeSets[i], 7));
         descriptorWrites.push_back(vkutil::createDescriptorWriteSBO(tmpReservoirs[i].getDescriptor(), computeSets[i], 8));
@@ -506,6 +528,23 @@ void DeferredLighting::updateDescriptors(const RenderTarget& gBuffer, Scene *sce
 
         descriptorWrites.push_back(vkutil::createDescriptorWriteSBO(lightGrid->gridCellContents.getDescriptor(), computeSets[i], 10));
         descriptorWrites.push_back(vkutil::createDescriptorWriteSBO(lightGrid->gridCellOffsets.getDescriptor(), computeSets[i], 11));
+
+        if (useHWRaytracing) {
+            descriptorAccelerationStructureInfo.sType =
+                VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR;
+            descriptorAccelerationStructureInfo.accelerationStructureCount = 1;
+            descriptorAccelerationStructureInfo.pAccelerationStructures = &raytracingAccelerator->topAS.handle;
+
+            VkWriteDescriptorSet accelerationStructureWrite{};
+            accelerationStructureWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            // The specialized acceleration structure descriptor has to be chained
+            accelerationStructureWrite.pNext = &descriptorAccelerationStructureInfo;
+            accelerationStructureWrite.dstSet = computeSets[i];
+            accelerationStructureWrite.dstBinding = 12;
+            accelerationStructureWrite.descriptorCount = 1;
+            accelerationStructureWrite.descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
+            descriptorWrites.push_back(accelerationStructureWrite);
+        }
 
         auto reservoirInfo = vkutil::createDescriptorBufferInfo(reservoirs[i].buffer, 0, reservoirs[i].size);
 

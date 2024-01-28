@@ -20,6 +20,7 @@
 
 std::map<std::string, std::filesystem::file_time_type> lastRecompileTimestamp;
 std::map<std::string, std::set<std::string>> recompileDependencies;
+bool useHWRaytracing = false;
 
 void
 VulkanHelper::createBuffer(VkDevice device, VkPhysicalDevice physicalDevice, VkDeviceSize size,

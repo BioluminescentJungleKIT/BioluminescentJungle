@@ -65,6 +65,8 @@ class LightGrid {
 
     ~LightGrid() {
         emissiveTriangles.destroy(device);
+        gridCellContents.destroy(device);
+        gridCellOffsets.destroy(device);
     }
 
     // The full list of emissive triangles

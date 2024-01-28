@@ -1,6 +1,7 @@
 #include <iostream>
 #include "JungleApp.h"
 #include "PhysicalDevice.h"
+#include "VulkanHelper.h"
 
 int main(int argc, char **argv) {
     JungleApp app{};
@@ -27,6 +28,10 @@ int main(int argc, char **argv) {
 
         if (!strcmp(argv[i], "--ratelimit")) {
             Swapchain::rateLimit = std::atoi(argv[i+1]);
+        }
+
+        if (!strcmp(argv[i], "--hw-raytracing")) {
+            useHWRaytracing = true;
         }
 
         if (!strcmp(argv[i], "--fullscreen")) {

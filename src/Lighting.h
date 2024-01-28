@@ -28,6 +28,7 @@ struct DebugOptions {
 
 class BVH;
 class LightGrid;
+class RaytracingAccelerator;
 
 /**
  * A class which encapsulates state related to accumulation of light on a framebuffer.
@@ -49,6 +50,7 @@ class DeferredLighting {
     std::unique_ptr<ComputePipeline> restirEvalPipeline;
     std::unique_ptr<BVH> bvh;
     std::unique_ptr<LightGrid> lightGrid;
+    std::unique_ptr<RaytracingAccelerator> raytracingAccelerator;
 
     VkRenderPass createRenderPass(bool clearCompositedLight);
 

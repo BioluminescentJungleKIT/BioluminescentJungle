@@ -118,6 +118,8 @@ static bool shouldRecompileFile(const std::string& filename, const std::string s
     return false;
 }
 
+extern bool useHWRaytracing;
+
 static std::tuple<std::vector<char>, std::string> getShaderCode(const std::string &filename, shaderc_shader_kind kind, bool recompile) {
     std::string message;
     auto sourceName = filename.substr(filename.find_last_of("/\\") + 1, filename.find_last_of('.'));
@@ -132,6 +134,9 @@ static std::tuple<std::vector<char>, std::string> getShaderCode(const std::strin
         options.SetGenerateDebugInfo();
         options.SetIncluder(std::make_unique<GlslIncluder>(&recompileDependencies[filename]));
         options.SetTargetEnvironment(shaderc_target_env_vulkan, shaderc_env_version_vulkan_1_3);
+        if (useHWRaytracing) {
+            options.AddMacroDefinition("USE_HW_RAYTRACING");
+        }
 
         auto file_content = readFile(filename);
         file_content.push_back('\0');

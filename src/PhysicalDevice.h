@@ -73,6 +73,19 @@ class VulkanDevice
         const std::vector<VkDescriptorSetLayoutBinding>& bindings);
     void writeDescriptorSets(const std::vector<VkWriteDescriptorSet>& sets);
 
+    uint64_t getBufferDeviceAddress(VkBuffer buffer);
+
+    // Addresses for extension functions
+    PFN_vkGetBufferDeviceAddressKHR vkGetBufferDeviceAddressKHR;
+    PFN_vkCreateAccelerationStructureKHR vkCreateAccelerationStructureKHR;
+    PFN_vkDestroyAccelerationStructureKHR vkDestroyAccelerationStructureKHR;
+    PFN_vkGetAccelerationStructureBuildSizesKHR vkGetAccelerationStructureBuildSizesKHR;
+    PFN_vkGetAccelerationStructureDeviceAddressKHR vkGetAccelerationStructureDeviceAddressKHR;
+    PFN_vkBuildAccelerationStructuresKHR vkBuildAccelerationStructuresKHR;
+    PFN_vkCmdBuildAccelerationStructuresKHR vkCmdBuildAccelerationStructuresKHR;
+
+    void setupRaytracing();
+
   private:
     static bool checkValidationLayerSupport();
     VkResult CreateDebugUtilsMessengerEXT(VkInstance instance,

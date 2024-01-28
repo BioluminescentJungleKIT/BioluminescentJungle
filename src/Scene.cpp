@@ -1014,6 +1014,7 @@ void Scene::destroyDescriptorSetLayouts() {
     vkDestroyDescriptorSetLayout(*device, lodCompressDescriptorSetLayout, nullptr);
     vkDestroyDescriptorSetLayout(*device, updateButterfliesDescriptorSetLayout, nullptr);
     vkDestroyDescriptorSetLayout(*device, renderButterfliesDescriptorSetLayout, nullptr);
+    vkDestroyDescriptorSetLayout(*device, emissiveTextureDSLayout, NULL);
 }
 
 void calculateBoundingBox(const tinygltf::Model &model, glm::vec3 &minBounds, glm::vec3 &maxBounds) {

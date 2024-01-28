@@ -73,6 +73,24 @@ std::vector<const char *> getRequiredExtensions() {
     return extensions;
 }
 
+std::vector<const char*> getDeviceExtensions() {
+    std::vector<const char*> extensions = {
+        VK_KHR_SWAPCHAIN_EXTENSION_NAME
+    };
+
+    if (useHWRaytracing) {
+        extensions.push_back(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME);
+        extensions.push_back(VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME);
+        extensions.push_back(VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME);
+        extensions.push_back(VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME);
+        extensions.push_back(VK_KHR_SPIRV_1_4_EXTENSION_NAME);
+        extensions.push_back(VK_KHR_SHADER_FLOAT_CONTROLS_EXTENSION_NAME);
+        extensions.push_back(VK_KHR_RAY_QUERY_EXTENSION_NAME);
+    }
+
+    return extensions;
+}
+
 void VulkanDevice::createInstance() {
     if (enableValidationLayers && !checkValidationLayerSupport()) {
         std::cerr << "Warning: disabling validation layers, because they are not supported by host!" << std::endl;
@@ -103,7 +121,7 @@ void VulkanDevice::createInstance() {
     }
 
     VkResult result = vkCreateInstance(&createInfo, nullptr, &instance);
-    VK_CHECK_RESULT(result)
+    VK_CHECK_RESULT(result);
 }
 
 VkResult VulkanDevice::CreateDebugUtilsMessengerEXT(VkInstance instance,
@@ -220,10 +238,6 @@ bool VulkanDevice::isDeviceSuitable(VkPhysicalDevice const& device, VkSurfaceKHR
            surfaceSupported == VK_TRUE;
 }
 
-const std::vector<const char *> deviceExtensions = {
-        VK_KHR_SWAPCHAIN_EXTENSION_NAME
-};
-
 void VulkanDevice::createLogicalDevice(VkSurfaceKHR surface) {
     this->chosenQueues = findQueueFamilies(physicalDevice, surface);
 
@@ -241,17 +255,16 @@ void VulkanDevice::createLogicalDevice(VkSurfaceKHR surface) {
     }
 
     VkPhysicalDeviceFeatures deviceFeatures{};
+    deviceFeatures.samplerAnisotropy = VK_TRUE;
+    deviceFeatures.geometryShader = VK_TRUE;
 
     VkDeviceCreateInfo createInfo{};
     createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
-
     createInfo.queueCreateInfoCount = static_cast<uint32_t>(queueCreateInfos.size());
     createInfo.pQueueCreateInfos = queueCreateInfos.data();
-
-    deviceFeatures.samplerAnisotropy = VK_TRUE;
-    deviceFeatures.geometryShader = VK_TRUE;
     createInfo.pEnabledFeatures = &deviceFeatures;
 
+    auto deviceExtensions = getDeviceExtensions();;
     createInfo.enabledExtensionCount = static_cast<uint32_t>(deviceExtensions.size());
     createInfo.ppEnabledExtensionNames = deviceExtensions.data();
 
@@ -262,9 +275,30 @@ void VulkanDevice::createLogicalDevice(VkSurfaceKHR surface) {
         createInfo.enabledLayerCount = 0;
     }
 
+    VkPhysicalDeviceBufferDeviceAddressFeaturesEXT deviceAddressFeatures{};
+    deviceAddressFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_ADDRESS_FEATURES_EXT;
+    deviceAddressFeatures.bufferDeviceAddress = VK_TRUE;
+
+    VkPhysicalDeviceAccelerationStructureFeaturesKHR accelFeatures{};
+    accelFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR;
+    accelFeatures.accelerationStructure = VK_TRUE;
+    accelFeatures.pNext = &deviceAddressFeatures;
+
+    VkPhysicalDeviceRayQueryFeaturesKHR rayQueryFeatures{};
+    rayQueryFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_QUERY_FEATURES_KHR;
+    rayQueryFeatures.rayQuery = VK_TRUE;
+    rayQueryFeatures.pNext = &accelFeatures;
+
     VkPhysicalDeviceVulkan13Features deviceFeaturesVk13{};
     deviceFeaturesVk13.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
     deviceFeaturesVk13.maintenance4 = VK_TRUE;
+
+    if (useHWRaytracing) {
+        deviceFeaturesVk13.pNext = &rayQueryFeatures;
+    } else {
+        deviceFeaturesVk13.pNext = NULL;
+    }
+
     createInfo.pNext = &deviceFeaturesVk13;
 
     VK_CHECK_RESULT(vkCreateDevice(physicalDevice, &createInfo, nullptr, &device))
@@ -307,7 +341,8 @@ bool VulkanDevice::checkDeviceExtensionSupport(VkPhysicalDevice const& device) {
     std::vector<VkExtensionProperties> availableExtensions(extensionCount);
     vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionCount, availableExtensions.data());
 
-    std::set<std::string> requiredExtensions(deviceExtensions.begin(), deviceExtensions.end());
+    auto ext = getDeviceExtensions();
+    std::set<std::string> requiredExtensions(ext.begin(), ext.end());
 
     for (const auto &extension: availableExtensions) {
         requiredExtensions.erase(extension.extensionName);
@@ -325,6 +360,10 @@ void VulkanDevice::initDeviceForSurface(VkSurfaceKHR surface) {
     pickPhysicalDevice(surface);
     createLogicalDevice(surface);
     createCommandPool();
+
+    if (useHWRaytracing) {
+        setupRaytracing();
+    }
 }
 
 void VulkanDevice::destroy()
@@ -522,4 +561,23 @@ VkDescriptorSetLayout VulkanDevice::createDescriptorSetLayout(
 void VulkanDevice::writeDescriptorSets(const std::vector<VkWriteDescriptorSet>& sets)
 {
     vkUpdateDescriptorSets(device, sets.size(), sets.data(), 0, nullptr);
+}
+uint64_t VulkanDevice::getBufferDeviceAddress(VkBuffer buffer)
+{
+    VkBufferDeviceAddressInfoKHR bufferDeviceAI{};
+    bufferDeviceAI.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
+    bufferDeviceAI.buffer = buffer;
+    return vkGetBufferDeviceAddressKHR(device, &bufferDeviceAI);
+}
+
+void VulkanDevice::setupRaytracing() {
+
+    // Get the function pointers required for ray tracing
+    vkGetBufferDeviceAddressKHR = reinterpret_cast<PFN_vkGetBufferDeviceAddressKHR>(vkGetDeviceProcAddr(device, "vkGetBufferDeviceAddressKHR"));
+    vkCmdBuildAccelerationStructuresKHR = reinterpret_cast<PFN_vkCmdBuildAccelerationStructuresKHR>(vkGetDeviceProcAddr(device, "vkCmdBuildAccelerationStructuresKHR"));
+    vkBuildAccelerationStructuresKHR = reinterpret_cast<PFN_vkBuildAccelerationStructuresKHR>(vkGetDeviceProcAddr(device, "vkBuildAccelerationStructuresKHR"));
+    vkCreateAccelerationStructureKHR = reinterpret_cast<PFN_vkCreateAccelerationStructureKHR>(vkGetDeviceProcAddr(device, "vkCreateAccelerationStructureKHR"));
+    vkDestroyAccelerationStructureKHR = reinterpret_cast<PFN_vkDestroyAccelerationStructureKHR>(vkGetDeviceProcAddr(device, "vkDestroyAccelerationStructureKHR"));
+    vkGetAccelerationStructureBuildSizesKHR = reinterpret_cast<PFN_vkGetAccelerationStructureBuildSizesKHR>(vkGetDeviceProcAddr(device, "vkGetAccelerationStructureBuildSizesKHR"));
+    vkGetAccelerationStructureDeviceAddressKHR = reinterpret_cast<PFN_vkGetAccelerationStructureDeviceAddressKHR>(vkGetDeviceProcAddr(device, "vkGetAccelerationStructureDeviceAddressKHR"));
 }
