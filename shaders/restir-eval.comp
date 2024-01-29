@@ -62,7 +62,7 @@ Reservoir spatialReuse(ivec2 pos, int rIdx, SurfacePoint point, float ourD) {
         if (shouldReuse) {
             Reservoir otherR = reservoirsTmp[reservoirIdx(reuse, slInfo.viewportWidth)];
             tryMergeReservoir(rndState, r, otherR,
-                    otherR.totalNumSamples, point);
+                    otherR.totalNumSamples, slInfo, point);
         }
     }
 
