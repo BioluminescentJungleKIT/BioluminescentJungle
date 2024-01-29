@@ -216,7 +216,7 @@ public:
     std::map<int, LoadedTexture> textures;
     std::map<int, VkDescriptorSet> materialDSet;
 
-    static const unsigned int numButterflies = 1000;
+    static const unsigned int numButterflies = 512;
     std::map<int, int> butterflies;  // butterfly number to mesh index
     std::map<int, LightData> butterflyLights;
     ModelTransform butterflyVolumeTransform;

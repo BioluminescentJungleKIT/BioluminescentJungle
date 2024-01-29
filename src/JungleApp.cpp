@@ -122,7 +122,7 @@ void JungleApp::drawImGUI() {
             if (ImGui::Checkbox("Strong Butterfly Illumination", &illuminationViaButterflies)) {
                 if (illuminationViaButterflies) {
                     lighting->restirTemporalFactor = 5.0;
-                    lighting->restirInitialSamples = 512;
+                    lighting->restirInitialSamples = 128;
                     lighting->restirSpatialNeighbors = 8;
                     lighting->restirPointLightImportance = 0.98;
                     lighting->pointLightIntensityMultiplier = 10000;
