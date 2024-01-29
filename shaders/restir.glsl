@@ -120,7 +120,8 @@ void getEmissiveTriangleParams(EmissiveTriangle tri, out float intensity, out ve
 PointLightParams getPointLight(int idx);
 void getEmissiveTriangle(int idx, out float intensity, out vec3 N, out float area);
 
-void calculatePHats(Reservoir r, SurfacePoint point, out float pHats[NUM_SAMPLES_PER_RESERVOIR]) {
+void calculatePHats(Reservoir r, SurfacePoint point, out float pHats[NUM_SAMPLES_PER_RESERVOIR],
+        in SceneLightInfo slInfo) {
     for (int i = 0; i < NUM_SAMPLES_PER_RESERVOIR; i++) {
         int sel = r.selected[i];
         if (sel < 0) {
@@ -130,19 +131,21 @@ void calculatePHats(Reservoir r, SurfacePoint point, out float pHats[NUM_SAMPLES
             pHats[i] = evalEmittingPoint(point, r.position[i], N) * intensity;
         } else if (sel > 0) {
             pHats[i] = evalPointLightStrength(point, getPointLight(sel-1));
+            pHats[i] *= slInfo.pointLightIntensityMultiplier;
         } else {
             pHats[i] = 0;
         }
     }
 }
 
-void tryMergeReservoir(inout uint randState, inout Reservoir dest, Reservoir src, float maxSamplesTake, SurfacePoint point)
+void tryMergeReservoir(inout uint randState, inout Reservoir dest, Reservoir src, float maxSamplesTake,
+        in SceneLightInfo slInfo, SurfacePoint point)
 {
     if (src.totalNumSamples <= 0) {
         return;
     }
 
     float pHats[NUM_SAMPLES_PER_RESERVOIR];
-    calculatePHats(src, point, pHats);
+    calculatePHats(src, point, pHats, slInfo);
     mergeReservoir(randState, dest, src, pHats, maxSamplesTake);
 }

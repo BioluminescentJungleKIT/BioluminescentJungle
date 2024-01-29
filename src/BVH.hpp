@@ -31,6 +31,12 @@ class BVH {
         glm::vec3 z alignas(16);
     };
 
+    struct TriangleUnaligned {
+        glm::vec3 x;
+        glm::vec3 y;
+        glm::vec3 z;
+    };
+
     struct EmissiveTriangle {
         glm::vec3 x alignas(16);
         glm::vec3 y alignas(16);
@@ -88,11 +94,11 @@ class BVH {
         bvhBuffer.uploadData(device, bvh, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
     }
 
-    VkDescriptorBufferInfo getBVHInfo() {
+    VkDescriptorBufferInfo& getBVHInfo() {
         return bvhBuffer.getDescriptor();
     }
 
-    VkDescriptorBufferInfo getTriangleInfo() {
+    VkDescriptorBufferInfo& getTriangleInfo() {
         return triangleBuffer.getDescriptor();
     }
 

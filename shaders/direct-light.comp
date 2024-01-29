@@ -1,4 +1,9 @@
-#version 450
+#version 460
+
+#ifdef USE_HW_RAYTRACING
+#extension GL_EXT_ray_tracing : enable
+#extension GL_EXT_ray_query : enable
+#endif
 
 #include "geometry.glsl"
 #include "restir.glsl"
@@ -26,17 +31,21 @@ layout(std140, set = 1, binding = 3) uniform Params {
     int nEmissiveTriangles;
 };
 
+#ifndef USE_HW_RAYTRACING
 layout(std140, set = 1, binding = 4) readonly buffer TrianglesIn {
     Triangle tris[];
 };
+#endif
 
 layout(std140, set = 1, binding = 5) readonly buffer EmissiveTrianglesIn {
     EmissiveTriangle emissiveTris[];
 };
 
+#ifndef USE_HW_RAYTRACING
 layout(std140, set = 1, binding = 6) readonly buffer BVHIn {
     BVHNode bvh[];
 };
+#endif
 
 layout(std430, set = 1, binding = 7) readonly buffer ReservoirsOld {
     Reservoir reservoirsOld[];
@@ -53,6 +62,10 @@ layout(std430, set = 1, binding = 10) readonly buffer LightGridIndices {
 layout(std430, set = 1, binding = 11) readonly buffer LightGridOffsets {
     int lightGridStartOffset[];
 };
+
+#ifdef USE_HW_RAYTRACING
+layout (set = 1, binding = 12) uniform accelerationStructureEXT topLevelAS;
+#endif
 
 layout(set = 2, binding = 0) uniform sampler2D prevAlbedo;
 layout(set = 2, binding = 1) uniform sampler2D prevDepth;
@@ -73,6 +86,7 @@ Ray getLightRay(SurfacePoint point, vec3 lightPos, out float len) {
     return lightRay;
 }
 
+#ifndef USE_HW_RAYTRACING
 bool testShadowBruteforce(SurfacePoint point, vec3 lightPos) {
     float rayLen;
     Ray lightRay = getLightRay(point, lightPos, rayLen);
@@ -147,6 +161,27 @@ bool testShadowAABB(SurfacePoint point, vec3 lightPos) {
     return false;
 }
 
+#else // USE_HW_RAYTRACING
+bool testShadowAABB(SurfacePoint point, vec3 lightPos) {
+    float rayLen;
+    Ray lightRay = getLightRay(point, lightPos, rayLen);
+
+    rayQueryEXT rayQuery;
+    rayQueryInitializeEXT(rayQuery, topLevelAS, gl_RayFlagsTerminateOnFirstHitEXT, 0xFF, point.worldPos, 0.01,
+            lightRay.dir, rayLen - 0.03);
+
+    // Traverse the acceleration structure and store information about the first intersection (if any)
+    rayQueryProceedEXT(rayQuery);
+
+    // If the intersection has hit a triangle, the fragment is shadowed
+    if (rayQueryGetIntersectionTypeEXT(rayQuery, true) == gl_RayQueryCommittedIntersectionTriangleEXT) {
+        return true;
+    }
+
+    return false;
+}
+#endif
+
 layout (local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
 
 PointLightParams getPointLight(int idx) {
@@ -170,7 +205,7 @@ vec3 naiveLighting(SurfacePoint point, float depth) {
     vec3 finalColor = vec3(0.0);
     for (int i = 0; i < nPointLights; i++) {
         PointLightParams light = computeLightParams(pointLights[i]);
-        if (depth < 0.999 && !testShadowBruteforce(point, light.pos)) {
+        if (depth < 0.999 && !testShadowAABB(point, light.pos)) {
             float f = evalPointLightStrength(point, light) * slInfo.pointLightIntensityMultiplier;
             f *= evalFogAbsorption(point, slInfo);
             finalColor += f * light.color;
@@ -313,7 +348,7 @@ int sampleEmissiveTriangleLightGrid(inout uint rndState, SurfacePoint point, Lig
 }
 
 bool binaryChoice(inout uint rndState, float w, out float p) {
-    if (nextRand(rndState) < w) {
+    if (nextRand(rndState) <= w) {
         p = w;
         return true;
     }
@@ -445,7 +480,7 @@ void temporalReuse(ivec2 pos, SurfacePoint point, float depth) {
                 // We can reuse samples!
                 int prevRIdx = reservoirIdx(uv, slInfo.viewportWidth);
                 tryMergeReservoir(rndState, r, reservoirsOld[prevRIdx],
-                        slInfo.restirTemporalFactor * r.totalNumSamples, point);
+                        slInfo.restirTemporalFactor * r.totalNumSamples, slInfo, point);
             }
         }
     }

@@ -118,14 +118,14 @@ void JungleApp::drawImGUI() {
                          "Weighted Light Grid\0Uniform Light Grid\0Uniform\0\0");
             ImGui::SliderFloat("ReSTIR Point Light Relative Importance", &lighting->restirPointLightImportance, 0.0, 1.0);
 
-            ImGui::SliderFloat("Butterfly Luminance", &lighting->pointLightIntensityMultiplier, 0.0, 10000.0);
+            ImGui::SliderFloat("Butterfly Luminance", &lighting->pointLightIntensityMultiplier, 0.0, 100.0);
             if (ImGui::Checkbox("Strong Butterfly Illumination", &illuminationViaButterflies)) {
                 if (illuminationViaButterflies) {
                     lighting->restirTemporalFactor = 5.0;
                     lighting->restirInitialSamples = 128;
                     lighting->restirSpatialNeighbors = 8;
                     lighting->restirPointLightImportance = 0.98;
-                    lighting->pointLightIntensityMultiplier = 10000;
+                    lighting->pointLightIntensityMultiplier = 25;
                 } else {
                     lighting->restirTemporalFactor = 50.0;
                     lighting->restirInitialSamples = 32;
