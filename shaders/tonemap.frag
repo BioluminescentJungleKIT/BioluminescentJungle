@@ -27,6 +27,8 @@ vec3 hable(vec3 color)// from https://64.github.io/tonemapping/
     return hable_function(color)/hable_function(white);
 }
 
+
+// AgX experimental code adapted from https://github.com/sobotka/AgX-S2O3
 float agxEquationHyperbolic(float term, float power) {
     return term / pow((1.0 + pow(term,power)), (1.0 / power));
 }
