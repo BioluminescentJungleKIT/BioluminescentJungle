@@ -147,24 +147,20 @@ class BVH {
         float tmin = 0;
         float tmax = INFINITY;
 
-        for (int a = 0; a < 3; ++a) {
-            float invD = 1.0f / direction[a];
-            float t0 = (aabb.low[a] - origin[a]) * invD;
-            float t1 = (aabb.high[a] - origin[a]) * invD;
-            if (invD < 0.0f) {
-                float temp = t1;
-                t1 = t0;
-                t0 = temp;
-            }
+        for (int d = 0; d < 3; ++d) {
+            float inverseDirection = 1.0f / direction[d];
+            float t1 = (aabb.low[d] - origin[d]) * inverseDirection;
+            float t2 = (aabb.high[d] - origin[d]) * inverseDirection;
 
-            tmin = t0 > tmin ? t0 : tmin;
-            tmax = t1 < tmax ? t1 : tmax;
-
-            if (tmax <= tmin)
-                return {};
+            tmin = std::max(tmin, std::min(t1, t2));
+            tmax = std::min(tmax, std::max(t1, t2));
         }
 
-        return tmin;
+        if (tmax <= tmin) {
+            return {};
+        } else {
+            return tmin;
+        }
     }
 
     // returns t, if there is an intersection at origin + t * direction.
