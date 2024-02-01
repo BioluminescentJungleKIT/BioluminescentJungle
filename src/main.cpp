@@ -6,14 +6,14 @@
 int main(int argc, char **argv) {
     JungleApp app{};
 
-    std::string scenePath = "scenes/apple/food_apple_01_4k.gltf";
-    if (argc > 1) {
+    std::string scenePath = "scenes/big scene/big.gltf";
+    if (argc > 1 && !std::string(argv[1]).starts_with("--")) {
         scenePath = argv[1];
     }
 
     bool recompileShaders = false;
 
-    for (int i = 2; i < argc; i++) {
+    for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--recompile-shaders")) {
             recompileShaders = true;
         }
