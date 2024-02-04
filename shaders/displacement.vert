@@ -1,3 +1,6 @@
+// The content of this file is licensed under MIT.
+// Copyright (c) 2024 Ilia Bozhinov, Lars Erber.
+
 #version 450
 
 layout(set = 0, binding = 0) uniform UniformBufferObject {

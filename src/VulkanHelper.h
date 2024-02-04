@@ -1,6 +1,8 @@
+// Unless noted otherwise, content of this file is licensed under MIT.
+// Copyright (c) 2024 Ilia Bozhinov, Lars Erber.
 //
-// Created by lars on 30.10.23.
-//
+// Parts of this file are licensed under MIT.
+// Copyright (C) 2016-2023 by Sascha Willems - www.saschawillems.de.
 
 #ifndef JUNGLE_VULKANHELPER_H
 #define JUNGLE_VULKANHELPER_H
@@ -21,6 +23,7 @@
 #include "PhysicalDevice.h"
 #include "GlslIncluder.hpp"
 
+// Beginning of section Copyright (C) 2016-2023 by Sascha Willems - www.saschawillems.de.
 static std::string errorString(VkResult errorCode) {
     switch (errorCode) {
 #define STR(r) case VK_ ##r: return #r
@@ -66,6 +69,7 @@ static std::string errorString(VkResult errorCode) {
             return "UNKNOWN_ERROR";
     }
 }
+// End of section Copyright (C) 2016-2023 by Sascha Willems - www.saschawillems.de.
 
 static void writeFile(const std::string &filename, const std::vector<char> &buffer) {
     std::ofstream file(filename, std::ios::binary);
@@ -162,6 +166,7 @@ static std::tuple<std::vector<char>, std::string> getShaderCode(const std::strin
     return {readFile(spvFilename), message};
 }
 
+// Beginning of section Copyright (C) 2016-2023 by Sascha Willems - www.saschawillems.de.
 #define VK_CHECK_RESULT(f)                                                                                \
 {                                                                                                         \
     VkResult res = (f);                                                                                   \
@@ -172,6 +177,7 @@ static std::tuple<std::vector<char>, std::string> getShaderCode(const std::strin
         assert(res == VK_SUCCESS);                                                                        \
     }                                                                                                     \
 }
+// End of section Copyright (C) 2016-2023 by Sascha Willems - www.saschawillems.de.
 
 class VulkanHelper {
 

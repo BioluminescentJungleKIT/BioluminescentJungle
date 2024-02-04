@@ -1,3 +1,6 @@
+// The content of this file is licensed under MIT.
+// Copyright (c) 2024 Ilia Bozhinov, Lars Erber.
+
 #version 450
 
 layout(location = 0) in vec3 fragColor;

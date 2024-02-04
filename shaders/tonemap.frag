@@ -1,3 +1,9 @@
+// Unless noted otherwise, content of this file is licensed under MIT.
+// Copyright (c) 2024 Ilia Bozhinov, Lars Erber.
+//
+// Parts of this file are licensed under MIT.
+// Copyright (c) 2022 @64.
+
 #version 450
 
 layout(location = 0) out vec4 outColor;
@@ -10,6 +16,7 @@ layout(set = 0, binding = 1) uniform TonemappingUBO {
     int mode;
 } tonemapping;
 
+// Beginning of section Copyright (c) 2022 @64.
 vec3 hable_function(vec3 x)// from https://64.github.io/tonemapping/
 {
     float A = 0.15f;
@@ -26,9 +33,11 @@ vec3 hable(vec3 color)// from https://64.github.io/tonemapping/
     vec3 white = vec3(11.2f);
     return hable_function(color)/hable_function(white);
 }
-
+// End of section Copyright (c) 2022 @64.
 
 // AgX experimental code adapted from https://github.com/sobotka/AgX-S2O3
+// used with humble permission.
+
 float agxEquationHyperbolic(float term, float power) {
     return term / pow((1.0 + pow(term,power)), (1.0 / power));
 }

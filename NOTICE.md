@@ -26,11 +26,20 @@ Copyright (C) 2011-2016 by Stefan Gustavson (Classic noise and others).
 The file src/Raytracing.hpp was adapted from Sasha Willems' implementation (https://github.com/SaschaWillems/Vulkan/blob/master/examples/rayquery/rayquery.cpp).
 Copyright (C) 2020-2023 by Sascha Willems - www.saschawillems.de.
 
-The IntersectTriangle function in shaders/geometry.glsl was taken from Andreas Reich and Johannes Jendersie's inplementation (https://github.com/Jojendersie/gpugi/blob/5d18526c864bbf09baca02bfab6bcec97b7e1210/gpugi/shader/intersectiontests.glsl).
+The IntersectTriangle function in shaders/geometry.glsl was taken from Andreas Reich and Johannes Jendersie's implementation (https://github.com/Jojendersie/gpugi/blob/5d18526c864bbf09baca02bfab6bcec97b7e1210/gpugi/shader/intersectiontests.glsl).
 Copyright (c) 2014 Andreas Reich, Johannes Jendersie.
 
-The intersectTriangle function in src/BVH.hpp was adapted from Andreas Reich and Johannes Jendersie's inplementation (https://github.com/Jojendersie/gpugi/blob/5d18526c864bbf09baca02bfab6bcec97b7e1210/gpugi/shader/intersectiontests.glsl).
+The intersectTriangle function in src/BVH.hpp was adapted from Andreas Reich and Johannes Jendersie's implementation (https://github.com/Jojendersie/gpugi/blob/5d18526c864bbf09baca02bfab6bcec97b7e1210/gpugi/shader/intersectiontests.glsl).
 Copyright (c) 2014 Andreas Reich, Johannes Jendersie.
+
+The initImGui function in src/JungleApp.hpp was adapted from Omar Cornut's implementation (https://github.com/ocornut/imgui/blob/master/examples/example_glfw_vulkan/main.cpp).
+Copyright (c) 2014-2024 Omar Cornut.
+
+The errorString function in src/VulkanHelper.h was adapted from Sasha Willems' implementation (https://github.com/SaschaWillems/Vulkan/blob/679d099987d4e29ec0adc80edfe1e78cabd947f2/base/VulkanTools.cpp).
+Copyright (C) 2016-2023 by Sascha Willems - www.saschawillems.de
+
+The VK_CHECK_RESULT macro in src/VulkanHelper.h was adapted from Sasha Willems' implementation (https://github.com/SaschaWillems/Vulkan/blob/679d099987d4e29ec0adc80edfe1e78cabd947f2/base/VulkanTools.h).
+Copyright (C) 2016-2023 by Sascha Willems - www.saschawillems.de
 
 ## Portions licensed under Apache 2.0 from other authors
 The closestPointTriangle function in shaders/butterflies.comp was adapted from Intel Corporation's implementation (https://github.com/embree/embree/blob/master/tutorials/common/math/closest_point.h).

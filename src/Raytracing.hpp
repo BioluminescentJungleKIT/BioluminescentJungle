@@ -1,3 +1,7 @@
+// The content of this file is licensed under MIT.
+// Copyright (C) 2020-2023 by Sascha Willems - www.saschawillems.de.
+// Copyright (c) 2024 Ilia Bozhinov, Lars Erber.
+
 #include "PhysicalDevice.h"
 #include "VulkanHelper.h"
 #include "Scene.h"

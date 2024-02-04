@@ -1,6 +1,5 @@
-//
-// Created by lars on 31.07.23.
-//
+// The content of this file is licensed under MIT.
+// Copyright (c) 2024 Ilia Bozhinov, Lars Erber.
 
 #ifndef VULKANBASICS_PLANETAPP_H
 #define VULKANBASICS_PLANETAPP_H

@@ -1,3 +1,6 @@
+// The content of this file is licensed under MIT.
+// Copyright (c) 2024 Ilia Bozhinov, Lars Erber.
+
 #ifndef PHYSICAL_DEVICE_H
 #define PHYSICAL_DEVICE_H
 

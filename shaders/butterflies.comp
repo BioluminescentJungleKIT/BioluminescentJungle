@@ -1,3 +1,9 @@
+// Unless noted otherwise, content of this file is licensed under MIT.
+// Copyright (c) 2024 Ilia Bozhinov, Lars Erber.
+//
+// Parts of this file are licensed under Apache 2.0.
+// Copyright 2009-2021 Intel Corporation.
+
 #version 450
 #include "noise3D.glsl"
 #include "util.glsl"
@@ -36,7 +42,10 @@ vec3 calculateNormalOfNthTriangle(int n) {
     return cross(b - a, c - a);
 }
 
-// from https://github.com/embree/embree/blob/master/tutorials/common/math/closest_point.h (Apache 2.0)
+// The following code is adapted from https://github.com/embree/embree/blob/master/tutorials/common/math/closest_point.h
+// Beginning of section licensed under Apache 2.0.
+// Copyright 2009-2021 Intel Corporation
+// SPDX-License-Identifier: Apache-2.0
 vec3 closestPointTriangle(const vec3 p, const vec3 a, const vec3 b, const vec3 c)
 {
     const vec3 ab = b - a;
@@ -83,6 +92,7 @@ vec3 closestPointTriangle(const vec3 p, const vec3 a, const vec3 b, const vec3 c
     const float w = vc * denom;
     return a + v * ab + w * ac;
 }
+// End of section licensed under Apache 2.0.
 
 float calculateSignedSquaredDistanceOfNthTriangle(int n, vec3 position) {
     vec3 diff = position -

@@ -1,3 +1,9 @@
+// Unless noted otherwise, content of this file is licensed under MIT.
+// Copyright (c) 2024 Ilia Bozhinov, Lars Erber.
+//
+// Parts of this file are licensed under MIT.
+// Copyright (c) 2019 MJP.
+
 #version 450
 
 layout(location = 0) out vec4 outColor;
@@ -92,6 +98,7 @@ uint clamp_method)
 // adapted from https://www.shadertoy.com/view/MtVGWz
 
 // note: entirely stolen from https://gist.github.com/TheRealMJP/c83b8c0f46b63f3a88a5986f4fa982b1
+// Beginning of section Copyright (c) 2019 MJP.
 //
 // Samples a texture with Catmull-Rom filtering, using 9 texture fetches instead of 16.
 // See http://vec3.ca/bicubic-filtering-in-fewer-taps/ for more details
@@ -145,6 +152,8 @@ vec4 sampleCatmullRom(sampler2D tex, vec2 uv)
 
     return result;
 }
+// End of section Copyright (c) 2019 MJP.
+
 
 void
 main()

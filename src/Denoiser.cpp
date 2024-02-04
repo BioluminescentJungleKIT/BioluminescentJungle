@@ -1,3 +1,6 @@
+// The content of this file is licensed under MIT.
+// Copyright (c) 2024 Ilia Bozhinov, Lars Erber.
+
 #include "Denoiser.h"
 
 std::string Denoiser::getShaderName() {

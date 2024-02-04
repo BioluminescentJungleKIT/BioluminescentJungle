@@ -1,6 +1,5 @@
-//
-// Created by lars on 08.11.23.
-//
+// The content of this file is licensed under MIT.
+// Copyright (c) 2024 Ilia Bozhinov, Lars Erber.
 
 #ifndef JUNGLE_MUSICPLAYER_H
 #define JUNGLE_MUSICPLAYER_H

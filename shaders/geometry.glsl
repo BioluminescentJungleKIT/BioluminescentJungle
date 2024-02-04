@@ -1,3 +1,12 @@
+// Unless noted otherwise, content of this file is licensed under MIT.
+// Copyright (c) 2024 Ilia Bozhinov, Lars Erber.
+//
+// Parts of this file are licensed under MIT.
+// Copyright (c) 2014 Andreas Reich, Johannes Jendersie.
+//
+// Parts of this file are licensed under MIT.
+// Copyright (c) 2022 Tavian Barnes.
+
 struct Triangle {
     vec4 x; // just xyz
     vec4 y; // just xyz
@@ -18,6 +27,8 @@ struct BVHNode {
 // Thanks Stackoverflow
 // https://stackoverflow.com/questions/54564286/triangle-intersection-test-in-opengl-es-glsl
 // they actually copied it from https://github.com/Jojendersie/gpugi/blob/5d18526c864bbf09baca02bfab6bcec97b7e1210/gpugi/shader/intersectiontests.glsl#L63
+//
+// Beginning of section Copyright (c) 2014 Andreas Reich, Johannes Jendersie.
 bool IntersectTriangle(Ray ray, vec3 p0, vec3 p1, vec3 p2,
         out float hit, out vec3 barycentricCoord, out vec3 triangleNormal)
 {
@@ -35,6 +46,7 @@ bool IntersectTriangle(Ray ray, vec3 p0, vec3 p1, vec3 p2,
 
     return  /*(hit < ray.tmax) && */ (hit > 0.001) && all(greaterThanEqual(barycentricCoord, vec3(0.0)));
 }
+// End of section Copyright (c) 2014 Andreas Reich, Johannes Jendersie.
 
 float intersectTriangle(Triangle tri, Ray r) {
     float t;
@@ -47,6 +59,7 @@ float intersectTriangle(Triangle tri, Ray r) {
 }
 
 // Adapted from: https://tavianator.com/2022/ray_box_boundary.html
+// Beginning of section Copyright (c) 2022 Tavian Barnes.
 vec2 intersectAABB(vec3 bounds[2], Ray r, vec2 tmimaxInit) {
     float tmin = tmimaxInit.x;
     float tmax = tmimaxInit.y;
@@ -62,3 +75,4 @@ vec2 intersectAABB(vec3 bounds[2], Ray r, vec2 tmimaxInit) {
 
     return vec2(tmin, tmax);
 }
+// End of section Copyright (c) 2022 Tavian Barnes.

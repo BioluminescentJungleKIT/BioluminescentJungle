@@ -1,3 +1,9 @@
+// Unless noted otherwise, content of this file is licensed under MIT.
+// Copyright (c) 2024 Ilia Bozhinov, Lars Erber.
+//
+// Parts of this file are licensed under MIT.
+// Copyright (c) 2014-2024 Omar Cornut
+
 #include "GBufferDescription.h"
 #include "Lighting.h"
 #include "Pipeline.h"
@@ -293,6 +299,8 @@ void JungleApp::initWindow() {
     glfwSetScrollCallback(window, handleGLFWScrolling);
 }
 
+// Adapted from: https://github.com/ocornut/imgui/blob/master/examples/example_glfw_vulkan/main.cpp
+// Beginning of section Copyright (c) 2014-2024 Omar Cornut.
 void JungleApp::initImGui() {
     // Setup Dear ImGui context
     IMGUI_CHECKVERSION();
@@ -361,6 +369,7 @@ void JungleApp::initImGui() {
     VK_CHECK_RESULT(vkDeviceWaitIdle(device))
     ImGui_ImplVulkan_DestroyFontUploadObjects();
 }
+// End of section Copyright (c) 2014-2024 Omar Cornut.
 
 void JungleApp::createSurface() {
     VK_CHECK_RESULT(glfwCreateWindowSurface(device.instance, window, nullptr, &surface))

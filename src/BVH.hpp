@@ -1,3 +1,12 @@
+// Unless noted otherwise, content of this file is licensed under MIT.
+// Copyright (c) 2024 Ilia Bozhinov, Lars Erber.
+//
+// Parts of this file are licensed under MIT.
+// Copyright (c) 2014 Andreas Reich, Johannes Jendersie.
+//
+// Parts of this file are licensed under MIT.
+// Copyright (c) 2022 Tavian Barnes.
+
 #pragma once
 
 #include "DataBuffer.h"
@@ -142,6 +151,8 @@ class BVH {
     }
 
     // returns t, if there is an intersection at origin + t * direction.
+    // Adapted from https://tavianator.com/2022/ray_box_boundary.html
+    // Beginning of section Copyright (c) 2022 Tavian Barnes.
     std::optional<float> intersectAABB(glm::vec3 origin, glm::vec3 direction, int index) {
         auto aabb = bvh[index];
         float tmin = 0;
@@ -162,8 +173,11 @@ class BVH {
             return tmin;
         }
     }
+    // End of section Copyright (c) 2022 Tavian Barnes.
 
     // returns t, if there is an intersection at origin + t * direction.
+    // Adapted from https://github.com/Jojendersie/gpugi/blob/5d18526c864bbf09baca02bfab6bcec97b7e1210/gpugi/shader/intersectiontests.glsl
+    // Beginning of section Copyright (c) 2014 Andreas Reich, Johannes Jendersie.
     std::optional<float> intersectTriangle(glm::vec3 origin, glm::vec3 direction, int index) {
         auto triangle = triangles[index];
 
@@ -186,6 +200,7 @@ class BVH {
             return {};
         }
     }
+    // End of section Copyright (c) 2014 Andreas Reich, Johannes Jendersie.
 
     ~BVH() {
         bvhBuffer.destroy(device);

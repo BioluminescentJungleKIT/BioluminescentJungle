@@ -1,3 +1,6 @@
+// The content of this file is licensed under MIT.
+// Copyright (c) 2024 Ilia Bozhinov, Lars Erber.
+
 #include "util.glsl"
 
 // NUM_SAMPLES_PER_RESERVOIR must also be adjusted in Lighting.cpp.

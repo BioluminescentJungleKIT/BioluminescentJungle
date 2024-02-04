@@ -1,3 +1,6 @@
+// The content of this file is licensed under MIT.
+// Copyright (c) 2024 Ilia Bozhinov, Lars Erber.
+
 #ifndef POSTPROCESSINGSTEP_H
 #define POSTPROCESSINGSTEP_H
 

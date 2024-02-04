@@ -1,6 +1,5 @@
-//
-// Created by lars on 28.10.23.
-//
+// The content of this file is licensed under MIT.
+// Copyright (c) 2024 Ilia Bozhinov, Lars Erber.
 
 #ifndef JUNGLE_SCENE_H
 #define JUNGLE_SCENE_H
